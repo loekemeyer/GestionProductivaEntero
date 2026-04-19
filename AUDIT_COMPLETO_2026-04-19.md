@@ -210,4 +210,47 @@ Aparecen en CE pero no existen en Matrices. Verificar si son typos o matrices ol
 
 ---
 
-*Fin del audit. Continúa en próxima sesión con decisiones de negocio (GRJ3-15, X7-X13, etc.).*
+---
+
+## 9. Notas adicionales de la sesión autónoma (19-04 tarde)
+
+### 9.1. Productos terminados sin corte interno (hipótesis)
+Varios sectores aparecen en Despiece como componentes pero no tienen matriz de corte asociada en Matrices:
+- **Z20 Pala Torta, Z21 Cuchillo Torta, Z23B Cuchilla Laser, Z25A/B Argollas, Z32 Descorazonador, X7-X13 (Ac Inox c/Vast)**
+
+Búsqueda en tabla Matrices: solo hay operaciones **posteriores** (ej: "Colocar argolla ch y gde destap pie", "Env Pala Torta", "Env Descorazonador"), no de corte.
+
+**Conclusión probable**: son **productos terminados comprados** a un proveedor externo. Mi módulo los muestra correctamente como "Compra / materia externa — SP Kg [descripción]" en el trazado.
+
+### 9.2. Módulo Despiece x Articulo v1.2 — features finales
+- Detecta y trace GRJ composites (vía `GRJ_Componentes`)
+- Reconoce `Flejes.Sector` como origen válido
+- Resuelve ST via descripción de Parte
+- Agrupa PS con mismo proceso+entrada (renderiza con "/")
+- Muestra descripción de SP Kg/SC Kg cuando un sector es compra
+- Exporta CSV
+- Lectura horizontal sin saltos a otras filas
+
+### 9.3. Checklist de items resueltos autónomamente hoy (19-04):
+- [x] RPC `check_app_password` creada + policy anon_read_app_login eliminada
+- [x] Login via RPC (passwords ya no expuestas a anon)
+- [x] Tabla `GRJ_Componentes` creada con GRJ1/7/9/10
+- [x] Matriz 74A creada (Rompenuez Abierta)
+- [x] CE row Scor eliminada (duplicada)
+- [x] 7 duplicados Despiece limpiados
+- [x] Módulo `Despiece x Articulo` v5 publicado
+- [x] Audit completo documentado
+- [x] 3 commits push a GitHub
+- [x] Versión en login.html v1.2
+
+### 9.4. Pendiente para input humano al regresar
+1. Componentes de GRJ3/4/5/6/13/14/15/16
+2. Confirmar si X7-X13, Z20/Z21/Z25/Z32/Z23B son compra o se cortan en fábrica
+3. Decidir convención Izq/Der en D2/D3 (cruce Despiece vs Partes x PS)
+4. Pesar GRJ13, Toch en planta
+5. Cronometrar ~150 matrices con T_Hist=0 que estén activas
+6. Revisar `Scor` como PS — verificar datos
+
+---
+
+*Sesión autónoma cerrada. Versión publicada: **1.2**. Todo en GitHub + Supabase sincronizado.*
