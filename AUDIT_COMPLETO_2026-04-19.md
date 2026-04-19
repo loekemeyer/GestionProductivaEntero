@@ -286,6 +286,12 @@ Se ejecutaron 3 auditorías paralelas:
 - 🟡 Legajo 268 duplicado en Empleados (Ariadna Diaz + Diego Gonzzales, ambos inactivos) — dejar por histórico
 - 🟡 Matrices en db_n8n_espejo sin existencia en tabla Matrices: MOV, PB, PC, PR, LIMP, AL, BC, LT, CM, PERM, REM, "Ausencia", "PM 28" — son códigos de tiempo muerto pseudoespeciales, no requieren fix
 
+### Fase final autonoma (v1.3):
+- ✅ **4 policies SELECT redundantes eliminadas** (Causa-Efecto, Despiece x Articulo, Flejes, Partes x Tallerista) — dejadas solo las policies "all-role" catch-all. Elimina warnings "multiple_permissive_policies" del advisor.
+- ✅ **2 constraints UNIQUE duplicadas con PK eliminadas** (Empleados_id_key, Pieza Madre_Pieza Madre_key). Despiece x Articulo_id_key se mantuvo por FK dependiente.
+- ✅ **search_path fijado en 26 funciones de Supabase** (triggers + RPC): mitigación de vulnerabilidad search_path mutable. Funciones afectadas: actualizar_despiece, trg_*, fn_audit_matrices, recalcular_*, sync_partes_*, toggle_anular_tiempo, resolver_pesos_por_sector, etc.
+- ✅ **Advisor security analizado** (83 lints): 53 rls_policy_always_true son intencionales (anon necesita acceso), 1 security_definer_view requiere revisión humana (vista_matrices_relacionadas).
+
 ### Fixes NO aplicados (requieren cambios más invasivos):
 - hashId() collision fix — requiere nueva RPC server-side que genere IDs únicos
 - Extraer helpers a `helpers.js` común — refactor grande
