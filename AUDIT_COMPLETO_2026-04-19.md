@@ -286,7 +286,14 @@ Se ejecutaron 3 auditorías paralelas:
 - 🟡 Legajo 268 duplicado en Empleados (Ariadna Diaz + Diego Gonzzales, ambos inactivos) — dejar por histórico
 - 🟡 Matrices en db_n8n_espejo sin existencia en tabla Matrices: MOV, PB, PC, PR, LIMP, AL, BC, LT, CM, PERM, REM, "Ausencia", "PM 28" — son códigos de tiempo muerto pseudoespeciales, no requieren fix
 
-### v1.4 — GRJ resuelto:
+### v1.4 — GRJ resuelto + VERIFICACIÓN FINAL:
+**✅ 0 sectores huérfanos reales en Despiece** — todos los componentes tienen origen trazable:
+- GRJ1/7/9/10 → armados internamente (Martin, Carlos) con componentes conocidos
+- GRJ3/3B → compra Roster (tabla Cepillos)
+- GRJ4/5/6/13/14/15 → compra Cimarrón (tabla BOMB)
+- X7-X13, Z20/21/25A/25B/32/23B, BOM10, W1B, FE1, A17, C13, V15C, LLP7 → están en SP Kg/SC Kg, se muestran en módulo como "Compra externa" automáticamente
+
+
 - **GRJ1**: Martin armador (C1+C10+V9) — INSERT en Articulos Virgilio X Tallerista
 - **GRJ7/9**: Martin + Carlos armadores (A10 o A15, C10, V9)
 - **GRJ10**: Carlos (ya estaba)
