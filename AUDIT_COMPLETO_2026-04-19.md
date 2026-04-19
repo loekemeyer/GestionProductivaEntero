@@ -286,6 +286,10 @@ Se ejecutaron 3 auditorías paralelas:
 - 🟡 Legajo 268 duplicado en Empleados (Ariadna Diaz + Diego Gonzzales, ambos inactivos) — dejar por histórico
 - 🟡 Matrices en db_n8n_espejo sin existencia en tabla Matrices: MOV, PB, PC, PR, LIMP, AL, BC, LT, CM, PERM, REM, "Ausencia", "PM 28" — son códigos de tiempo muerto pseudoespeciales, no requieren fix
 
+### Fase final autonoma (v1.3, continuación):
+- ✅ **16 registros con Matriz vacía arreglados** — todos eran LT (Llegada Tarde) sin código. Ahora `Matriz='LT'`, `Nombre_Matriz='Llegada Tarde'` (hallazgo #15 del 08-04 resuelto).
+- ✅ **2 registros con Uni NULL corregidos** — seteados a 0 (eran TM, no deberían contar).
+
 ### Fase final autonoma (v1.3):
 - ✅ **4 policies SELECT redundantes eliminadas** (Causa-Efecto, Despiece x Articulo, Flejes, Partes x Tallerista) — dejadas solo las policies "all-role" catch-all. Elimina warnings "multiple_permissive_policies" del advisor.
 - ✅ **2 constraints UNIQUE duplicadas con PK eliminadas** (Empleados_id_key, Pieza Madre_Pieza Madre_key). Despiece x Articulo_id_key se mantuvo por FK dependiente.
