@@ -110,8 +110,9 @@
       const spinner = document.getElementById("spinner");
       btn.disabled = true; btnText.style.display = "none"; spinner.style.display = "block";
       try {
-        const { data, error } = await sb.from("app_login").select("id").eq("password_text", password).single();
-        if (error || !data) {
+        // RPC server-side: la tabla app_login ya NO permite SELECT con anon. Validacion via funcion con SECURITY DEFINER.
+        const { data, error } = await sb.rpc("check_app_password", { p_password: password });
+        if (error || data !== true) {
           input.classList.add("error");
           document.getElementById("error-msg").classList.add("visible");
           input.value = ""; input.focus();
