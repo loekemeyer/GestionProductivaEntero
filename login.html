@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Gestión Productiva — Ingresar</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
@@ -60,6 +63,8 @@
     button:hover { opacity: 0.9; }
     button:active { transform: scale(0.99); }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .version { text-align: center; font-size: 11px; color: #64748b; margin-top: -20px; margin-bottom: 20px; letter-spacing: 0.5px; font-family: 'Consolas', monospace; }
+    .version b { color: #0f172a; }
     .spinner {
       display: none; width: 18px; height: 18px;
       border: 2px solid rgba(255,255,255,0.3); border-top-color: white;
@@ -77,6 +82,7 @@
       <h1>Gestión Productiva</h1>
       <div class="subtitle">Ingresá la contraseña para continuar</div>
     </div>
+    <div class="version">Versión <b id="version-txt">2026-04-19.3</b></div>
     <div class="field">
       <label for="password">Contraseña</label>
       <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
@@ -88,6 +94,10 @@
     </button>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // Rompe caché: cada reload fuerza recarga del HTML desde red al usar meta no-cache.
+    // La version de arriba se actualiza en cada deploy.
+  </script>
   <script>
     const SUPABASE_URL = "https://hrxfctzncixxqmpfhskv.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
