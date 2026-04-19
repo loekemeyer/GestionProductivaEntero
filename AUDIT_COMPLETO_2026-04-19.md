@@ -253,4 +253,36 @@ Búsqueda en tabla Matrices: solo hay operaciones **posteriores** (ej: "Colocar 
 
 ---
 
-*Sesión autónoma cerrada. Versión publicada: **1.2**. Todo en GitHub + Supabase sincronizado.*
+---
+
+## 10. Sesión autónoma extendida (19-04 tarde extendida)
+
+### Audit de código por sub-agentes (3 auditorías)
+Se ejecutaron 3 auditorías paralelas:
+- **Producción**: 6 archivos (RegistroApp, maestro, abm, tiempos, monitor)
+- **Stock/Talleristas**: 12 archivos (StockFlejes, StockSC, StockSP, ControlTall, Recepcion, Envios, ControlPS, EnviosPS)
+- **Informes/Alertas/Disruptivas**: 5 archivos
+
+### Hallazgos principales (documentados, no todos accionados):
+1. **hashId() colisiones** - CRÍTICO (30% db_n8n_espejo afectado) → requiere refactor de flujo de IDs
+2. **División por cero** - múltiples módulos (cajas.js, cartones.js, plasticos.js, StockSC/SP.js)
+3. **GRJ_COMPONENTES duplicado** en 3+ archivos (Recepcion Cervantes.html, ControlTall.js, cajas.js) → migración a tabla `GRJ_Componentes` iniciada pero código no actualizado aún
+4. **Promise.catch faltantes** - ~6 lugares en app.js
+5. **Race conditions** - edición simultánea en maestro.html, RegistroApp
+6. **Hardcoded values** replicados: SUPABASE_KEY en 4 archivos, TM_CODES en 3
+
+### Fixes aplicados en esta extensión:
+- ✅ Índices creados en Supabase (6 índices): db_n8n_espejo.Legajo+Dia+Mes, ID_Ejecucion, Fecha, Eliminar IS NULL, Matriz + Registros Produccion Cervantes.legajo+ts_event
+- ✅ 7 registros con Mes=0 corregidos (se extrajo mes real desde Fecha, también Dia=0 → día real)
+- ✅ RLS habilitado en Auditoria_Produccion + policies INSERT y SELECT para anon (auditoría empieza a grabar)
+- ✅ Normalización 11 matrices en db_n8n_espejo (PM 1/37/113/218, AL/BC/PB/PC/PR con tildes, espacios extra)
+
+### Fixes NO aplicados (requieren cambios más invasivos):
+- hashId() collision fix — requiere nueva RPC server-side que genere IDs únicos
+- Extraer helpers a `helpers.js` común — refactor grande
+- SELECT * → columnas explícitas — cambios amplios
+- GRJ_COMPONENTES hardcoded en JS → migrar a BD con cambios en Recepcion Cervantes, ControlTall, cajas.js
+
+---
+
+*Sesión autónoma cerrada. Versión publicada: **1.2**. GitHub + Supabase sincronizado. 7 commits en sesión.*
