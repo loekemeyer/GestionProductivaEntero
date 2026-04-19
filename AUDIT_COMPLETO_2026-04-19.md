@@ -286,6 +286,19 @@ Se ejecutaron 3 auditorías paralelas:
 - 🟡 Legajo 268 duplicado en Empleados (Ariadna Diaz + Diego Gonzzales, ambos inactivos) — dejar por histórico
 - 🟡 Matrices en db_n8n_espejo sin existencia en tabla Matrices: MOV, PB, PC, PR, LIMP, AL, BC, LT, CM, PERM, REM, "Ausencia", "PM 28" — son códigos de tiempo muerto pseudoespeciales, no requieren fix
 
+### v1.8 — Despiece x Articulo: vista resumen cobertura:
+- Nuevo botón "📊 Ver resumen" en el módulo
+- Calcula % cobertura por producto (componentes con origen Fleje o Compra vs sin trazado)
+- Badges visuales: ✅ 100% / 🟡 75-99% / ⚠️ <75%
+- Ordenado por cobertura ascendente (problemas primero)
+
+### Estado final de la base (verificado 2026-04-19):
+- `db_n8n_espejo`: 6546 registros, 6546 IDs únicos (0 colisiones), 2058 LEGACY- reasignados (históricos), 0 NULLs
+- `GRJ_Componentes`: 13 rows, 4 GRJ mapeados (GRJ1/7/9/10)
+- `Cepillos`: 2 rows (GRJ3, GRJ 3B con Roster)
+- `BOMB`: 6 rows con Proveedor cargado (Cimarrón)
+- Matrices sin Tiempo_Historico: 160 (pendiente cronometrar en planta — no accionable sin observar)
+
 ### v1.7 — GRJ_COMPONENTES migrado JS → Supabase (hallazgo B del plan):
 - **Vista nueva**: `v_grj_componentes_con_peso` en Supabase (calcula peso_total de cada GRJ sumando componentes desde SP Kg/SC Kg/Flejes/Remaches).
 - **Recepcion Cervantes.html**: hardcoded GRJ_COMPONENTES/GRJ_PESOS → `let` + función `cargarGRJDesdeBD()` async + llamada en `Promise.all` de init. Fallback a hardcoded si falla red.
