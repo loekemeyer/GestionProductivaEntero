@@ -286,6 +286,14 @@ Se ejecutaron 3 auditorías paralelas:
 - 🟡 Legajo 268 duplicado en Empleados (Ariadna Diaz + Diego Gonzzales, ambos inactivos) — dejar por histórico
 - 🟡 Matrices en db_n8n_espejo sin existencia en tabla Matrices: MOV, PB, PC, PR, LIMP, AL, BC, LT, CM, PERM, REM, "Ausencia", "PM 28" — son códigos de tiempo muerto pseudoespeciales, no requieren fix
 
+### v1.4 — GRJ resuelto:
+- **GRJ1**: Martin armador (C1+C10+V9) — INSERT en Articulos Virgilio X Tallerista
+- **GRJ7/9**: Martin + Carlos armadores (A10 o A15, C10, V9)
+- **GRJ10**: Carlos (ya estaba)
+- **GRJ3/3B**: Compra de Roster, Carlos envasa con mango+capuchón. Nueva tabla `Cepillos` creada.
+- **GRJ4/5/6/14/15**: Compra de Cimarrón, Oscar/Blist-Pack hacen skin. Cargados en BOMB con columna Proveedor agregada.
+- **GRJ13**: Compra de Cimarrón, envasado en fábrica (Bowls).
+
 ### Fase final autonoma (v1.3, continuación):
 - ✅ **16 registros con Matriz vacía arreglados** — todos eran LT (Llegada Tarde) sin código. Ahora `Matriz='LT'`, `Nombre_Matriz='Llegada Tarde'` (hallazgo #15 del 08-04 resuelto).
 - ✅ **2 registros con Uni NULL corregidos** — seteados a 0 (eran TM, no deberían contar).
