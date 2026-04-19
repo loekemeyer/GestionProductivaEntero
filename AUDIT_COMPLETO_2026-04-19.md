@@ -286,6 +286,14 @@ Se ejecutaron 3 auditorías paralelas:
 - 🟡 Legajo 268 duplicado en Empleados (Ariadna Diaz + Diego Gonzzales, ambos inactivos) — dejar por histórico
 - 🟡 Matrices en db_n8n_espejo sin existencia en tabla Matrices: MOV, PB, PC, PR, LIMP, AL, BC, LT, CM, PERM, REM, "Ausencia", "PM 28" — son códigos de tiempo muerto pseudoespeciales, no requieren fix
 
+### v1.7 — GRJ_COMPONENTES migrado JS → Supabase (hallazgo B del plan):
+- **Vista nueva**: `v_grj_componentes_con_peso` en Supabase (calcula peso_total de cada GRJ sumando componentes desde SP Kg/SC Kg/Flejes/Remaches).
+- **Recepcion Cervantes.html**: hardcoded GRJ_COMPONENTES/GRJ_PESOS → `let` + función `cargarGRJDesdeBD()` async + llamada en `Promise.all` de init. Fallback a hardcoded si falla red.
+- **ControlTall.js**: idem, hardcoded → `let` + async load + call en DOMContentLoaded. Fallback a hardcoded.
+- **cajas.js**: no tenía GRJ_COMPONENTES (el agent había reportado falso positivo).
+- **Backwards compatible**: si la BD está caída, ambos módulos siguen funcionando con los valores de fallback.
+- **Single source of truth**: ahora cambios de GRJ_Componentes en BD se propagan a todos los módulos automáticamente.
+
 ### v1.6 — hashId colisiones RESUELTAS (hallazgo #1 crítico del 08-04):
 - **Backup**: `db_n8n_espejo_backup_20260419` (6546 rows snapshot antes de tocar nada)
 - **ALTER**: `ID_Ejecucion` tipo `bigint` → `text`

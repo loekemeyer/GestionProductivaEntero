@@ -24,13 +24,29 @@ let listaTalleristas = [];
 let filasRenderizadas = [];
 let datosParaFiltro = [];
 
-// Mapeo de artículos GRJ a sus componentes (entrega = descuento de componentes)
-const GRJ_COMPONENTES = {
+// Mapeo de artículos GRJ a sus componentes. Fallback hardcoded; se sobrescribe al iniciar
+// desde tabla Supabase "GRJ_Componentes" via cargarGRJDesdeBD() (migración 2026-04-19).
+let GRJ_COMPONENTES = {
   GRJ7: ["A10","C10","V9"],
   GRJ9: ["A15","C10","V9"],
   GRJ1: ["C1","C10","V9"],
   GRJ10: ["Fleje31","Fleje32","LLF7B","LLF8"]
 };
+
+async function cargarGRJDesdeBD(){
+  try {
+    const { data, error } = await supabaseClient.from("GRJ_Componentes").select("cod_grj,componente,orden");
+    if (error || !data || !data.length) return;
+    const comp = {};
+    for (const r of data){
+      if (!comp[r.cod_grj]) comp[r.cod_grj] = [];
+      comp[r.cod_grj].push({ c: r.componente, o: r.orden||0 });
+    }
+    for (const cod of Object.keys(comp)){
+      GRJ_COMPONENTES[cod] = comp[cod].sort((a,b)=>a.o-b.o).map(x=>x.c);
+    }
+  } catch(e){ /* fallback hardcoded */ }
+}
 
 // Partes crudas de Martin: el consumo se infiere del consumo (E. Madre) de los artículos finales
 // que las usan. KF2 y V3C son comunes a 520 y 521. KF8 solo va al 521. LF16 solo al 520.
@@ -1552,6 +1568,8 @@ txtBuscarTall.addEventListener("input", () => {
 });
 
 document.addEventListener("DOMContentLoaded", () => {
+  cargarGRJDesdeBD(); // async, carga en paralelo (no bloqueante — fallback a hardcoded si falla)
   cargarTalleristas();
 });
+cargarGRJDesdeBD();
 cargarTalleristas();

@@ -178,29 +178,43 @@
 
   const WEBAPP_BASE = "https://script.google.com/macros/s/AKfycbz3jZ7oahGOULPWKnTJGTTh_HIpLpyILu8tWkNHg6U_r5s7R3osFh3cQV5G7FUq8oXs/exec";
 
-  // Al entregar un artículo GRJ, también descontar estos componentes de las partes del tallerista
-  // Ratio 1:1 en cajas (todos tienen 30 unidades/caja)
-  const GRJ_COMPONENTES = {
+  // GRJ_COMPONENTES y GRJ_PESOS: por defecto hardcoded como fallback (si falla BD o primer render).
+  // Se sobrescriben con valores de Supabase (tabla GRJ_Componentes + vista v_grj_componentes_con_peso)
+  // vía cargarGRJDesdeBD() al iniciar. Migración 2026-04-19: fuente de verdad ahora es BD.
+  let GRJ_COMPONENTES = {
     GRJ7:  ["A10","C10","V9"],
     GRJ9:  ["A15","C10","V9"],
     GRJ1:  ["C1","C10","V9"],
     GRJ10: ["Fleje31","Fleje32","LLF7B","LLF8"],
-    G3:    ["G3"],    // Cpo Sacacorcho 520 p/cromar — se descuenta a sí mismo
-    G4:    ["G4"]     // Cpo Sacacorcho 521 p/cromar — se descuenta a sí mismo
+    G3:    ["G3"],
+    G4:    ["G4"]
   };
-
-  // Peso por unidad de cada artículo GRJ = suma de los pesos de sus componentes (de SP Kg o SC Kg)
-  // A10=0.0177, A15=0.0177, C1=0.0293, C10=0.0037, V9=0.000567
-  // GRJ10: Fleje31=0.01463, Fleje32=0.01603, LLF7B=0.001590, LLF8=0.035833
-  const GRJ_PESOS = {
-    GRJ7:  0.0177 + 0.0037 + 0.000567,  // A10 + C10 + V9 ≈ 0.021967 kg/uni
-    GRJ9:  0.0177 + 0.0037 + 0.000567,  // A15 + C10 + V9 ≈ 0.021967 kg/uni
-    GRJ1:  0.0293 + 0.0037 + 0.000567,  // C1  + C10 + V9 ≈ 0.033567 kg/uni
-    GRJ10: 0.01463 + 0.01603 + 0.001590 + 0.035833,  // ≈ 0.068882 kg/uni
-    G3:    0.035013,  // Cpo Sacacorcho 520 p/cromar (SC Kg)
-    G4:    0.045433   // Cpo Sacacorcho 521 p/cromar (SC Kg)
+  let GRJ_PESOS = {
+    GRJ7:  0.0177 + 0.0037 + 0.000567,
+    GRJ9:  0.0177 + 0.0037 + 0.000567,
+    GRJ1:  0.0293 + 0.0037 + 0.000567,
+    GRJ10: 0.01463 + 0.01603 + 0.001590 + 0.035833,
+    G3:    0.035013,
+    G4:    0.045433
   };
   function isGRJ(codigo){ return Boolean(GRJ_COMPONENTES[codigo]); }
+
+  async function cargarGRJDesdeBD(){
+    try {
+      const { data, error } = await sb.from("v_grj_componentes_con_peso").select("cod_grj,componente,orden,peso_componente");
+      if (error || !data || !data.length) return;
+      const comp = {}, pesos = {};
+      for (const r of data){
+        if (!comp[r.cod_grj]) { comp[r.cod_grj] = []; pesos[r.cod_grj] = 0; }
+        comp[r.cod_grj].push({ c: r.componente, o: r.orden||0 });
+        pesos[r.cod_grj] += Number(r.peso_componente) || 0;
+      }
+      for (const cod of Object.keys(comp)){
+        GRJ_COMPONENTES[cod] = comp[cod].sort((a,b)=>a.o-b.o).map(x=>x.c);
+        GRJ_PESOS[cod] = pesos[cod];
+      }
+    } catch(e){ /* silencioso: fallback a hardcoded */ }
+  }
 
   // Descripciones para códigos de sector que no están en despieceMap (que usa CODs de artículo)
   // Sectores SC que al entregar deben incrementar SC Kg
@@ -854,7 +868,7 @@
     ));
   }
 
-  Promise.all([cargarMapaCodigos(), precargarPartes()])
+  Promise.all([cargarMapaCodigos(), precargarPartes(), cargarGRJDesdeBD()])
     .then(() => update())
     .catch(err => {
       console.error(err);
