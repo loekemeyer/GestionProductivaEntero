@@ -286,6 +286,10 @@ Se ejecutaron 3 auditorías paralelas:
 - 🟡 Legajo 268 duplicado en Empleados (Ariadna Diaz + Diego Gonzzales, ambos inactivos) — dejar por histórico
 - 🟡 Matrices en db_n8n_espejo sin existencia en tabla Matrices: MOV, PB, PC, PR, LIMP, AL, BC, LT, CM, PERM, REM, "Ausencia", "PM 28" — son códigos de tiempo muerto pseudoespeciales, no requieren fix
 
+### v1.5 — Aleta Izq/Der alineada:
+- Despiece x Articulo cod 523/723: D2 "Aleta Izquierda"→"Aleta Derecha", D3 "Aleta Derecha"→"Aleta Izquierda"
+- Ahora Despiece + Partes x PS + CE chain (114A izq / 114B der) están todos consistentes
+
 ### v1.4 — GRJ resuelto + VERIFICACIÓN FINAL:
 **✅ 0 sectores huérfanos reales en Despiece** — todos los componentes tienen origen trazable:
 - GRJ1/7/9/10 → armados internamente (Martin, Carlos) con componentes conocidos
