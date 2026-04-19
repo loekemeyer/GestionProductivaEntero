@@ -345,6 +345,74 @@ function exportarCSV() {
   URL.revokeObjectURL(url);
 }
 
+// Cuenta cuántos componentes de un producto llegan a Fleje vs Compra, para generar resumen
+function analizarProducto(cod){
+  const partes = CACHE.articulos_cajas ? [] : [];
+  const despPartes = [];
+  for (const k of CACHE._despiecePorCod[cod] || []){ despPartes.push(k); }
+  let llegaFleje = 0, llegaCompra = 0, sinTrazado = 0, total = 0;
+  for (const p of despPartes){
+    const sector = p["Sector Proce"];
+    if (!sector) { llegaCompra++; total++; continue; }
+    const pasos = trazarSector(sector);
+    const ramas = aplanar(pasos);
+    if (!ramas.length) { sinTrazado++; total++; continue; }
+    let hayFleje = false, hayCompra = false;
+    for (const cadena of ramas){
+      const ult = cadena[cadena.length - 1];
+      if (ult.tipo === 'fleje') hayFleje = true;
+      else if (ult.tipo === 'compra' || ult.tipo === 'ps' || ult.tipo === 'matriz') hayCompra = true;
+    }
+    if (hayFleje) llegaFleje++;
+    else if (hayCompra) llegaCompra++;
+    else sinTrazado++;
+    total++;
+  }
+  return { total, llegaFleje, llegaCompra, sinTrazado };
+}
+
+async function renderResumen(){
+  setStatus("Calculando resumen de trazado…");
+  // Cache by cod
+  CACHE._despiecePorCod = CACHE._despiecePorCod || await (async () => {
+    const { data } = await sb.from("Despiece x Articulo").select('"COD","Sector Proce","Descripcion de partes"');
+    const map = {};
+    for (const r of (data||[])){
+      if (!map[r.COD]) map[r.COD] = [];
+      map[r.COD].push(r);
+    }
+    return map;
+  })();
+
+  const rows = [];
+  for (const [cod, desc] of CACHE.articulos){
+    const a = analizarProducto(cod);
+    const cov = a.total > 0 ? Math.round(100 * (a.llegaFleje + a.llegaCompra) / a.total) : 0;
+    rows.push({ cod, desc, ...a, cov });
+  }
+  rows.sort((a, b) => (a.cov - b.cov) || a.cod.localeCompare(b.cod));
+
+  let html = `<div class="resumen"><b>Resumen de cobertura</b>: ${rows.length} artículos. Columna "Cobertura %" = componentes con origen trazable (Fleje o Compra) / total.</div>`;
+  html += `<table class="trace"><thead><tr><th>Cod</th><th>Artículo</th><th>Partes</th><th>→ Fleje</th><th>→ Compra</th><th>Sin trazado</th><th>Cobertura %</th></tr></thead><tbody>`;
+  for (const r of rows){
+    const badge = r.cov === 100 ? '✅' : r.cov >= 75 ? '🟡' : '⚠️';
+    html += `<tr>
+      <td class="cod">${esc(r.cod)}</td>
+      <td>${esc(r.desc)}</td>
+      <td>${r.total}</td>
+      <td style="color:#059669">${r.llegaFleje}</td>
+      <td style="color:#2563eb">${r.llegaCompra}</td>
+      <td style="color:#ef4444">${r.sinTrazado}</td>
+      <td><b>${r.cov}%</b> ${badge}</td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  $("tablaWrap").innerHTML = html;
+  const prom = Math.round(rows.reduce((s, r) => s + r.cov, 0) / Math.max(1, rows.length));
+  setStatus(`Cobertura promedio: ${prom}% (${rows.length} productos).`, prom === 100 ? "ok" : "");
+  $("btnExport").disabled = false;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   $("btnTrazar").addEventListener("click", () => {
     const cod = $("selArt").value;
@@ -354,5 +422,6 @@ document.addEventListener("DOMContentLoaded", () => {
     renderTrace(cod);
   });
   $("btnExport").addEventListener("click", exportarCSV);
+  $("btnResumen").addEventListener("click", () => renderResumen().catch(e => setStatus("Error: " + e.message, "err")));
   cargarInicio().catch(e => { setStatus("Error cargando: " + e.message, "err"); });
 });
