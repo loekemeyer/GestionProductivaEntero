@@ -23,24 +23,36 @@ let CACHE = {
   pxps: [],
   pxtall: [],
   articulos_cajas: [],
-  cajas: []
+  cajas: [],
+  grj_componentes: [],  // nuevo: mapeo de GRJ a sus componentes
+  flejes: [],           // nuevo: Flejes con sector para detectar compra directa
+  sp_kg_desc: new Map(),
+  sc_kg_desc: new Map()
 };
 
 async function cargarInicio() {
   setStatus("Cargando datos maestros…");
-  const [arts, ce, pxps, pxtall, ac, cajas] = await Promise.all([
+  const [arts, ce, pxps, pxtall, ac, cajas, grj, flejes, spkg, sckg] = await Promise.all([
     sb.from("Despiece x Articulo").select('"COD","ARTICULO"').then(r => r.data || []),
     sb.from("Causa-Efecto").select('"Matriz","Descripcion Matriz","Descuenta","Aumenta"').then(r => r.data || []),
     sb.from("Partes x PS").select('"PS","Proceso","SC","SP","Parte"').then(r => r.data || []),
     sb.from("Articulos Virgilio X Tallerista").select('"Cod_Art","Desc","Tallerista","Uni_x_Caja"').then(r => r.data || []),
     sb.from("Articulos_Cajas").select('"Cod_Art","N_Caja","Uni_x_Caja","Descripcion"').then(r => r.data || []),
-    sb.from("Cajas").select('"N_Caja","Sector","Descripcion","Medidas"').then(r => r.data || [])
+    sb.from("Cajas").select('"N_Caja","Sector","Descripcion","Medidas"').then(r => r.data || []),
+    sb.from("GRJ_Componentes").select('cod_grj,componente,orden').then(r => r.data || []),
+    sb.from("Flejes").select('"N Fleje","Sector","Descripción"').then(r => r.data || []),
+    sb.from("SP Kg").select('"Sp","Parte"').then(r => r.data || []),
+    sb.from("SC Kg").select('"SC","Descripcion"').then(r => r.data || [])
   ]);
   CACHE.ce = ce;
   CACHE.pxps = pxps;
   CACHE.pxtall = pxtall;
   CACHE.articulos_cajas = ac;
   CACHE.cajas = cajas;
+  CACHE.grj_componentes = grj;
+  CACHE.flejes = flejes;
+  CACHE.sp_kg_desc = new Map(spkg.map(r => [r.Sp, r.Parte]));
+  CACHE.sc_kg_desc = new Map(sckg.map(r => [r.SC, r.Descripcion]));
 
   // Armar lista única de artículos desde Despiece
   const seen = new Map();
@@ -70,6 +82,24 @@ function trazarSector(sector, visitados = new Set(), profundidad = 0) {
 
   if (/^Fleje\s/i.test(sector)) {
     return [{ tipo: 'fleje', label: sector }];
+  }
+
+  // Si el sector coincide con un Fleje.Sector, es materia prima directa
+  const flejeDirecto = CACHE.flejes.find(f => f.Sector === sector);
+  if (flejeDirecto) {
+    return [{ tipo: 'fleje', label: `Fleje ${flejeDirecto["N Fleje"]} (${flejeDirecto["Descripción"] || ''})` }];
+  }
+
+  // Si el sector es un GRJ composite, expandir en sus componentes (cada uno se traza aparte)
+  const grjComp = CACHE.grj_componentes.filter(g => g.cod_grj === sector);
+  if (grjComp.length > 0) {
+    const compTexto = grjComp.sort((a,b)=>a.orden-b.orden).map(g => g.componente).join(' + ');
+    const ramasGRJ = [];
+    for (const g of grjComp.sort((a,b)=>a.orden-b.orden)) {
+      const prev = trazarSector(g.componente, visitados, profundidad + 1);
+      ramasGRJ.push({ tipo: 'grj_comp', label: `Componente ${g.componente}`, sector_prev: g.componente, ramas: prev });
+    }
+    return [{ tipo: 'grj', label: `${sector} = ${compTexto} (armado por tallerista)`, ramas: ramasGRJ }];
   }
 
   // Buscar producción por Causa-Efecto (matriz interna) y agrupar por (Descuenta, DescripcionMatriz)
@@ -147,7 +177,13 @@ function trazarSector(sector, visitados = new Set(), profundidad = 0) {
 
   // Si no hay productor interno, es compra o materia de otro origen
   if (pasos.length === 0) {
-    pasos.push({ tipo: 'compra', label: 'Compra / materia externa', sector_prev: sector });
+    // Dar más contexto si es conocida en tablas madre
+    const spDesc = CACHE.sp_kg_desc.get(sector);
+    const scDesc = CACHE.sc_kg_desc.get(sector);
+    let ctx = '';
+    if (spDesc) ctx = ` — SP Kg "${spDesc}"`;
+    else if (scDesc) ctx = ` — SC Kg "${scDesc}"`;
+    pasos.push({ tipo: 'compra', label: `Compra / materia externa${ctx}`, sector_prev: sector });
   }
 
   return pasos;
