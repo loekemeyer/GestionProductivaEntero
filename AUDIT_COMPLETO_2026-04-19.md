@@ -53,6 +53,13 @@ Estos son "productos intermedios compuestos" — Carlos/Oscar recibe los compone
 
 ---
 
+### 2.2.bis — Fixes aplicados 19-04 (tarde, sesión autónoma)
+
+- ✅ **Matriz 74A** creada en Matrices (T.Hist=10.5 copiado de 74). 74/74A ahora distinguen Cerrada/Abierta del Rompenuez.
+- ✅ **Fila Scor en Causa-Efecto** eliminada (estaba duplicada — Scor ya existe como PS en Partes x PS, proceso Rectificado, JF1→E4).
+- ✅ **Duplicados en Despiece x Articulo**: 7 filas duplicadas eliminadas (6 del cod 067 con "Sacac Tipo Mozo suelto" vs "Sac. Tipo Mozo Suelto" unificados al segundo + 1 del 530 D4).
+- ✅ **GRJ_Componentes** populada con GRJ1/7/9/10 desde el JS hardcoded.
+
 ### 2.2. Productos terminados importados / sin proceso interno definido
 
 | Sector | Descripción | Tipo | Acción sugerida |
