@@ -286,6 +286,14 @@ Se ejecutaron 3 auditorías paralelas:
 - 🟡 Legajo 268 duplicado en Empleados (Ariadna Diaz + Diego Gonzzales, ambos inactivos) — dejar por histórico
 - 🟡 Matrices en db_n8n_espejo sin existencia en tabla Matrices: MOV, PB, PC, PR, LIMP, AL, BC, LT, CM, PERM, REM, "Ausencia", "PM 28" — son códigos de tiempo muerto pseudoespeciales, no requieren fix
 
+### v1.6 — hashId colisiones RESUELTAS (hallazgo #1 crítico del 08-04):
+- **Backup**: `db_n8n_espejo_backup_20260419` (6546 rows snapshot antes de tocar nada)
+- **ALTER**: `ID_Ejecucion` tipo `bigint` → `text`
+- **hashId()**: reescrita para devolver UUID completo (36 chars) en vez de truncar a 15 hex. Nuevos registros tienen ID único garantizado.
+- **Limpieza histórica**: 341 NULLs renombrados a `LEGACY-NULL-{id}`, 2600 duplicados renombrados a `LEGACY-DUP-{id}` (preservando el primero por Fecha). 0 colisiones restantes.
+- **UNIQUE constraint** agregado en `ID_Ejecucion` (imposible insertar duplicados en el futuro).
+- **maestro.html / import.html**: insertan `ID_Ejecucion: null` (OK, UNIQUE acepta NULLs múltiples en PostgreSQL, no rompe).
+
 ### v1.5 — Aleta Izq/Der alineada:
 - Despiece x Articulo cod 523/723: D2 "Aleta Izquierda"→"Aleta Derecha", D3 "Aleta Derecha"→"Aleta Izquierda"
 - Ahora Despiece + Partes x PS + CE chain (114A izq / 114B der) están todos consistentes

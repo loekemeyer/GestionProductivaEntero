@@ -131,10 +131,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function hashId(uuid) {
-    // Convierte UUID a un número entero para ID_Ejecucion (bigint)
+    // ID_Ejecucion ahora es TEXT y guarda el UUID completo sin colisiones (fix 2026-04-19).
+    // La versión anterior truncaba a 15 hex chars y producía 30% de colisiones en db_n8n_espejo.
     if (!uuid) return null;
-    const hex = String(uuid).replace(/-/g, "").slice(0, 15);
-    return parseInt(hex, 16) || null;
+    return String(uuid);
   }
 
   /* ================= KEYS STORAGE ================= */
