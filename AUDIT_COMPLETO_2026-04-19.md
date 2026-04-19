@@ -277,6 +277,15 @@ Se ejecutaron 3 auditorías paralelas:
 - ✅ RLS habilitado en Auditoria_Produccion + policies INSERT y SELECT para anon (auditoría empieza a grabar)
 - ✅ Normalización 11 matrices en db_n8n_espejo (PM 1/37/113/218, AL/BC/PB/PC/PR con tildes, espacios extra)
 
+### Fixes adicionales (sesión extendida continuación):
+- ✅ 13 índices de performance adicionales en `Despiece x Articulo`, `Partes x PS`, `Partes x Tallerista`, `Causa-Efecto`, `Articulos Virgilio X Tallerista`
+- ✅ 78 registros legajo 1 (test data) marcados Anular_Tiempo=true (no contaminan reportes)
+- ✅ Normalizados "Mov"→"MOV" (12 regs) y "Limp"→"LIMP" (11 regs) en db_n8n_espejo
+- ✅ Creado `helpers.js` compartido con utilidades (parseDecimal, normalizeCode, ptjeNum, safeDiv, esc, TM_CODES, NON_DOWNTIME, PROV_AT)
+- ✅ Verificado: 0 legajos huérfanos en db_n8n_espejo (todos existen en Empleados)
+- 🟡 Legajo 268 duplicado en Empleados (Ariadna Diaz + Diego Gonzzales, ambos inactivos) — dejar por histórico
+- 🟡 Matrices en db_n8n_espejo sin existencia en tabla Matrices: MOV, PB, PC, PR, LIMP, AL, BC, LT, CM, PERM, REM, "Ausencia", "PM 28" — son códigos de tiempo muerto pseudoespeciales, no requieren fix
+
 ### Fixes NO aplicados (requieren cambios más invasivos):
 - hashId() collision fix — requiere nueva RPC server-side que genere IDs únicos
 - Extraer helpers a `helpers.js` común — refactor grande
