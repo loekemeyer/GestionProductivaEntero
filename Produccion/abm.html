@@ -4,7 +4,7 @@
   <script src="../auth-guard.js"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ABM Matrices y Operarios</title>
+  <title>ABM Operarios</title>
   <link rel="icon" href="data:," />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
@@ -157,6 +157,29 @@
     }
     .btn-edit { background: #e8eaf6; color: #283593; }
     .btn-edit:hover { background: #c5cae9; }
+    .btn-disc { background: #fee2e2; color: #b91c1c; margin-left: 4px; }
+    .btn-disc:hover { background: #fecaca; }
+    .btn-reactivar { background: #dcfce7; color: #166534; margin-left: 4px; }
+    .btn-reactivar:hover { background: #bbf7d0; }
+
+    /* Tipo/Estado chips */
+    .chips-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+    .chips-label { font-size:12px; color:#555; font-weight:700; margin-right:4px; }
+    .chip {
+      padding:4px 10px; border:1px solid #c9d1d9; background:#fff; cursor:pointer;
+      border-radius:8px; font-size:12px; transition:all .12s;
+    }
+    .chip:hover { background:#f3f4f6; border-color:#999; }
+    .chip.active { background:#111; color:#fff; border-color:#111; }
+    .chip-todos { font-weight:700; }
+    .badge {
+      display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px;
+      font-weight:700; white-space:nowrap;
+    }
+    .badge-tipo { background:#eef2ff; color:#3730a3; }
+    .badge-disc { background:#fee2e2; color:#b91c1c; }
+    .row-disc { opacity: 0.55; }
+    .desc-anterior { color:#888; font-size:12px; font-style:italic; }
 
     /* Modal */
     .modal-overlay {
@@ -256,89 +279,32 @@
   <!-- Top Bar -->
   <div class="top-bar">
     <a href="../Inicio/" class="btn-back">&#8592; Volver</a>
-    <h1>ABM Matrices y Operarios</h1>
+    <h1>ABM Operarios</h1>
   </div>
 
-  <!-- Tabs -->
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="matrices">Matrices</button>
-    <button class="tab-btn" data-tab="operarios">Operarios</button>
-  </div>
-
-  <!-- ===================== MATRICES TAB ===================== -->
-  <div id="tab-matrices">
-    <div class="card">
-      <div class="card-header">Matrices</div>
-      <div class="card-body">
-        <div class="toolbar">
-          <input class="search-input" id="searchMatriz" placeholder="Buscar por N° Matriz o nombre..." />
-          <button class="btn" id="btnNuevaMatriz">+ Nueva Matriz</button>
-        </div>
-        <div class="row-count" id="countMatrices"></div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>N° Matriz</th>
-                <th>Nombre</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody id="tbodyMatrices">
-              <tr><td colspan="3" class="loading-msg">Cargando...</td></tr>
-            </tbody>
-          </table>
-        </div>
+  <!-- ===================== OPERARIOS ===================== -->
+  <div class="card">
+    <div class="card-header">Operarios</div>
+    <div class="card-body">
+      <div class="toolbar">
+        <input class="search-input" id="searchOperario" placeholder="Buscar por legajo o nombre..." />
+        <button class="btn" id="btnNuevoOperario">+ Nuevo Operario</button>
       </div>
-    </div>
-  </div>
-
-  <!-- ===================== OPERARIOS TAB ===================== -->
-  <div id="tab-operarios" class="hidden">
-    <div class="card">
-      <div class="card-header">Operarios</div>
-      <div class="card-body">
-        <div class="toolbar">
-          <input class="search-input" id="searchOperario" placeholder="Buscar por legajo o nombre..." />
-          <button class="btn" id="btnNuevoOperario">+ Nuevo Operario</button>
-        </div>
-        <div class="row-count" id="countOperarios"></div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Legajo</th>
-                <th>Nombre</th>
-                <th>Sede</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody id="tbodyOperarios">
-              <tr><td colspan="4" class="loading-msg">Cargando...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===================== MODAL MATRIZ ===================== -->
-  <div id="modalMatriz" class="modal-overlay hidden">
-    <div class="modal-box">
-      <div class="modal-header" id="modalMatrizTitle">Nueva Matriz</div>
-      <div class="modal-body">
-        <div class="modal-field">
-          <label>N° Matriz</label>
-          <input type="text" id="mNMatriz" />
-        </div>
-        <div class="modal-field">
-          <label>Nombre</label>
-          <input type="text" id="mNombre" />
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-modal btn-cancel" id="btnCancelMatriz">Cancelar</button>
-        <button class="btn-modal btn-save" id="btnSaveMatriz">Guardar</button>
+      <div class="row-count" id="countOperarios"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Legajo</th>
+              <th>Nombre</th>
+              <th>Sede</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyOperarios">
+            <tr><td colspan="4" class="loading-msg">Cargando...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -374,9 +340,9 @@
 <script>
 /*
   NOTA RLS: Para que INSERT y UPDATE funcionen correctamente, asegurate de
-  tener configuradas las Row Level Security policies en Supabase para las
-  tablas "Empleados" y "Matrices" que permitan insert/update al rol anon
-  (o al rol autenticado que corresponda).
+  tener configuradas las Row Level Security policies en Supabase para la
+  tabla "Empleados" que permitan insert/update al rol anon (o al rol
+  autenticado que corresponda).
 */
 
 const SUPABASE_URL = 'https://hrxfctzncixxqmpfhskv.supabase.co';
@@ -401,106 +367,7 @@ function parseHMS(str) {
   return (p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0);
 }
 
-/* ---------- TABS ---------- */
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const tab = btn.dataset.tab;
-    if (tab === 'matrices') { show($('tab-matrices')); hide($('tab-operarios')); }
-    else { hide($('tab-matrices')); show($('tab-operarios')); }
-  });
-});
-
-/* ================================================================
-   MATRICES
-   ================================================================ */
-let allMatrices = [];
-let editingMatrizId = null;
-
-async function loadMatrices() {
-  const { data, error } = await sb.from('Matrices').select('*').order('N_Matriz', { ascending: true });
-  if (error) { toast('Error cargando matrices: ' + error.message); return; }
-  allMatrices = data || [];
-  renderMatrices();
-}
-
-function renderMatrices() {
-  const q = $('searchMatriz').value.toLowerCase().trim();
-  const filtered = q
-    ? allMatrices.filter(m =>
-        (m.N_Matriz || '').toLowerCase().startsWith(q) ||
-        (m.Matriz || '').toLowerCase().includes(q))
-    : allMatrices;
-
-  $('countMatrices').textContent = filtered.length + ' registro' + (filtered.length !== 1 ? 's' : '');
-
-  if (!filtered.length) {
-    $('tbodyMatrices').innerHTML = '<tr><td colspan="3" class="loading-msg">Sin resultados</td></tr>';
-    return;
-  }
-  $('tbodyMatrices').innerHTML = filtered.map(m => `
-    <tr>
-      <td>${esc(m.N_Matriz)}</td>
-      <td>${esc(m.Matriz)}</td>
-      <td><button class="btn-action btn-edit" onclick="editMatriz(${m.id})">Editar</button></td>
-    </tr>`).join('');
-}
-
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
-
-$('searchMatriz').addEventListener('input', renderMatrices);
-
-$('btnNuevaMatriz').addEventListener('click', () => {
-  editingMatrizId = null;
-  $('modalMatrizTitle').textContent = 'Nueva Matriz';
-  $('mNMatriz').value = '';
-  $('mNMatriz').disabled = false;
-  $('mNombre').value = '';
-  show($('modalMatriz'));
-});
-
-window.editMatriz = function(id) {
-  const m = allMatrices.find(x => x.id === id);
-  if (!m) return;
-  editingMatrizId = id;
-  $('modalMatrizTitle').textContent = 'Editar Matriz';
-  $('mNMatriz').value = m.N_Matriz || '';
-  $('mNMatriz').disabled = true;
-  $('mNombre').value = m.Matriz || '';
-  show($('modalMatriz'));
-};
-
-$('btnCancelMatriz').addEventListener('click', () => hide($('modalMatriz')));
-$('modalMatriz').addEventListener('click', e => { if (e.target === $('modalMatriz')) hide($('modalMatriz')); });
-
-$('btnSaveMatriz').addEventListener('click', async () => {
-  const nMatriz = $('mNMatriz').value.trim();
-  const nombre = $('mNombre').value.trim();
-
-  if (!nMatriz) { toast('Ingresa el N° de Matriz'); return; }
-
-  $('btnSaveMatriz').disabled = true;
-
-  if (editingMatrizId) {
-    const { error } = await sb.from('Matrices').update({
-      Matriz: nombre
-    }).eq('id', editingMatrizId);
-
-    if (error) { toast('Error: ' + error.message); $('btnSaveMatriz').disabled = false; return; }
-  } else {
-    const { error } = await sb.from('Matrices').insert({
-      N_Matriz: nMatriz,
-      Matriz: nombre
-    });
-    if (error) { toast('Error: ' + error.message); $('btnSaveMatriz').disabled = false; return; }
-  }
-
-  $('btnSaveMatriz').disabled = false;
-  hide($('modalMatriz'));
-  toast(editingMatrizId ? 'Matriz actualizada' : 'Matriz creada');
-  await loadMatrices();
-});
 
 /* ================================================================
    OPERARIOS
@@ -597,7 +464,6 @@ $('btnSaveOperario').addEventListener('click', async () => {
 });
 
 /* ---------- INIT ---------- */
-loadMatrices();
 loadOperarios();
 </script>
 </body>

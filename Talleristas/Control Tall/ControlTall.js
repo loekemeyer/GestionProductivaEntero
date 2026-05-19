@@ -11,6 +11,8 @@ const searchRow = document.getElementById("searchRow");
 const txtBuscarTall = document.getElementById("txtBuscarTall");
 
 let consumosCache = null;
+let consumoDescCache = null; // cod → desc del articulo (de E. Madre LK/CH) — usado por popup Cons x Parte
+let proporcionCache = null; // { proporciones: Map<cod_art__tallNorm, prop>, talleristasPorArticulo: Map<cod_art, Set<tallNorm>> }
 let sectoresCache = null;
 let stockTalleristaCache = null;
 let entregasCache = null;
@@ -18,38 +20,83 @@ let enviosCache = null;
 let sectoresPorTalleristaCache = null;
 let articulosCajasCache = null;
 let cajasCache = null;
+let cajasExcluidasCache = null;
 
 let talleristaActivo = "";
 let listaTalleristas = [];
 let filasRenderizadas = [];
 let datosParaFiltro = [];
 
-// Mapeo de artículos GRJ a sus componentes. Fallback hardcoded; se sobrescribe al iniciar
-// desde tabla Supabase "GRJ_Componentes" via cargarGRJDesdeBD() (migración 2026-04-19).
-let GRJ_COMPONENTES = {
-  GRJ7: ["A10","C10","V9"],
-  GRJ9: ["A15","C10","V9"],
-  GRJ1: ["C1","C10","V9"],
-  GRJ10: ["Fleje31","Fleje32","LLF7B","LLF8"]
-};
+// Mapeo de artículos GRJ a sus componentes. Se carga desde tabla Supabase "GRJ_Componentes"
+// via cargarGRJDesdeBD(). NO hay fallback hardcoded — si BD falla, el modulo muestra error
+// explicito en lugar de operar con datos viejos (regla: single source of truth en BD).
+let GRJ_COMPONENTES = {};
 
-async function cargarGRJDesdeBD(){
-  try {
-    const { data, error } = await supabaseClient.from("GRJ_Componentes").select("cod_grj,componente,orden");
-    if (error || !data || !data.length) return;
+// Inverso de GRJ_COMPONENTES: componente → Set de GRJs que lo contienen.
+// Ej: A10 → {GRJ7}, C10 → {GRJ1, GRJ7, GRJ9}, V9 → {GRJ1, GRJ7, GRJ9}.
+let COMPONENTE_A_GRJS = new Map();
+function rebuildComponenteAGrjs(){
+  COMPONENTE_A_GRJS = new Map();
+  for (const grj of Object.keys(GRJ_COMPONENTES)){
+    (GRJ_COMPONENTES[grj] || []).forEach(comp => {
+      if (!COMPONENTE_A_GRJS.has(comp)) COMPONENTE_A_GRJS.set(comp, new Set());
+      COMPONENTE_A_GRJS.get(comp).add(grj);
+    });
+  }
+}
+rebuildComponenteAGrjs();
+
+// Transformaciones 1:1 SC→SP (Poly cromado) y armado afila Martin (F7→Toch).
+// Se derivan de GRJ_Componentes.es_transformacion_unidades=TRUE en cargarGRJDesdeBD.
+// En Control Tall:
+//   - Fila SC (M6/M8/F7): cuenta solo entregas Cod=articulo, NUNCA Cod=SP/Toch via expansion.
+//   - Fila SP (M10/M9): cuenta solo entregas Cod=SP (las que vienen de la transformacion).
+let TRANSFORMACION_SCS = new Set();
+let TRANSFORMACION_SP_TO_SC = {};
+function rebuildTransformaciones(){
+  TRANSFORMACION_SP_TO_SC = {};
+  TRANSFORMACION_SCS.forEach(sc => {
+    const comps = GRJ_COMPONENTES[sc];
+    if (comps && comps.length === 1) TRANSFORMACION_SP_TO_SC[comps[0]] = sc;
+  });
+}
+
+let grjCargadoCache = null; // Promise (cache) para que multiples llamadas paralelas compartan resultado
+function cargarGRJDesdeBD(){
+  if (grjCargadoCache) return grjCargadoCache;
+  grjCargadoCache = (async () => {
+    const { data, error } = await supabaseClient.from("GRJ_Componentes").select("cod_grj,componente,orden,es_transformacion_unidades");
+    if (error) {
+      grjCargadoCache = null; // permitir reintento en proxima llamada
+      throw new Error("Error al leer GRJ_Componentes: " + error.message);
+    }
+    if (!data || !data.length) {
+      grjCargadoCache = null;
+      throw new Error("Tabla GRJ_Componentes vacia — no se puede operar sin datos de GRJ.");
+    }
     const comp = {};
+    const transformacionScs = new Set();
     for (const r of data){
       if (!comp[r.cod_grj]) comp[r.cod_grj] = [];
       comp[r.cod_grj].push({ c: r.componente, o: r.orden||0 });
+      if (r.es_transformacion_unidades) transformacionScs.add(r.cod_grj);
     }
+    GRJ_COMPONENTES = {};
     for (const cod of Object.keys(comp)){
       GRJ_COMPONENTES[cod] = comp[cod].sort((a,b)=>a.o-b.o).map(x=>x.c);
     }
-  } catch(e){ /* fallback hardcoded */ }
+    TRANSFORMACION_SCS = transformacionScs;
+    rebuildComponenteAGrjs();
+    rebuildTransformaciones();
+  })();
+  return grjCargadoCache;
 }
 
 // Partes crudas de Martin: el consumo se infiere del consumo (E. Madre) de los artículos finales
 // que las usan. KF2 y V3C son comunes a 520 y 521. KF8 solo va al 521. LF16 solo al 520.
+// NOTA: este mapeo NO se puede derivar de Despiece x Articulo — los crudos son sectores
+// intermedios en la cadena Causa-Efecto, no aparecen como Sector Proce de articulos numericos.
+// Pendiente migrar a tabla "Crudos_Inferencia" en BD para gestionar via SQL en lugar de codigo.
 const CRUDOS_MARTIN_CONSUMO = {
   KF2:  ["520","521"],
   KF8:  ["521"],
@@ -69,7 +116,10 @@ function escapeHtml(s){
 }
 
 function formatNumber(n){
-  return Number(n || 0).toLocaleString("es-AR");
+  return Number(n || 0).toLocaleString("es-AR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
 }
 
 function formatDecimal(n){
@@ -77,6 +127,10 @@ function formatDecimal(n){
     minimumFractionDigits: 0,
     maximumFractionDigits: 3
   });
+}
+
+function formatEntero(n){
+  return Math.round(Number(n || 0)).toLocaleString("es-AR");
 }
 
 function formatKgUni(n){
@@ -100,6 +154,24 @@ function formatKg(n){
     minimumFractionDigits: 0,
     maximumFractionDigits: 1
   });
+}
+
+// Normaliza fechas a DD/MM/YYYY. Envíos guardan "DD/MM" sin año (asumir año actual).
+// Entregas guardan "YYYY-MM-DD" o ISO. Otros formatos vuelven tal cual.
+function formatFechaDDMMAAAA(s){
+  const v = String(s || "").trim();
+  if (!v) return "";
+  const isoFull = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoFull) return `${isoFull[3]}/${isoFull[2]}/${isoFull[1]}`;
+  const ddmm = v.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (ddmm){
+    const dd = ddmm[1].padStart(2,"0");
+    const mm = ddmm[2].padStart(2,"0");
+    return `${dd}/${mm}/${new Date().getFullYear()}`;
+  }
+  const ddmmyyyy = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ddmmyyyy) return `${ddmmyyyy[1].padStart(2,"0")}/${ddmmyyyy[2].padStart(2,"0")}/${ddmmyyyy[3]}`;
+  return v;
 }
 
 function pick(obj, keys){
@@ -189,7 +261,8 @@ function parseFechaDDMM(value){
   const s = String(value || "").trim();
   if (!s) return null;
 
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  // Acepta DD/MM o DD/MM/YYYY (year se ignora para sort, usado solo en formatFechaDDMMAAAA)
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/\d{4})?$/);
   if (!m) return null;
 
   const dd = Number(m[1]);
@@ -346,7 +419,7 @@ function renderTodosFiltrados(){
           <td class="center" title="${escapeHtml(d.descripcion)}">${escapeHtml(d.descripcion)}</td>
           <td class="mono center">${d.codsRaw ? escapeHtml(d.codsRaw) : '<span class="zero">-</span>'}</td>
           <td class="center"><b>${escapeHtml(formatKgUni(d.kgXUni))}</b></td>
-          <td class="center"><b>${escapeHtml(formatDecimal(d.kgXCajon))}</b></td>
+          <td class="center"><b>${escapeHtml(formatEntero(d.kgXCajon))}</b></td>
         </tr>`;
     });
   }
@@ -439,6 +512,7 @@ async function cargarConsumos(){
   const mapCH = new Map();
   const mapLK = new Map();
   const finalMap = new Map();
+  const descMap = new Map(); // cod → desc (para mostrar en popup Cons x Parte)
 
   function cargarEnMapa(rows, mapDestino){
     (rows || []).forEach(r => {
@@ -458,11 +532,22 @@ async function cargarConsumos(){
         r["E_MADRE"] ??
         r.consumo;
 
+      const descRaw =
+        r.Desc ??
+        r.desc ??
+        r.DESC ??
+        r["Desc"] ??
+        r["Descripcion"] ??
+        r["descripcion"];
+
       const cod = normalizeCode(codRaw);
       const consumo = parseConsumo(consumoRaw);
 
       if (!cod) return;
       mapDestino.set(cod, consumo);
+      if (descRaw && !descMap.has(cod)) {
+        descMap.set(cod, String(descRaw).trim());
+      }
     });
   }
 
@@ -486,6 +571,7 @@ async function cargarConsumos(){
   }
 
   consumosCache = finalMap;
+  consumoDescCache = descMap;
   return finalMap;
 }
 
@@ -567,6 +653,11 @@ async function cargarSectores(){
   // Entonces grjPorSector.get("C10") = Set{"GRJ1","GRJ7","GRJ9"}
   const codsPorSector = new Map(); // sector → Set de CODs numéricos que usan esa parte
   const grjPorCod = new Map(); // cod → sector GRJ
+  const articuloPorGrj = new Map(); // sector GRJ → Set<cod articulo armado> (puede ser multi, ej GRJ10 → {544, 802})
+  const kgXUniBySector = new Map(); // sector → kgXUni (primer valor no-cero del despiece)
+  // Derivacion: para cada GRJ X, el articulo es el COD numerico que tiene Sector Proce=X en su despiece.
+  // Ej: GRJ7 → 506 (COD 506 tiene fila con Sector Proce=GRJ7).
+  // Esto deriva de Despiece x Articulo sin tabla nueva.
   (data || []).forEach(r => {
     const cod = normalizeCode(pick(r, ["COD", "Cod", "cod"]));
     const sector = String(pick(r, ["Sector Proce", "sector proce", "Sector_Proce"]) || "").trim();
@@ -578,6 +669,18 @@ async function cargarSectores(){
     }
     if (sector.toUpperCase().startsWith("GRJ") || sector.toUpperCase().startsWith("CP")) {
       grjPorCod.set(cod, sector);
+    }
+    // articuloPorGrj: GRJ aparece como Sector Proce en el despiece del articulo armado
+    // (excluir self-reference: COD=GRJ con Sector Proce=GRJ es la fila del propio GRJ).
+    // Multi-articulo: GRJ10 → {544, 802} porque ambos articulos comparten la misma armadura.
+    if (sector.toUpperCase().startsWith("GRJ") && /^\d+$/.test(cod)) {
+      if (!articuloPorGrj.has(sector)) articuloPorGrj.set(sector, new Set());
+      articuloPorGrj.get(sector).add(cod);
+    }
+    // kgXUniBySector: primer valor no-cero por sector (ignora rows con COD=sector mismo y peso=0)
+    const kgU = parseDecimal(pick(r, ["KGxUni", "KGxUNI", "KgxUni", "KgXUni", "kgxuni", "KG x Uni", "Kg x Uni", "kg x uni"]));
+    if (kgU > 0 && !kgXUniBySector.has(sector)) {
+      kgXUniBySector.set(sector, kgU);
     }
   });
   const grjPorSector = new Map();
@@ -623,12 +726,75 @@ async function cargarSectores(){
     partesXUniByPart,
     grjPorCod,
     grjPorSector,
+    articuloPorGrj,
+    kgXUniBySector,
     codsPorSector,
     rubroBySector,
     rubroByPart
   };
 
   return sectoresCache;
+}
+
+// Carga Proporcion_Articulo_Tallerista + construye talleristasPorArticulo desde Articulos VxT.
+// proporciones: Map clave="cod_art__talleristaNormalizado" → Number(0-1).
+// talleristasPorArticulo: Map cod_art numerico → Set<talleristaNormalizado> (incluye match
+// directo numerico + match via GRJ→articulo usando sectoresCache.articuloPorGrj).
+// Usado por buscar() para filtrar/proporcionar el Cons x Parte de cada pieza.
+async function cargarProporciones(){
+  if (proporcionCache) return proporcionCache;
+  const sectoresData = await cargarSectores();
+  const [respProp, respVxT] = await Promise.all([
+    supabaseClient.from("Proporcion_Articulo_Tallerista").select("*").limit(20000),
+    supabaseClient.from("Articulos Virgilio X Tallerista").select("Tallerista,Cod_Art").limit(20000)
+  ]);
+  if (respProp.error) throw new Error("Proporcion_Articulo_Tallerista: " + respProp.error.message);
+  if (respVxT.error) throw new Error("Articulos VxT (proporciones): " + respVxT.error.message);
+
+  const proporciones = new Map();
+  (respProp.data || []).forEach(r => {
+    const cod = String(r.cod_art || "").trim();
+    const tall = normalizeText(r.tallerista || "");
+    if (!cod || !tall) return;
+    proporciones.set(`${cod}__${tall}`, Number(r.proporcion || 0));
+  });
+
+  const talleristasPorArticulo = new Map();
+  (respVxT.data || []).forEach(r => {
+    const tall = normalizeText(pick(r, ["Tallerista", "tallerista", "TALLERISTA"]) || "");
+    const codArt = String(pick(r, ["Cod_Art", "cod_art", "COD_ART"]) || "").trim();
+    if (!tall || !codArt) return;
+    const agregar = (art) => {
+      if (!talleristasPorArticulo.has(art)) talleristasPorArticulo.set(art, new Set());
+      talleristasPorArticulo.get(art).add(tall);
+    };
+    if (/^\d+$/.test(codArt)) {
+      agregar(codArt);
+    } else if (/^(GRJ|CP)/i.test(codArt)) {
+      const arts = sectoresData.articuloPorGrj && sectoresData.articuloPorGrj.get(codArt);
+      if (arts && arts.size) arts.forEach(art => agregar(art));
+    }
+  });
+
+  // articulosFacturasPorTallerista: tallerista_norm → Set<cod_art con destino_entrega=facturas>
+  // Usado para filtrar Maspoli/Pintos en Control Tall (solo mostrar piezas relacionadas a facturas)
+  const respFact = await supabaseClient
+    .from("Articulos Virgilio X Tallerista")
+    .select('"Tallerista","Cod_Art"')
+    .eq("destino_entrega", "facturas");
+  const articulosFacturasPorTallerista = new Map();
+  if (!respFact.error && respFact.data) {
+    respFact.data.forEach(r => {
+      const tall = normalizeText(r["Tallerista"] || "");
+      const cod = String(r["Cod_Art"] || "").trim();
+      if (!tall || !cod) return;
+      if (!articulosFacturasPorTallerista.has(tall)) articulosFacturasPorTallerista.set(tall, new Set());
+      articulosFacturasPorTallerista.get(tall).add(cod);
+    });
+  }
+
+  proporcionCache = { proporciones, talleristasPorArticulo, articulosFacturasPorTallerista };
+  return proporcionCache;
 }
 
 async function cargarStockTallerista(){
@@ -682,7 +848,7 @@ async function cargarEntregas(){
   const uniXCajaByNombreTallAndCod = new Map();
   const uniXCajaBySector = new Map(); // tallerista__cod__sector → uniXCaja (por parte específica)
   const sectorByTallAndCod = new Map(); // tallerista__cod → sector (primer sector encontrado)
-  const stockInicialByTallAndSector = new Map(); // tallerista__sector → kg (primer valor no-cero)
+  const stockInicialByTallAndSectorAndDesc = new Map(); // tallerista__sector__descParte → kg (por pieza, no por sector)
   const _sectoresPorTall = new Map();
 
   (respPartes.data || []).forEach(r => {
@@ -707,11 +873,14 @@ async function cargarEntregas(){
       if (!_sectoresPorTall.has(nombreTall)) _sectoresPorTall.set(nombreTall, new Set());
       _sectoresPorTall.get(nombreTall).add(sectorProce);
 
-      // stock_inicial por sector (para talleristas sin stock en la vista)
+      // stock_inicial por sector + descripcion de parte (clave única por pieza,
+      // no solo por sector — sin esto, varias piezas que comparten sector
+      // (ej: Arandela Chica + Cartón 530 ambas en E3) levantaban el mismo stock
+      // de la primera fila encontrada).
       const stockIni = parseDecimal(pick(r, ["stock_inicial", "Stock_Inicial"]));
-      const siKey = `${nombreTall}__${sectorProce}`;
-      if (stockIni > 0 && !stockInicialByTallAndSector.has(siKey)) {
-        stockInicialByTallAndSector.set(siKey, stockIni);
+      const siKey = `${nombreTall}__${sectorProce}__${descParte}`;
+      if (stockIni > 0 && !stockInicialByTallAndSectorAndDesc.has(siKey)) {
+        stockInicialByTallAndSectorAndDesc.set(siKey, stockIni);
       }
     }
 
@@ -773,6 +942,81 @@ async function cargarEntregas(){
     });
   });
 
+  // ===== Talleristas via facturas: derivar entregas desde Entregas PS =====
+  // Generico: para cada fila en Articulos VxT con destino_entrega='facturas' y sector_factura
+  // definido, leemos Entregas PS donde Prov_Serv = nombre tallerista y Sector SP = sector_factura.
+  // Convertimos kg → unidades dividiendo por kgxuni del sector (de sectoresData.kgXUniBySector).
+  // codGrj seteado para que obtenerEntregasTallerista trate como esGrj=true (cajas = unidades).
+  // Casos cubiertos hoy: Maspoli (PC12/PEP7), Pintos (GRJ12/GRJ12B/PA4).
+  // Si en el futuro hay otro tallerista con destino=facturas, basta cargar sector_factura en BD.
+  try {
+    const sectoresFact = await cargarSectores();
+    const respFacturas = await supabaseClient
+      .from("Articulos Virgilio X Tallerista")
+      .select('"Tallerista","Cod_Art","sector_factura"')
+      .eq("destino_entrega", "facturas")
+      .not("sector_factura", "is", null);
+
+    if (!respFacturas.error && respFacturas.data && respFacturas.data.length) {
+      // Agrupar por tallerista para minimizar queries: 1 query por tallerista
+      const porTall = new Map(); // tallerista → { sectores: Set, articulosPorSector: Map<sector, cod> }
+      respFacturas.data.forEach(r => {
+        const tall = String(r["Tallerista"] || "").trim();
+        const cod = String(r["Cod_Art"] || "").trim();
+        const sector = String(r["sector_factura"] || "").trim();
+        if (!tall || !cod || !sector) return;
+        if (!porTall.has(tall)) porTall.set(tall, { sectores: new Set(), articulosPorSector: new Map() });
+        const entry = porTall.get(tall);
+        entry.sectores.add(sector);
+        // Para sectores compartidos (PC12 con 508 y 564), pickear lowest numerico
+        if (!entry.articulosPorSector.has(sector) || Number(cod) < Number(entry.articulosPorSector.get(sector))) {
+          entry.articulosPorSector.set(sector, cod);
+        }
+      });
+
+      for (const [tall, conf] of porTall.entries()) {
+        try {
+          const respPS = await supabaseClient
+            .from("Entregas PS")
+            .select("*")
+            .eq("Prov_Serv", tall)
+            .in("Sector SP", [...conf.sectores]);
+          if (respPS.error) {
+            console.error(`Error leyendo Entregas PS ${tall}:`, respPS.error);
+            continue;
+          }
+          (respPS.data || []).forEach(r => {
+            const sectorSP = String(r["Sector SP"] || "").trim();
+            const kg = parseDecimal(r["KG"]);
+            const fecha = String(r["Dia-mes"] || "").trim();
+            const kgxuni = sectoresFact.kgXUniBySector.get(sectorSP);
+            if (!kgxuni || kg <= 0) return;
+            const unidades = Math.round(kg / kgxuni);
+            if (unidades <= 0) return;
+            const cod = conf.articulosPorSector.get(sectorSP);
+            if (!cod) return;
+            const tallNorm = normalizeText(tall);
+            const key = `${tallNorm}__${cod}`;
+            if (!detalleByNombreTallAndCod.has(key)) detalleByNombreTallAndCod.set(key, []);
+            detalleByNombreTallAndCod.get(key).push({
+              fecha,
+              cajas: unidades,
+              cod,
+              codGrj: `${tall.toUpperCase()}-${sectorSP}`,
+              kgGrj: kg
+            });
+          });
+        } catch (e) {
+          console.error(`Excepcion al leer Entregas PS ${tall}:`, e);
+        }
+      }
+    } else if (respFacturas.error) {
+      console.error("Error leyendo Articulos VxT facturas:", respFacturas.error);
+    }
+  } catch (e) {
+    console.error("Excepcion en bloque facturas:", e);
+  }
+
   for (const [key, arr] of detalleByNombreTallAndCod.entries()){
     arr.sort((a, b) => sortKeyFechaDDMM(a.fecha) - sortKeyFechaDDMM(b.fecha));
     detalleByNombreTallAndCod.set(key, arr);
@@ -783,7 +1027,7 @@ async function cargarEntregas(){
     uniXCajaByNombreTallAndCod,
     uniXCajaBySector,
     sectorByTallAndCod,
-    stockInicialByTallAndSector
+    stockInicialByTallAndSectorAndDesc
   };
 
   return entregasCache;
@@ -864,12 +1108,33 @@ async function cargarCajas(){
   return cajasCache;
 }
 
-function obtenerCajasPorTallerista(filasTallerista, articulosCajas, cajasData){
+async function cargarCajasExcluidas(){
+  if (cajasExcluidasCache) return cajasExcluidasCache;
+  const { data, error } = await supabaseClient.from("cajas_excluidas_por_tallerista").select("tallerista, n_caja").limit(1000);
+  if (error){ console.error(error); cajasExcluidasCache = new Map(); return cajasExcluidasCache; }
+  const map = new Map();
+  (data || []).forEach(r => {
+    const tall = normalizeText(r.tallerista);
+    const n = Number(r.n_caja || 0);
+    if (!tall || !n) return;
+    if (!map.has(tall)) map.set(tall, new Set());
+    map.get(tall).add(n);
+  });
+  cajasExcluidasCache = map;
+  return cajasExcluidasCache;
+}
+
+function obtenerCajasPorTallerista(filasTallerista, articulosCajas, cajasData, nombreTallerista, cajasExcluidasMap){
   const codsDelTallerista = new Set();
   filasTallerista.forEach(r => {
     const codsRaw = String(pick(r, ["cod_articulos", "Cod_articulos", "COD_ARTICULOS"]) || "");
     splitCodes(codsRaw).forEach(c => codsDelTallerista.add(c));
   });
+
+  // Cajas explícitamente excluidas para este tallerista (tabla cajas_excluidas_por_tallerista)
+  const cajasExcluidas = (cajasExcluidasMap && nombreTallerista)
+    ? (cajasExcluidasMap.get(normalizeText(nombreTallerista)) || new Set())
+    : new Set();
 
   // Mapear N_Caja → Set de Cod_Art que usan esa caja (del tallerista)
   const codsPorCaja = new Map();
@@ -878,7 +1143,7 @@ function obtenerCajasPorTallerista(filasTallerista, articulosCajas, cajasData){
     const cod = normalizeCode(String(ac.Cod_Art || ""));
     if (codsDelTallerista.has(cod)){
       const nCaja = Number(ac.N_Caja || 0);
-      if (nCaja > 0) {
+      if (nCaja > 0 && !cajasExcluidas.has(nCaja)) {
         nCajasSet.add(nCaja);
         if (!codsPorCaja.has(nCaja)) codsPorCaja.set(nCaja, new Set());
         codsPorCaja.get(nCaja).add(cod);
@@ -892,7 +1157,6 @@ function obtenerCajasPorTallerista(filasTallerista, articulosCajas, cajasData){
     if (!nCajasSet.has(nCaja)) return;
     const maxUni = Number(c.Max_Uni_Virg || 0);
     const stockVirg = Number(c.Stock_Virg || 0);
-    if (maxUni <= 0) return;
     result.push({
       sector: String(c.Sector || ""),
       descripcion: `Caja N ${nCaja}`,
@@ -989,12 +1253,30 @@ function obtenerEntregasTallerista(nombreTallerista, codigos, entregasData, sect
     return { totalUnidades: 0, detalle: [] };
   }
 
-  // Expandir códigos GRJ a sus componentes
-  const codigosExpandidos = [];
-  for (const cod of codigos){
-    codigosExpandidos.push(cod);
-    if (GRJ_COMPONENTES[cod]) {
-      codigosExpandidos.push(...GRJ_COMPONENTES[cod]);
+  // Resolver codigos efectivos por tipo de fila:
+  //   - SP de transformacion (M10/M9): solo el SP — Recepcion guarda Cod=SP.
+  //   - SC de transformacion (M6/M8): excluir el SC mismo (no hay entregas con Cod=SC,
+  //     y NO debe expandirse via GRJ_COMPONENTES al SP — eso doble-contaba la entrega).
+  //   - resto: codigos original (con expansion GRJ normal).
+  const sec = String(sectorProce || "").trim();
+  let efectivos;
+  if (TRANSFORMACION_SP_TO_SC[sec]) {
+    efectivos = [sec];
+  } else if (TRANSFORMACION_SCS.has(sec)) {
+    efectivos = codigos.filter(c => c !== sec);
+  } else {
+    efectivos = codigos;
+  }
+
+  // Expandir códigos GRJ a sus componentes (con dedupe — necesario p.ej. para
+  // piezas que agrupan componente y GRJ con misma desc, como X1+X5: si X1 ya
+  // está en codigos y X5 expande a X1, sin dedupe se contaba doble).
+  const codigosExpandidos = new Set();
+  for (const cod of efectivos){
+    codigosExpandidos.add(cod);
+    // No expandir transformaciones 1:1 (SC→SP): cada fila tiene su trigger propio.
+    if (GRJ_COMPONENTES[cod] && !TRANSFORMACION_SCS.has(cod)) {
+      GRJ_COMPONENTES[cod].forEach(c => codigosExpandidos.add(c));
     }
   }
 
@@ -1094,7 +1376,7 @@ async function buscar(nombreParam){
     return;
   }
 
-  const filasTallerista = (data || []).filter(r => {
+  let filasTallerista = (data || []).filter(r => {
     const t = String(pick(r, ["Tallerista", "tallerista", "TALLERISTA"]) || "").trim();
     return t === nombre;
   });
@@ -1104,22 +1386,43 @@ async function buscar(nombreParam){
     return;
   }
 
-  let consumoMap, sectoresData, stockMap, entregasData, enviosData, articulosCajas, cajasData;
+  let consumoMap, sectoresData, stockMap, entregasData, enviosData, articulosCajas, cajasData, cajasExcluidasMap, proporcionData;
 
   try{
-    [consumoMap, sectoresData, stockMap, entregasData, enviosData, articulosCajas, cajasData] = await Promise.all([
+    [consumoMap, sectoresData, stockMap, entregasData, enviosData, articulosCajas, cajasData, cajasExcluidasMap, , proporcionData] = await Promise.all([
       cargarConsumos(),
       cargarSectores(),
       cargarStockTallerista(),
       cargarEntregas(),
       cargarEnvios(),
       cargarArticulosCajas(),
-      cargarCajas()
+      cargarCajas(),
+      cargarCajasExcluidas(),
+      cargarGRJDesdeBD(), // sin destructure — solo asegurar que GRJ_COMPONENTES esta poblado
+      cargarProporciones()
     ]);
   }catch (err){
     console.error(err);
     setStatus(err.message || "Error al cargar datos");
     return;
+  }
+
+  // Filtro especial: si el tallerista tiene articulos con destino_entrega=facturas (Maspoli/Pintos),
+  // mostrar SOLO las piezas relacionadas a esos articulos. Los Prov AT puros (Bate Bife, cucharas, etc.)
+  // quedan ocultos en Control Tall — esos se gestionan por Recepcion Virgilio, no por flujo de partes.
+  const factSet = proporcionData && proporcionData.articulosFacturasPorTallerista
+                  ? proporcionData.articulosFacturasPorTallerista.get(normalizeText(nombre))
+                  : null;
+  if (factSet && factSet.size) {
+    filasTallerista = filasTallerista.filter(r => {
+      const codsRaw = String(pick(r, ["cod_articulos", "Cod_articulos", "COD_ARTICULOS"]) || "");
+      const cods = splitCodes(codsRaw);
+      return cods.some(c => factSet.has(c));
+    });
+    if (!filasTallerista.length) {
+      setStatus("No hay piezas via facturas para este tallerista");
+      return;
+    }
   }
 
   filasTallerista.sort((a, b) => {
@@ -1133,6 +1436,15 @@ async function buscar(nombreParam){
   const sectoresDelTall = sectoresPorTalleristaCache
     ? sectoresPorTalleristaCache.get(normalizeText(nombre)) || new Set()
     : new Set();
+
+  // GRJs que el tallerista realmente entrega (deriva del view: cod_articulos GRJX)
+  const talleristaGrjs = new Set();
+  filasTallerista.forEach(r => {
+    const codsRaw = String(pick(r, ["cod_articulos", "Cod_articulos", "COD_ARTICULOS"]) || "");
+    splitCodes(codsRaw).forEach(cod => {
+      if (GRJ_COMPONENTES[cod]) talleristaGrjs.add(cod);
+    });
+  });
 
   filasTallerista.forEach(r => {
     const descripcion = String(pick(r, ["pieza", "Pieza", "PIEZA"]) || "").trim();
@@ -1161,18 +1473,75 @@ async function buscar(nombreParam){
     const partesXUni = obtenerPartesXUni(descripcion, codigos, sectoresData);
 
     let consumoTotal = 0;
+    const consumoBreakdown = []; // [{cod, desc, consumo}] para popup
+    // Expandir cada cod del row a TODOS los articulos terminados que afectan consumo:
+    // - cod numerico (515, 615, ...) → agregar
+    // - cod GRJ (GRJ7, GRJ10) → articuloPorGrj.get(cod) = Set de articulos
+    // - cualquier cod con sector match → codsPorSector + articulos via componente→GRJ
+    // E. Madre solo tiene filas para articulos terminados.
+    const articulosLookup = new Set();
     codigos.forEach(cod => {
-      consumoTotal += Number(consumoMap.get(cod) || 0);
+      // Caso 1: numerico → directo
+      if (/^\d+$/.test(cod)) {
+        articulosLookup.add(cod);
+        return;
+      }
+      // Caso 2: GRJ → articulos del armado
+      if (/^(GRJ|CP)/i.test(cod)) {
+        const arts = sectoresData.articuloPorGrj && sectoresData.articuloPorGrj.get(cod);
+        if (arts && arts.size) arts.forEach(a => articulosLookup.add(a));
+      }
+      // Caso 3: componente (A10, C10, V9, etc) → expandir a GRJs → articulos
+      if (COMPONENTE_A_GRJS && COMPONENTE_A_GRJS.has(cod)) {
+        COMPONENTE_A_GRJS.get(cod).forEach(grj => {
+          const arts = sectoresData.articuloPorGrj && sectoresData.articuloPorGrj.get(grj);
+          if (arts && arts.size) arts.forEach(a => articulosLookup.add(a));
+        });
+      }
     });
-    // Si consumo es 0 y tenemos sector, buscar consumo via artículos que usan ese sector
-    if (consumoTotal === 0 && sectorProce && sectoresData.codsPorSector) {
+    // Caso 4: ademas via sector — articulos numericos que usan este sector directamente
+    if (sectorProce && sectoresData.codsPorSector) {
       const codsDelSector = sectoresData.codsPorSector.get(sectorProce);
       if (codsDelSector) {
-        codsDelSector.forEach(cod => {
-          consumoTotal += Number(consumoMap.get(cod) || 0);
+        codsDelSector.forEach(c => {
+          if (/^\d+$/.test(c)) articulosLookup.add(c);
         });
       }
     }
+    // Aplicar filtro por tallerista + proporcion (Proporcion_Articulo_Tallerista):
+    // - Si hay fila en proporciones para (articulo, tallerista_actual) → factor = proporcion
+    // - Si NO hay fila pero tallerista lo hace (Articulos VxT) → factor = 1.0 (exclusivo)
+    // - Si NO lo hace → skip (articulo de otro tallerista, no contribuye)
+    const tallNorm = normalizeText(nombre);
+    articulosLookup.forEach(art => {
+      const consBruto = Number(consumoMap.get(art) || 0);
+      if (consBruto <= 0) return;
+
+      let factor;
+      const propManual = proporcionData && proporcionData.proporciones.get(`${art}__${tallNorm}`);
+      if (propManual !== undefined) {
+        factor = propManual; // 0-1
+      } else {
+        const tallSet = proporcionData && proporcionData.talleristasPorArticulo.get(art);
+        if (tallSet && tallSet.has(tallNorm)) {
+          factor = 1.0; // exclusivo del tallerista
+        } else {
+          return; // no es de este tallerista
+        }
+      }
+
+      const c = consBruto * factor;
+      consumoTotal += c;
+      if (c > 0) {
+        consumoBreakdown.push({
+          cod: art,
+          desc: (consumoDescCache && consumoDescCache.get(art)) || "",
+          consumo: Math.round(c),
+          consumoBruto: consBruto,
+          factor
+        });
+      }
+    });
 
     const esCarton = normalizeText(descripcion).startsWith("carton");
     const maxCajones = esCarton
@@ -1187,9 +1556,9 @@ async function buscar(nombreParam){
         "Stock_Inicial"
       ])
     );
-    if (!stockInicialKg && sectorProce && entregasData.stockInicialByTallAndSector) {
-      const siKey = `${normalizeText(nombre)}__${sectorProce}`;
-      stockInicialKg = entregasData.stockInicialByTallAndSector.get(siKey) || 0;
+    if (!stockInicialKg && sectorProce && entregasData.stockInicialByTallAndSectorAndDesc) {
+      const siKey = `${normalizeText(nombre)}__${sectorProce}__${normalizeText(descripcion)}`;
+      stockInicialKg = entregasData.stockInicialByTallAndSectorAndDesc.get(siKey) || 0;
     }
 
     const enviosInfo = obtenerEnviosTallerista(nombre, sectorProce, descripcion, enviosData, kgXUni);
@@ -1218,7 +1587,7 @@ async function buscar(nombreParam){
 
     const popupEnviosItems = enviosInfo.detalle.length
       ? enviosInfo.detalle
-          .map(x => `${x.fecha} - ${formatDecimal(x.kg)} kg - ${formatCajones(x.cajones)} caj - ${formatNumber(x.unidades)} uni`)
+          .map(x => `${formatFechaDDMMAAAA(x.fecha)} - ${formatDecimal(x.kg)} kg - ${formatCajones(x.cajones)} caj - ${formatNumber(x.unidades)} uni`)
           .join("|")
       : "Sin envíos";
 
@@ -1226,13 +1595,35 @@ async function buscar(nombreParam){
       ? entregasInfo.detalle.map(x =>
           x.codGrj
             ? `${x.codGrj} - ${formatDecimal(x.kgGrj)} Kg - ${formatNumber(x.unidades)} uni`
-            : `${x.fecha} - Cod ${x.cod} - ${formatNumber(x.unidades)} uni`
+            : `${formatFechaDDMMAAAA(x.fecha)} - Cod ${x.cod} - ${formatNumber(x.unidades)} uni`
         ).join("|")
       : "Sin entregas";
 
-    const codsDisplay = TALLERISTAS_MOSTRAR_GRJ.includes(nombre)
-      ? convertirCodsAGrj(sectorProce, codsRaw, sectoresData)
+    let codsDisplay = TALLERISTAS_MOSTRAR_GRJ.has(nombre)
+      ? convertirCodsAGrj(sectorProce, codsRaw, sectoresData, talleristaGrjs)
       : codsRaw;
+    codsDisplay = aplicarTransformacionEnCodigos(sectorProce, codsDisplay);
+    // Anotar GRJ con su articulo armado: "GRJ7" → "GRJ7 → 506"
+    // Articulo se deriva de Despiece (sector Proce=GRJ con COD numerico).
+    codsDisplay = anotarGrjConArticulo(codsDisplay, sectoresData);
+
+    // Popup de Cons x Parte: lista los articulos que componen el consumo + total.
+    // Cuando hay proporcion < 100%, muestra el factor: "Cod 506 - Desc - 13.188 uni (70% de 18.840)"
+    const popupConsumoItems = consumoBreakdown.length
+      ? [
+          ...consumoBreakdown
+            .sort((a, b) => b.consumo - a.consumo)
+            .map(b => {
+              const baseLine = `Cod ${b.cod}${b.desc ? ` - ${b.desc}` : ""} - ${formatNumber(b.consumo)} uni`;
+              if (b.factor !== undefined && Math.abs(b.factor - 1) > 0.001) {
+                const pct = Math.round(b.factor * 1000) / 10;
+                return `${baseLine} (${pct}% de ${formatNumber(b.consumoBruto)})`;
+              }
+              return baseLine;
+            }),
+          `TOTAL - ${formatNumber(Math.round(consumoTotal))} uni`
+        ].join("|")
+      : "Sin consumo";
 
     const rubro = (sectoresData.rubroBySector && sectoresData.rubroBySector.get(sectorProce))
                 || (sectoresData.rubroByPart && sectoresData.rubroByPart.get(normalizeText(descripcion)))
@@ -1242,13 +1633,16 @@ async function buscar(nombreParam){
       sectorProce, descripcion, codsRaw: codsDisplay, rubro,
       onlineKg, onlineCaj, onlineUni, cajonesEnviar,
       totalEnviosUni, totalEntregasUni,
-      popupEnviosItems, popupEntregasItems,
+      popupEnviosItems, popupEntregasItems, popupConsumoItems,
       stockInicialKg, kgXUni, kgXCajon, consumoTotal, maxCajones
     });
   });
 
-  // Agregar cajas (se envían en unidades como cartones)
-  const cajasItems = obtenerCajasPorTallerista(filasTallerista, articulosCajas, cajasData);
+  // Agregar cajas (se envían en unidades como cartones).
+  // EXCEPCION: si el tallerista solo tiene articulos via facturas (Maspoli/Pintos), NO mostrar
+  // cajas — las cajas son responsabilidad del tallerista que arma el articulo terminado, no del
+  // que entrega solo una parte.
+  const cajasItems = factSet ? [] : obtenerCajasPorTallerista(filasTallerista, articulosCajas, cajasData, nombre, cajasExcluidasMap);
   cajasItems.forEach(c => {
     const enviosInfo = obtenerEnviosTallerista(nombre, c.sector, c.descripcion, enviosData, 0);
     const totalEnviosUni = enviosInfo.totalUni;
@@ -1265,14 +1659,37 @@ async function buscar(nombreParam){
       ? entregasInfo.detalle.map(x =>
           x.codGrj
             ? `${x.codGrj} - ${formatDecimal(x.kgGrj)} Kg - ${formatNumber(x.unidades)} uni`
-            : `${x.fecha} - Cod ${x.cod} - ${formatNumber(x.unidades)} uni`
+            : `${formatFechaDDMMAAAA(x.fecha)} - Cod ${x.cod} - ${formatNumber(x.unidades)} uni`
         ).join("|")
       : "Sin entregas";
+
+    // Desglose Cons x Parte: suma del consumo de cada articulo que usa esta caja
+    const cajaBreakdown = [];
+    let cajaConsumoTotal = 0;
+    (c.codigos || []).forEach(cod => {
+      const cc = Number(consumoMap.get(cod) || 0);
+      if (cc > 0) {
+        cajaBreakdown.push({
+          cod,
+          desc: (consumoDescCache && consumoDescCache.get(cod)) || "",
+          consumo: cc
+        });
+        cajaConsumoTotal += cc;
+      }
+    });
+    const popupConsumoItemsCaja = cajaBreakdown.length
+      ? [
+          ...cajaBreakdown
+            .sort((a, b) => b.consumo - a.consumo)
+            .map(b => `Cod ${b.cod}${b.desc ? ` - ${b.desc}` : ""} - ${formatNumber(b.consumo)} uni`),
+          `TOTAL - ${formatNumber(cajaConsumoTotal)} uni`
+        ].join("|")
+      : (c.maxUni > 0 ? `TOTAL - ${formatNumber(c.maxUni)} uni` : "Sin consumo");
 
     datosParaFiltro.push({
       sectorProce: c.sector,
       descripcion: c.descripcion,
-      codsRaw: "",
+      codsRaw: (c.codigos || []).join(", "),
       onlineKg: 0,
       onlineCaj: c.stockVirg,
       onlineUni,
@@ -1280,13 +1697,14 @@ async function buscar(nombreParam){
       totalEnviosUni,
       totalEntregasUni,
       popupEnviosItems: enviosInfo.detalle.length
-        ? enviosInfo.detalle.map(x => `${x.fecha} - ${formatNumber(x.unidades)} uni`).join("|")
+        ? enviosInfo.detalle.map(x => `${formatFechaDDMMAAAA(x.fecha)} - ${formatNumber(x.unidades)} uni`).join("|")
         : "Sin envíos",
       popupEntregasItems,
+      popupConsumoItems: popupConsumoItemsCaja,
       stockInicialKg: 0,
       kgXUni: 0,
       kgXCajon: 0,
-      consumoTotal: c.maxUni,
+      consumoTotal: cajaConsumoTotal || c.maxUni,
       maxCajones: c.maxUni
     });
   });
@@ -1314,6 +1732,7 @@ function clasificarParte(d){
   if (desc.startsWith("caja n") || sec === "CAJA") return "Cajas";
   if (desc.startsWith("carton") || desc.startsWith("cartón")) return "Cartones";
   // Clasificar por Rubro primario (fuente de verdad desde Despiece x Articulo)
+  if (rubro === "Importados") return "Importados";
   if (rubro === "Remaches") return "Remaches";
   if (rubro === "Plásticos" || rubro === "Plasticos") return "Partes Plásticas";
   if (sec.startsWith("GRJ") || sec.startsWith("CP")) return "Garaje";
@@ -1322,6 +1741,7 @@ function clasificarParte(d){
   if (/^V\d+[A-Z]?$/.test(sec)) return "Remaches";
   if (["W4","W6","W8","S/S","SR","BOM7","BOM8"].includes(sec)) return "Remaches";
   if (SECTORES_CRUDO_MARTIN.has(sec)) return "Sector Crudo";
+  if (/p\/\s*cromar/i.test(desc)) return "Sector Crudo";
   return "Sector Procesado";
 }
 
@@ -1361,10 +1781,20 @@ function renderFilaControl(d){
           </div>
         </td>
 
-        <td class="center"><b>${escapeHtml(formatDecimal(d.stockInicialKg))}</b></td>
+        <td class="center"><b>${escapeHtml(formatNumber(d.kgXUni > 0 ? d.stockInicialKg / d.kgXUni : 0))}</b></td>
         <td class="center"><b>${escapeHtml(formatKgUni(d.kgXUni))}</b></td>
-        <td class="center"><b>${escapeHtml(formatDecimal(d.kgXCajon))}</b></td>
-        <td class="center"><b>${escapeHtml(formatNumber(d.consumoTotal))}</b></td>
+        <td class="center"><b>${escapeHtml(formatEntero(d.kgXCajon))}</b></td>
+        <td class="center">
+          <div class="cell-combo">
+            <span class="cell-total"><b>${escapeHtml(formatNumber(d.consumoTotal))}</b></span>
+            <button
+              type="button"
+              class="mini-popup-btn"
+              data-popup-title="${escapeHtml(`Cons x Parte - ${d.descripcion}`)}"
+              data-popup-items="${escapeHtml(d.popupConsumoItems || "Sin consumo")}"
+            >+</button>
+          </div>
+        </td>
         <td class="center"><b>${escapeHtml(formatCajones(d.maxCajones))}</b></td>
         <td class="mono">${d.codsRaw ? escapeHtml(d.codsRaw) : '<span class="zero">Sin códigos</span>'}</td>
       </tr>
@@ -1372,36 +1802,128 @@ function renderFilaControl(d){
 }
 
 // Sectores crudos (SC) que recibe Martin
-const SECTORES_CRUDO_MARTIN = new Set(["KF2", "LF16", "KF8"]);
+// SECTORES_CRUDO_MARTIN se carga al inicio desde SC Kg.crudo_martin = TRUE.
+// Fallback hardcoded preservado por si la BD falla.
+let SECTORES_CRUDO_MARTIN = new Set(["KF2", "LF16", "KF8"]);
 
-// Proveedores de artículo terminado — no son talleristas de partes, no deben aparecer en Control
-const PROVEEDORES_ART_TERMINADO = new Set([
-  "Carriero", "Lopez Jose", "Manfer", "Maspoli", "Melinox",
-  "Paternal Goma", "Pintos", "The Plast"
+async function cargarSectoresCrudoMartin(){
+  try {
+    const { data, error } = await supabaseClient.from("SC Kg").select("SC").eq("crudo_martin", true);
+    if (error) { console.warn("[ControlTall] No se pudo cargar SECTORES_CRUDO_MARTIN, uso fallback:", error.message); return; }
+    if (data && data.length) SECTORES_CRUDO_MARTIN = new Set(data.map(r => String(r.SC).trim()));
+  } catch (e) { console.warn("[ControlTall] cargarSectoresCrudoMartin fallo, uso fallback:", e); }
+}
+
+// Talleristas flags — leidos de tabla "Tall_ProvAT_PS" en cargarTalleristasFlags().
+// Fallback hardcoded por si la BD esta vacia o falla la carga (preserva comportamiento previo).
+// Maspoli y Pintos NO estan en PROVEEDORES_ART_TERMINADO porque tienen rol dual:
+// ademas de prov AT, entregan partes en Cervantes via facturas (destino_entrega='facturas').
+let PROVEEDORES_ART_TERMINADO = new Set([
+  "Carriero", "Lopez Jose", "Manfer", "Melinox",
+  "Paternal Goma", "The Plast"
 ]);
+let TALLERISTAS_SOLO_GRJ_CART_CAJAS = new Set(["Blist-Pack", "Oscar"]);
+let TALLERISTAS_MOSTRAR_GRJ = new Set(["Martin", "Carlos"]);
 
-// Talleristas que solo reciben GRJ (producto armado) + cartones + cajas, no partes sueltas
-const TALLERISTAS_SOLO_GRJ_CART_CAJAS = ["Blist-Pack", "Oscar"];
-// Talleristas que arman GRJ: en columna Codigos mostrar el GRJ destino en vez de cod artículo
-const TALLERISTAS_MOSTRAR_GRJ = ["Martin", "Carlos"];
+async function cargarTalleristasFlags() {
+  try {
+    const { data, error } = await supabaseClient
+      .from("Tall_ProvAT_PS")
+      .select("nombre, ctrl_tall, mostrar_grj, solo_grj, prov_at")
+      .eq("activo", true);
+    if (error) { console.warn("[ControlTall] No se pudo cargar Talleristas, uso fallback:", error.message); return; }
+    if (!data || !data.length) return;
+    const ctrlTall = new Set();
+    const mostrarGrj = new Set();
+    const soloGrj = new Set();
+    const provAT = new Set();
+    data.forEach(r => {
+      const n = String(r.nombre || "").trim();
+      if (!n) return;
+      if (r.ctrl_tall) ctrlTall.add(n);
+      if (r.mostrar_grj) mostrarGrj.add(n);
+      if (r.solo_grj) soloGrj.add(n);
+      if (r.prov_at) provAT.add(n);
+    });
+    // PROVEEDORES_ART_TERMINADO = prov_at TRUE Y ctrl_tall FALSE (puros prov AT que no aparecen en Control)
+    PROVEEDORES_ART_TERMINADO = new Set([...provAT].filter(n => !ctrlTall.has(n)));
+    TALLERISTAS_SOLO_GRJ_CART_CAJAS = soloGrj;
+    TALLERISTAS_MOSTRAR_GRJ = mostrarGrj;
+  } catch (e) { console.warn("[ControlTall] cargarTalleristasFlags fallo, uso fallback:", e); }
+}
 
-function convertirCodsAGrj(sectorProce, codsRaw, sectoresData) {
-  if (!sectoresData || !sectoresData.grjPorSector) return codsRaw;
-  const grjs = sectoresData.grjPorSector.get(sectorProce);
-  if (grjs && grjs.size > 0) return [...grjs].sort().join(", ");
+// Transformaciones 1:1 (Poly): override de la columna Codigos para que muestre la "ruta".
+//   - Fila SP (M10/M9): mostrar el SC origen (M6/M8) — el SC es lo que el tallerista entrega.
+//   - Fila SC (M6/M8): mostrar solo cods de articulo (filtrar el SC mismo, que viene de
+//     Articulos VxT como cod_art).
+function aplicarTransformacionEnCodigos(sectorProce, codsRaw) {
+  const sec = String(sectorProce || "").trim();
+  if (TRANSFORMACION_SP_TO_SC[sec]) return TRANSFORMACION_SP_TO_SC[sec];
+  if (TRANSFORMACION_SCS.has(sec)) {
+    return splitCodes(codsRaw).filter(c => c !== sec).join(", ");
+  }
+  return codsRaw;
+}
+
+// Anota cada GRJ del string codsDisplay con los articulos asociados: "GRJ7" → "GRJ7 → 506"
+// Si el GRJ tiene multiples articulos: "GRJ10" → "GRJ10 → 544, 802"
+// articuloPorGrj se construye en cargarSectores derivando de Despiece x Articulo.
+function anotarGrjConArticulo(codsStr, sectoresData) {
+  if (!codsStr) return codsStr;
+  const map = sectoresData && sectoresData.articuloPorGrj;
+  if (!map) return codsStr;
+  return splitCodes(codsStr).map(c => {
+    const cu = String(c).trim().toUpperCase();
+    if (cu.startsWith("GRJ") || cu.startsWith("CP")) {
+      const arts = map.get(c.trim());
+      if (arts && arts.size) {
+        const lista = [...arts].sort((a, b) => Number(a) - Number(b)).join(", ");
+        return `${c.trim()} → ${lista}`;
+      }
+      return c;
+    }
+    return c;
+  }).join(", ");
+}
+
+function convertirCodsAGrj(sectorProce, codsRaw, sectoresData, talleristaGrjs) {
+  // Caso 1: el sector es un componente directo de GRJ (A10, A15, C1, C10, V9, etc.).
+  // Mostrar los GRJ que lo contienen, filtrados a los que el tallerista realmente entrega.
+  if (COMPONENTE_A_GRJS.has(sectorProce)) {
+    const grjsDelComp = COMPONENTE_A_GRJS.get(sectorProce);
+    const filtrados = talleristaGrjs && talleristaGrjs.size
+      ? [...grjsDelComp].filter(g => talleristaGrjs.has(g))
+      : [...grjsDelComp];
+    if (filtrados.length) return filtrados.sort().join(", ");
+  }
+  // Caso 2 (fallback): GRJ derivado del Despiece via grjPorSector.
+  if (sectoresData && sectoresData.grjPorSector) {
+    const grjs = sectoresData.grjPorSector.get(sectorProce);
+    if (grjs && grjs.size > 0) {
+      const lista = [...grjs];
+      const filtrados = talleristaGrjs && talleristaGrjs.size
+        ? lista.filter(g => talleristaGrjs.has(g))
+        : lista;
+      if (filtrados.length) return filtrados.sort().join(", ");
+    }
+  }
   return codsRaw;
 }
 
 function renderResultado(nombre, datos){
-  const grupos = ["Sector Procesado", "Sector Crudo", "Partes Plásticas", "Garaje", "Remaches", "Cartones", "Cajas"];
-  const soloGrjCartCajas = TALLERISTAS_SOLO_GRJ_CART_CAJAS.includes(nombre);
+  const grupos = ["Sector Procesado", "Sector Crudo", "Partes Plásticas", "Garaje", "Remaches", "Cartones", "Cajas", "Importados"];
+  const soloGrjCartCajas = TALLERISTAS_SOLO_GRJ_CART_CAJAS.has(nombre);
   const categoriasPermitidas = soloGrjCartCajas ? new Set(["Garaje", "Cartones", "Cajas"]) : null;
+  // Talleristas que arman GRJ (Martin/Carlos): no mostrar el grupo Garaje porque las
+  // entregas de GRJ se reflejan contra los componentes (A10, A15, C1, C10, V9).
+  const ocultarGaraje = TALLERISTAS_MOSTRAR_GRJ.has(nombre);
   const agrupados = {};
   grupos.forEach(g => agrupados[g] = []);
 
   datos.forEach(d => {
     const cat = clasificarParte(d);
     if (categoriasPermitidas && !categoriasPermitidas.has(cat)) return;
+    if (ocultarGaraje && cat === "Garaje") return;
     agrupados[cat].push(d);
   });
 
@@ -1568,8 +2090,13 @@ txtBuscarTall.addEventListener("input", () => {
 });
 
 document.addEventListener("DOMContentLoaded", () => {
-  cargarGRJDesdeBD(); // async, carga en paralelo (no bloqueante — fallback a hardcoded si falla)
-  cargarTalleristas();
+  // Precalienta cache GRJ_Componentes en background (no bloqueante).
+  // Si falla, buscar() lo retentara y mostrara error explicito al usuario.
+  cargarGRJDesdeBD().catch(() => {});
+  cargarSectoresCrudoMartin().catch(() => {});
+  // Cargar flags de Talleristas antes para que cargarTalleristas use el set correcto.
+  cargarTalleristasFlags().finally(() => cargarTalleristas());
 });
-cargarGRJDesdeBD();
-cargarTalleristas();
+cargarGRJDesdeBD().catch(() => {});
+cargarSectoresCrudoMartin().catch(() => {});
+cargarTalleristasFlags().finally(() => cargarTalleristas());

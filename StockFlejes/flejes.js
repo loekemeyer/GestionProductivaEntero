@@ -67,7 +67,6 @@ function renderTabla() {
       html += `<tr data-id="${id}">
         <td class="col-nfleje">${nf}</td>
         <td class="col-desc" title="${esc(f["Descripción"] || "")}">${esc(f["Descripción"] || "")}</td>
-        <td class="col-sector">${esc(f.Sector || "")}</td>
         <td class="col-medida">${esc(f["Medida mm"] || "")}</td>
         <td class="col-prov">${esc(prov)}</td>
         <td class="rollo-cell">

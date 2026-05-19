@@ -92,7 +92,7 @@ function formatCajones(n) {
 
 function sortKeyFechaDDMM(value) {
   const s = String(value || "").trim();
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/\d{4})?$/);
   if (!m) return 9999;
   return Number(m[2]) * 100 + Number(m[1]);
 }

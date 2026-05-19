@@ -8,6 +8,13 @@
 El usuario se identifica por el nombre de usuario de Windows (mismo que usa el sistema de locks).
 Adaptar el trato, nivel de detalle y módulos según el perfil del usuario.
 
+## Renombres de Sectores (carga de stock_inicial)
+
+**Al cargar `stock_inicial` desde Excel a `Partes x Tallerista`, leer `Renombres_Sectores.md`** —
+contiene mapeos confirmados de codigos viejos del Excel a sectores actuales en BD
+(p.ej. E11→D1, A2→PA2, EP2/3→PEP4). Antes de preguntar por discrepancias, chequear ahí
+si ya existe el mapeo. Cuando el usuario confirme un renombre nuevo, agregarlo al archivo.
+
 ## Sistema de LOCKS (OBLIGATORIO - LEER PRIMERO)
 
 **REGLA #1: NUNCA usar Edit ni Write sin antes leer LOCKS.txt y registrar tu LockX.**

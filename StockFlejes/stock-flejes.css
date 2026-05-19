@@ -166,8 +166,6 @@ body {
 .col-sector {
   text-align: center;
   width: 5ch;
-  font-size: 12px;
-  color: #555;
 }
 
 .col-desc:hover::after {

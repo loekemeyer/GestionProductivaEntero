@@ -61,7 +61,7 @@
 <div class="card">
   <div class="header">
     <h1>Recepción Insumos</h1>
-    <button onclick="window.location.href='index.html'">Atrás</button>
+    <button onclick="window.location.href='../Inicio/index.html'">Atrás</button>
   </div>
 
   <div class="steps">
@@ -75,6 +75,8 @@
         <button class="prov-btn" data-rubro="Cajas">Cajas</button>
         <button class="prov-btn" data-rubro="Plasticos">Plásticos</button>
         <button class="prov-btn" data-rubro="Cartones">Cartones</button>
+        <button class="prov-btn" data-rubro="Remaches">Remaches</button>
+        <button class="prov-btn" data-rubro="Bombillas">Bombillas</button>
       </div>
 
       <!-- Paso 2: Proveedor -->
@@ -145,7 +147,9 @@ const PROVEEDORES = {
   Flejes: ["Basconia","Aperam","Hermac","Brawin","Altrak","Szapiro","EstaMetal","JL Metales","Alami"],
   Cajas: ["Corrugadora"],
   Plasticos: ["Pat Bet Plast","Rodar","Telleria","Maspoli","Pintos","Martin Faccolo","JL Matriceria","Capuchon Mariposa","Base Afila","M. Pelador","Terrero","Mangos Abrelata","Regatones","Bujes Abrelatas","Mango Ergon.","Mangos NM","Packaging y Serv"],
-  Cartones: ["Grafica Pol"]
+  Cartones: ["Grafica Pol"],
+  Remaches: ["Bella Vista","Dilmax","Electronica Mandelli","Imel"],
+  Bombillas: ["Por definir"]
 };
 
 // Tablas fuente por rubro
@@ -153,7 +157,10 @@ const TABLAS = {
   Flejes:    { tabla: "Flejes",           colCod: "N Fleje",  colDesc: "Descripción",          colProv: "Proveedor" },
   Cajas:     { tabla: "Cajas",            colCod: "N_Caja",   colDesc: "Cod_ISIS_LK",          colProv: null },
   Plasticos: { tabla: "Partes_Plasticas", colCod: "Cod_ISIS", colDesc: "Descripcion",          colProv: "Proveedor" },
-  Cartones:  { tabla: "Despiece x Articulo", colCod: "COD",  colDesc: "Descripcion de partes", colProv: null, filtro: { col: "Rubro", val: "Cartones" } }
+  Cartones:  { tabla: "Despiece x Articulo", colCod: "COD",  colDesc: "Descripcion de partes", colProv: null, filtro: { col: "Rubro", val: "Cartones" } },
+  // Remaches: especial - une Remaches SC + Remaches SP. Manejado por separado en cargarRemaches().
+  Remaches:  { especial: "remaches" },
+  Bombillas: { tabla: "Bombillas",        colCod: "Sector",   colDesc: "Descripcion",          colProv: "Proveedor" }
 };
 
 let rubroSel = "";
@@ -233,27 +240,41 @@ btnContinuar.addEventListener("click", async () => {
 
   try {
     const cfg = TABLAS[rubroSel];
-    let query = sb.from(cfg.tabla).select("*");
+    let data, error;
 
-    if (cfg.colProv && provSel) {
-      query = query.eq(cfg.colProv, provSel);
+    if (cfg.especial === "remaches") {
+      // Remaches: une Remaches SC + Remaches SP filtrando por proveedor
+      const [scRes, spRes] = await Promise.all([
+        sb.from("Remaches SC").select("*").eq("Proveedor", provSel),
+        sb.from("Remaches SP").select("*").eq("Proveedor", provSel)
+      ]);
+      if (scRes.error) throw scRes.error;
+      if (spRes.error) throw spRes.error;
+      const scRows = (scRes.data || []).map(r => ({ cod: r["SC"], desc: r["Descripción"] }));
+      const spRows = (spRes.data || []).map(r => ({ cod: r["SP"], desc: r["Descripción"] }));
+      data = [...scRows, ...spRows];
+      data.sort((a,b) => String(a.cod).localeCompare(String(b.cod), "es"));
+    } else {
+      let query = sb.from(cfg.tabla).select("*");
+      if (cfg.colProv && provSel) query = query.eq(cfg.colProv, provSel);
+      if (cfg.filtro) query = query.eq(cfg.filtro.col, cfg.filtro.val);
+      const res = await query.order(cfg.colCod, { ascending: true });
+      if (res.error) throw res.error;
+      data = (res.data || []).map(r => ({
+        cod: String(r[cfg.colCod] ?? "").trim(),
+        desc: String(r[cfg.colDesc] ?? "").trim()
+      }));
     }
-    if (cfg.filtro) {
-      query = query.eq(cfg.filtro.col, cfg.filtro.val);
-    }
-
-    const { data, error } = await query.order(cfg.colCod, { ascending: true });
-    if (error) throw error;
 
     const seen = new Set();
-    items = (data || []).filter(r => {
-      const cod = String(r[cfg.colCod] ?? "").trim();
+    items = data.filter(r => {
+      const cod = String(r.cod ?? "").trim();
       if (!cod || seen.has(cod)) return false;
       seen.add(cod);
       return true;
     }).map(r => ({
-      codigo: String(r[cfg.colCod] ?? "").trim(),
-      descripcion: String(r[cfg.colDesc] ?? "").trim(),
+      codigo: String(r.cod).trim(),
+      descripcion: String(r.desc ?? "").trim(),
       _cant: ""
     }));
 

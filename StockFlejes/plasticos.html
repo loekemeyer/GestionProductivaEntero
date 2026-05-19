@@ -7,13 +7,27 @@
   <title>Stock Partes Plásticas</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="stock-flejes.css" />
+  <style>
+    /* Comprimir columnas para reducir desperdicio visual */
+    .page { max-width: 1000px; }
+    #tblStock { table-layout: fixed; }
+    #tblStock col.col-fam   { width: 10%; }
+    #tblStock col.col-sec   { width: 13%; }
+    #tblStock col.col-desc  { width: 37%; }
+    #tblStock col.col-num   { width: 13.33%; }
+    #tblStock td.col-desc {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
 </head>
 <body>
   <div class="page">
     <div class="sc-container">
       <div class="sc-header">
         <div class="sc-title">Stock Partes Plásticas</div>
-        <button class="btn-inicio" onclick="window.location.href='index.html'">Atrás</button>
+        <button class="btn-inicio" onclick="window.location.href='../Inicio/index.html'">Atrás</button>
       </div>
       <div id="status" class="status"></div>
 
@@ -49,6 +63,14 @@
       </div>
 
       <table class="sc-table" id="tblStock">
+        <colgroup>
+          <col class="col-fam">
+          <col class="col-sec">
+          <col class="col-desc">
+          <col class="col-num">
+          <col class="col-num">
+          <col class="col-num">
+        </colgroup>
         <thead>
           <tr class="header-sub">
             <th><br>Familia</th>

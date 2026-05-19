@@ -8,6 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -43,11 +44,11 @@
 
     /* CONTROLES */
     .controls-row {
-      display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; margin-bottom: 16px;
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px;
     }
     .search-input {
       height: 38px; padding: 0 10px; border: 1.5px solid #cbd5e1; border-radius: 10px;
-      font-size: 13px; font-family: inherit; width: 150px; min-width: 0;
+      font-size: 13px; font-family: inherit; width: 200px; min-width: 200px; flex-shrink: 0;
     }
     .search-input:focus { border-color: #3b82f6; outline: none; }
     .filter-btn {
@@ -57,6 +58,14 @@
     }
     .filter-btn.active { background: #111; color: #fff; border-color: #111; }
     .filter-btn:hover:not(.active) { border-color: #94a3b8; }
+    .tipo-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+    .tipo-row .lbl { font-size:12px; color:#555; font-weight:700; }
+    .tipo-chip {
+      padding:4px 10px; border:1px solid #c9d1d9; background:#fff; cursor:pointer;
+      border-radius:8px; font-size:12px; transition:all .12s;
+    }
+    .tipo-chip:hover { background:#f3f4f6; border-color:#999; }
+    .tipo-chip.active { background:#111; color:#fff; border-color:#111; }
     .btn-excel {
       height: 38px; padding: 0 12px; border: 1.5px solid #16a34a; border-radius: 10px;
       background: #f0fdf4; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
@@ -106,6 +115,11 @@
       border-bottom: 1.5px dashed #94a3b8; padding-bottom: 1px;
     }
     .editable-hist:hover { border-bottom-color: #3b82f6; color: #3b82f6; }
+    .gauss-cell {
+      cursor: pointer; color: #7c3aed; font-weight: 600;
+      border-bottom: 1.5px dotted #7c3aed; padding-bottom: 1px;
+    }
+    .gauss-cell:hover { color: #5b21b6; background: #f5f3ff; }
     .edit-input-hist {
       width: 70px; height: 28px; border: 2px solid #3b82f6; border-radius: 6px;
       font-size: 12px; font-family: inherit; text-align: center; outline: none;
@@ -193,6 +207,107 @@
     .eye-btn.active { background: #f0fdf4; color: #16a34a; }
     .eye-btn.inactive { background: #fef2f2; color: #dc2626; }
     .eye-btn:hover { transform: scale(1.1); }
+
+    /* ==== POPUP GAUSS (distribucion) ==== */
+    #overlayGrafico .popup {
+      border-radius: 18px;
+      box-shadow: 0 25px 80px rgba(15, 23, 42, 0.35);
+      overflow: hidden;
+    }
+    #overlayGrafico .popup-header {
+      background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+      color: #fff;
+      border-bottom: none;
+      padding: 18px 24px;
+    }
+    #overlayGrafico .popup-header h3 { color: #fff; font-size: 16px; font-weight: 800; letter-spacing: .2px; }
+    #overlayGrafico .popup-header .close-btn {
+      background: rgba(255,255,255,0.18); color: #fff; font-size: 20px;
+      transition: background .15s;
+    }
+    #overlayGrafico .popup-header .close-btn:hover { background: rgba(255,255,255,0.3); }
+    .gauss-stats {
+      padding: 16px 24px;
+      background: #faf5ff;
+      border-bottom: 1px solid #e9d5ff;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+    }
+    .gauss-stat {
+      background: #fff; border: 1px solid #e9d5ff; border-radius: 10px;
+      padding: 8px 12px; display: flex; flex-direction: column; gap: 2px;
+    }
+    .gauss-stat-label {
+      font-size: 10px; color: #7c3aed; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .5px;
+    }
+    .gauss-stat-value {
+      font-size: 16px; font-weight: 700; color: #1e1b4b;
+      font-variant-numeric: tabular-nums;
+    }
+    .gauss-stat.highlight { background: linear-gradient(135deg, #8b5cf6, #7c3aed); border-color: transparent; }
+    .gauss-stat.highlight .gauss-stat-label { color: #e9d5ff; }
+    .gauss-stat.highlight .gauss-stat-value { color: #fff; }
+    .gauss-chart-wrap { padding: 18px 24px 8px; background: #fff; }
+    .gauss-chart-canvas { position: relative; width: 100%; height: 380px; }
+    .gauss-legend {
+      display: flex; gap: 18px; flex-wrap: wrap;
+      padding: 12px 24px 18px; font-size: 12px; color: #475569;
+      border-top: 1px solid #f1f5f9; background: #fafbfc;
+    }
+    .gauss-legend-item { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+    .gauss-legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
+    .gauss-legend-line { display: inline-block; width: 18px; height: 3px; border-radius: 2px; }
+
+    /* ==== MODAL NUEVA/EDITAR MATRIZ ==== */
+    .mini-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      z-index: 200; justify-content: center; align-items: center;
+    }
+    .mini-overlay.visible { display: flex; }
+    .mini-box {
+      background: #fff; border-radius: 16px; width: 92%; max-width: 880px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden;
+    }
+    .mini-box .body .row-2col { display: grid; grid-template-columns: 1fr 2fr; gap: 14px; }
+    .mini-box header {
+      background: #111; color: #fff; padding: 16px 22px;
+      font-size: 16px; font-weight: 800;
+    }
+    .mini-box .body { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+    .mini-field { display: flex; flex-direction: column; gap: 4px; }
+    .mini-field label { font-size: 12px; font-weight: 700; color: #475569; }
+    .mini-field input, .mini-field select {
+      height: 38px; border: 1.5px solid #cbd5e1; border-radius: 8px;
+      padding: 0 12px; font-size: 14px; font-family: inherit; outline: none;
+    }
+    .mini-field input:focus, .mini-field select:focus { border-color: #3b82f6; }
+    .mini-box .footer {
+      display: flex; justify-content: flex-end; gap: 8px;
+      padding: 14px 22px; border-top: 1px solid #e5e7eb;
+    }
+    .mini-btn {
+      border: none; border-radius: 8px; padding: 9px 18px;
+      font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit;
+    }
+    .mini-btn.cancel { background: #f3f4f6; color: #333; }
+    .mini-btn.cancel:hover { background: #e5e7eb; }
+    .mini-btn.save { background: #111; color: #fff; }
+    .mini-btn.save:hover { opacity: .85; }
+
+    .btn-nueva {
+      height: 38px; padding: 0 14px; border: 1.5px solid #3b82f6; border-radius: 10px;
+      background: #eff6ff; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
+      font-family: inherit; color: #1d4ed8; transition: all .15s;
+    }
+    .btn-nueva:hover { background: #3b82f6; color: #fff; }
+    .btn-borrar-row {
+      border: none; background: transparent; cursor: pointer;
+      color: #dc2626; font-size: 14px; padding: 2px 6px; border-radius: 5px;
+      transition: all .15s;
+    }
+    .btn-borrar-row:hover { background: #fee2e2; color: #991b1b; }
   </style>
 </head>
 <body>
@@ -220,12 +335,18 @@
         <button class="btn-limpiar-fechas" id="btnLimpiarFechas">Limpiar (todo)</button>
       </div>
 
+      <div class="tipo-row">
+        <span class="lbl">Tipo:</span>
+        <div id="tipoChipsT" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      </div>
+
       <div class="controls-row">
         <input class="search-input" id="searchInput" placeholder="Buscar por N° o nombre..." />
         <button class="filter-btn active" data-filter="todas">Todas</button>
         <button class="filter-btn" data-filter="con">Con Tiempo</button>
         <button class="filter-btn" data-filter="sin">Sin Tiempo</button>
         <button class="filter-btn" data-filter="sinConReg">Sin Tiempo c/ Reg</button>
+        <button class="btn-nueva" id="btnNuevaMatriz">+ Nueva Matriz</button>
         <button class="btn-excel" id="btnExcel">&#128196; Excel</button>
         <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" id="chkOperarios"> Operarios</label>
         <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" id="chkHistoricos"> Historicos</label>
@@ -237,18 +358,19 @@
           <colgroup>
             <col>
             <col style="max-width:140px">
-            <col><col><col><col><col><col><col>
+            <col><col><col><col><col><col><col><col>
           </colgroup>
           <thead>
             <tr>
               <th data-col="num">N° <span class="sort-arrow">▲</span></th>
               <th data-col="nombre">Nombre <span class="sort-arrow">▲</span></th>
               <th data-col="historico" class="num">T.Hist <span class="sort-arrow">▲</span></th>
-              <th data-col="promReal" class="num">Prom <span class="sort-arrow">▲</span></th>
+              <th data-col="promReal" class="num">Gauss <span class="sort-arrow">▲</span></th>
               <th data-col="ptje" class="num">Ptje <span class="sort-arrow">▲</span></th>
               <th data-col="min" class="num">Min <span class="sort-arrow">▲</span></th>
               <th data-col="max" class="num">Max <span class="sort-arrow">▲</span></th>
               <th data-col="registros" class="num">Reg <span class="sort-arrow">▲</span></th>
+              <th style="cursor:default"></th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -286,6 +408,68 @@
     </div>
   </div>
 
+  <!-- POPUP GRAFICO GAUSS -->
+  <div class="overlay" id="overlayGrafico">
+    <div class="popup" style="max-width: 920px;">
+      <div class="popup-header">
+        <h3 id="graficoTitle">Distribución de tiempos</h3>
+        <button class="close-btn" id="closeGrafico">&times;</button>
+      </div>
+      <div class="gauss-stats" id="graficoStats"></div>
+      <div class="gauss-chart-wrap">
+        <div class="gauss-chart-canvas">
+          <canvas id="graficoCanvas"></canvas>
+        </div>
+      </div>
+      <div class="gauss-legend">
+        <span class="gauss-legend-item"><span class="gauss-legend-swatch" style="background:rgba(59,130,246,0.6);border:1px solid #3b82f6"></span>Dentro del 70%</span>
+        <span class="gauss-legend-item"><span class="gauss-legend-swatch" style="background:rgba(220,38,38,0.6);border:1px solid #dc2626"></span>Outlier (informativo)</span>
+        <span class="gauss-legend-item"><span class="gauss-legend-line" style="background:#16a34a"></span>Media (μ)</span>
+        <span class="gauss-legend-item"><span class="gauss-legend-line" style="background:#f59e0b"></span>Límites ±1.036σ</span>
+        <span class="gauss-legend-item" style="margin-left:auto;color:#64748b;font-style:italic">💡 Click sobre un punto para anular ese registro</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL NUEVA MATRIZ -->
+  <div class="mini-overlay" id="modalMatriz">
+    <div class="mini-box">
+      <header id="modalMatrizTitle">Nueva Matriz</header>
+      <div class="body">
+        <div class="row-2col">
+          <div class="mini-field">
+            <label>N° Matriz</label>
+            <input type="text" id="mtzN" placeholder="Ej. 77 o 77B" />
+          </div>
+          <div class="mini-field">
+            <label>Nombre</label>
+            <input type="text" id="mtzNombre" placeholder="Descripción" />
+          </div>
+        </div>
+        <div class="mini-field">
+          <label>Tipo</label>
+          <select id="mtzTipo">
+            <option value="">(sin asignar)</option>
+            <option value="A">A — Alimentador</option>
+            <option value="B">B — Balancín</option>
+            <option value="T">T — Tallerista</option>
+            <option value="D">D — Dispositivo</option>
+            <option value="E">E — Envasado</option>
+            <option value="P">P — Piedra</option>
+          </select>
+        </div>
+        <div class="mini-field">
+          <label>T. Histórico (seg/unidad) — opcional</label>
+          <input type="number" id="mtzTHist" step="any" min="0" placeholder="Ej. 4.5" />
+        </div>
+      </div>
+      <div class="footer">
+        <button class="mini-btn cancel" id="mtzCancel">Cancelar</button>
+        <button class="mini-btn save" id="mtzSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
 <div id="toastT" class="toast-t"></div>
 
 <script>
@@ -295,8 +479,17 @@ const SUPABASE_URL = "https://hrxfctzncixxqmpfhskv.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let matrices = [];      // { N_Matriz, Matriz, Tiempo_Historico }
+let matrices = [];      // { N_Matriz, Matriz, Tiempo_Historico, Tipo_Matriz, Disc }
 let allRegistros = [];  // todos los registros sin filtro de fecha
+const TIPOS_T = [
+  { code: "A", label: "Alimentador" },
+  { code: "B", label: "Balancín" },
+  { code: "T", label: "Tallerista" },
+  { code: "D", label: "Dispositivo" },
+  { code: "E", label: "Envasado" },
+  { code: "P", label: "Piedra" }
+];
+let selectedTiposT = new Set();  // vacío = Todos
 let historicosCache = null; // registros historicos (carga lazy)
 let registros = [];     // db_n8n_espejo rows (filtrados por fecha)
 let empleadosMap = {};  // legajo → nombre
@@ -362,7 +555,37 @@ const popupBody = document.getElementById("popupBody");
     document.getElementById("fechaHasta").value = "";
     filtrarPorFecha();
   });
+
+  buildTipoChipsT();
 })();
+
+function buildTipoChipsT() {
+  const wrap = document.getElementById("tipoChipsT");
+  const esc2 = s => String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+  // Por defecto: A,B,T,D,E activos; P inactivo
+  TIPOS_T.forEach(t => { if (t.code !== "P") selectedTiposT.add(t.code); });
+  wrap.innerHTML =
+    `<button type="button" class="tipo-chip" data-tipo="__todos__">Todos</button>` +
+    TIPOS_T.map(t =>
+      `<button type="button" class="tipo-chip${selectedTiposT.has(t.code)?' active':''}" data-tipo="${esc2(t.code)}">${esc2(t.code)} – ${esc2(t.label)}</button>`
+    ).join("");
+  const btnTodos = wrap.querySelector('[data-tipo="__todos__"]');
+  btnTodos.addEventListener("click", () => {
+    selectedTiposT.clear();
+    wrap.querySelectorAll(".tipo-chip").forEach(b => b.classList.remove("active"));
+    btnTodos.classList.add("active");
+    renderTable();
+  });
+  wrap.querySelectorAll('.tipo-chip:not([data-tipo="__todos__"])').forEach(btn => {
+    btn.addEventListener("click", () => {
+      const t = btn.dataset.tipo;
+      if (selectedTiposT.has(t)) { selectedTiposT.delete(t); btn.classList.remove("active"); }
+      else { selectedTiposT.add(t); btn.classList.add("active"); }
+      btnTodos.classList.toggle("active", selectedTiposT.size === 0);
+      renderTable();
+    });
+  });
+}
 
 function filtrarPorFecha() {
   const desde = document.getElementById("fechaDesde").value;
@@ -386,6 +609,18 @@ function filtrarPorFecha() {
   renderTable();
 }
 
+// Media simple sobre los registros activos (no-anulados). Antes la funcion descartaba
+// automaticamente valores fuera de μ ± 1.036σ, pero eso ocultaba muestras chicas (4-5
+// registros con 2 outliers terminaban con un Gauss basado en solo 2 datos). Ahora se
+// promedian todos los activos; el usuario decide manualmente cuales anular desde el
+// popup de registros o haciendo click sobre el punto en el grafico de campana.
+// GAUSS_Z se mantiene solo como umbral visual para resaltar outliers en el grafico.
+const GAUSS_Z = 1.036;
+function gaussMean(tiempos) {
+  if (!tiempos || tiempos.length === 0) return 0;
+  return tiempos.reduce((a, b) => a + b, 0) / tiempos.length;
+}
+
 function computeMatData() {
   matData = matrices.map(m => {
     const nMat = String(m.N_Matriz || "").trim();
@@ -406,17 +641,31 @@ function computeMatData() {
         const seg = Number(r.Segundos_Trabajados || 0);
         return seg / uni;
       });
-      const sum = tiempos.reduce((a, b) => a + b, 0);
-      promReal = sum / tiempos.length;
+      promReal = gaussMean(tiempos);
       min = Math.min(...tiempos);
       max = Math.max(...tiempos);
     }
 
     const diff = tHist > 0 && activeRegs.length > 0 ? promReal - tHist : null;
 
+    // PTJE de la matriz: promedio de premios de los activos. Si el Premio de la BD
+    // viene en 0 (registro roto: insertado con Tiempo_Historico=0), calculamos al
+    // vuelo desde tiempo_real vs tHist madre. Asi el usuario ve la nota real sin
+    // tener que esperar a que se corra recalcular_matriz.
+    // Outliers tambien suman — gauss y ptje son independientes.
     let ptje = null;
     if (activeRegs.length > 0 && tHist > 0) {
-      const premios = activeRegs.map(r => Number(r.Premio || 0));
+      const premios = activeRegs.map(r => {
+        const p = Number(r.Premio || 0);
+        if (p) return p;
+        const uni = Number(r.Uni || 0) || 0;
+        const seg = Number(r.Segundos_Trabajados || 0);
+        const tt = (r.Tiempo_Toma != null && Number(r.Tiempo_Toma) > 0)
+          ? Number(r.Tiempo_Toma)
+          : (uni > 0 ? seg / uni : 0);
+        if (tt <= 0) return 0;
+        return Math.round(((1 - tt / tHist) * 10) * 100) / 100;
+      });
       ptje = premios.reduce((a, b) => a + b, 0) / premios.length;
     }
 
@@ -426,6 +675,7 @@ function computeMatData() {
       numSort: (parseInt(nMat) || 0) + (nMat.replace(/[0-9]/g, "") || ""),
       numStr: nMat,
       nombre,
+      tipoMatriz: String(m.Tipo_Matriz || "").trim(),
       historico: tHist,
       promReal: activeRegs.length > 0 ? promReal : null,
       diff,
@@ -459,6 +709,7 @@ function renderTable() {
     if (currentFilter === "con" && r.historico <= 0) return false;
     if (currentFilter === "sin" && r.historico > 0) return false;
     if (currentFilter === "sinConReg" && (r.historico > 0 || r.registros === 0)) return false;
+    if (selectedTiposT.size > 0 && !selectedTiposT.has(r.tipoMatriz)) return false;
     if (terms.length) {
       if (hasComma) { if (!terms.some(t => r.numStr === t)) return false; }
       else { if (!r.numStr.includes(q) && !r.nombre.toLowerCase().includes(q)) return false; }
@@ -497,7 +748,7 @@ function renderTable() {
   statsBadge.textContent = `${filtered.length} de ${matData.length} matrices`;
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="' + (hidePtje ? 7 : 8) + '" style="text-align:center;padding:30px;color:#94a3b8">Sin resultados</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + (hidePtje ? 8 : 9) + '" style="text-align:center;padding:30px;color:#94a3b8">Sin resultados</td></tr>';
     return;
   }
 
@@ -516,37 +767,54 @@ function renderTable() {
       <td class="clickable" data-mat="${r.numStr}">${r.numStr}</td>
       <td>${r.nombre}</td>
       <td class="num editable-hist" data-matid="${r.matId}" data-nmat="${r.numStr}" title="Click para editar"${histClass}>${r.historico > 0 ? r.historico.toFixed(1) : "Sin tiempo"}</td>
-      <td class="num">${fmtSeg(r.promReal)}</td>
+      <td class="num gauss-cell" data-nmat="${r.numStr}" title="Click para ver distribucion">${fmtSeg(r.promReal)}</td>
       <td class="num"${hidePtje ? ' style="display:none"' : ''}>${ptjeHtml}</td>
       <td class="num">${fmtSeg(r.min)}</td>
       <td class="num">${fmtSeg(r.max)}</td>
       <td class="num">${r.activeCount} / ${r.registros}</td>
+      <td class="num"><button class="btn-borrar-row" data-matid-del="${r.matId}" data-nmat-del="${r.numStr}" title="Borrar matriz">🗑️</button></td>
     </tr>`;
 
     if (showOps && r.activeCount > 0) {
       const activeRegs = r.regs.filter(reg => !reg.Anular_Tiempo);
+      // byEmp guarda tiempos y premios por operario para esa matriz. PTJE = promedio
+      // de premios (independiente del Gauss; los outliers tambien suman su premio).
+      // Si Premio en BD = 0 pero hay tiempo y T_Hist madre, calculamos al vuelo.
       const byEmp = new Map();
       activeRegs.forEach(reg => {
         const leg = String(reg.Legajo || "").trim();
         if (leg === "1") return;
-        if (!byEmp.has(leg)) byEmp.set(leg, []);
+        if (!byEmp.has(leg)) byEmp.set(leg, { tiempos: [], premios: [] });
         const tt = (reg.Tiempo_Toma != null && Number(reg.Tiempo_Toma) > 0) ? Number(reg.Tiempo_Toma) : (Number(reg.Segundos_Trabajados || 0) / (Number(reg.Uni || 1) || 1));
-        byEmp.get(leg).push(tt);
+        byEmp.get(leg).tiempos.push(tt);
+        let p = Number(reg.Premio || 0);
+        if (!p && tt > 0 && r.historico > 0) {
+          p = Math.round(((1 - tt / r.historico) * 10) * 100) / 100;
+        }
+        byEmp.get(leg).premios.push(p);
       });
-      byEmp.forEach((tiempos, leg) => {
+      byEmp.forEach(({ tiempos, premios }, leg) => {
         const nombre = empleadosMap[leg] || leg;
-        const prom = tiempos.reduce((a, b) => a + b, 0) / tiempos.length;
+        const prom = gaussMean(tiempos);
         const mn = Math.min(...tiempos);
         const mx = Math.max(...tiempos);
+        const ptjeOp = premios.length > 0 ? premios.reduce((a, b) => a + b, 0) / premios.length : null;
+        let ptjeOpHtml = "-";
+        if (ptjeOp != null && r.historico > 0) {
+          const cls3 = ptjeOp > 0 ? "diff-pos" : ptjeOp < 0 ? "diff-neg" : "";
+          const sign3 = ptjeOp > 0 ? "+" : "";
+          ptjeOpHtml = `<span class="${cls3}">${sign3}${ptjeOp.toFixed(2)}</span>`;
+        }
         mainRow += `<tr style="background:#f8f9fb;font-size:13px;color:#555">
           <td></td>
           <td style="padding-left:20px">↳ ${nombre}</td>
           <td class="num"></td>
           <td class="num">${prom.toFixed(1)}</td>
-          <td class="num"${hidePtje ? ' style="display:none"' : ''}></td>
+          <td class="num"${hidePtje ? ' style="display:none"' : ''}>${ptjeOpHtml}</td>
           <td class="num">${mn.toFixed(1)}</td>
           <td class="num">${mx.toFixed(1)}</td>
           <td class="num">${tiempos.length}</td>
+          <td></td>
         </tr>`;
       });
     }
@@ -686,7 +954,7 @@ document.getElementById("btnExcel").addEventListener("click", () => {
   if (currentFilter === "sinConReg") {
     var sortedMats = [...filtered].sort(function(a, b) { return b.activeCount - a.activeCount; });
 
-    var resHeaders = ["N Mtrz", "Nombre", "Prom Real", "Prom Min", "Prom Max", "Reg"];
+    var resHeaders = ["N Mtrz", "Nombre", "Gauss", "Prom Min", "Prom Max", "Reg"];
     var allRows = [];
 
     // Titulo resumen
@@ -715,13 +983,13 @@ document.getElementById("btnExcel").addEventListener("click", () => {
       allRows.push(["Matriz " + mat.numStr + " - " + mat.nombre, "", "", "", "", ""]);
       allRows.push(["Fecha", "Operario", "Uni", "Seg Trab", "T. Toma", "Ptje"]);
 
-      var sumToma = 0;
+      var tiemposArr = [];
       activeRegs.forEach(function(r) {
         var leg = String(r.Legajo || "").trim();
         var tToma = r.Tiempo_Toma != null && Number(r.Tiempo_Toma) > 0
           ? Number(r.Tiempo_Toma)
           : (Number(r.Uni || 1) > 0 ? Number(r.Segundos_Trabajados || 0) / Number(r.Uni) : 0);
-        sumToma += tToma;
+        tiemposArr.push(tToma);
         allRows.push([
           r.Fecha ? new Date(r.Fecha).toLocaleDateString("es-AR") : "",
           empleadosMap[leg] || leg,
@@ -731,9 +999,9 @@ document.getElementById("btnExcel").addEventListener("click", () => {
           r.Premio != null ? Number(r.Premio).toFixed(1) : "0"
         ]);
       });
-      // Prom Real
-      var promReal = activeRegs.length > 0 ? (sumToma / activeRegs.length).toFixed(2) : "0";
-      allRows.push(["", "", "", "", "Prom Real:", promReal]);
+      // Gauss (media filtrada por campana, ±2σ)
+      var promReal = tiemposArr.length > 0 ? gaussMean(tiemposArr).toFixed(2) : "0";
+      allRows.push(["", "", "", "", "Gauss:", promReal]);
     });
 
     // Construir HTML Excel
@@ -753,7 +1021,7 @@ document.getElementById("btnExcel").addEventListener("click", () => {
       var isTitle = idx === 0 || (row[0] && String(row[0]).startsWith("Matriz ") && row[1] === "" && row[2] === "");
       var isHeader = (idx === 1) || (row[0] === "Fecha" && row[1] === "Operario");
       var isSep = row[0] === "" && row[1] === "" && row[2] === "" && row[3] === "" && row[4] === "" && row[5] === "";
-      var isPromReal = row[4] === "Prom Real:";
+      var isPromReal = row[4] === "Gauss:";
 
       if (isSep) {
         xh += S + 'tr class="sep"' + E;
@@ -792,7 +1060,7 @@ document.getElementById("btnExcel").addEventListener("click", () => {
   /* --- HTML Excel simple (1 hoja) --- */
   let headers, rows;
   if (exHideDP) {
-    headers = ["N° Mtrz", "Nombre", "Prom Real", "Prom Min", "Prom Max"];
+    headers = ["N° Mtrz", "Nombre", "Gauss", "Prom Min", "Prom Max"];
     rows = filtered.map(r => [
       r.numStr,
       r.nombre,
@@ -802,7 +1070,7 @@ document.getElementById("btnExcel").addEventListener("click", () => {
     ]);
   } else {
     const exOps = chkOperarios.checked;
-    headers = ["N° Mtrz", "Nombre", "T. Hist", "Prom Real", "Ptje", "Min", "Max", "Reg"];
+    headers = ["N° Mtrz", "Nombre", "T. Hist", "Gauss", "Ptje", "Min", "Max", "Reg"];
     rows = [];
     if (exOps) filtered = [...filtered].sort((a, b) => (a.num || 0) - (b.num || 0) || String(a.numStr).localeCompare(String(b.numStr), "es"));
     filtered.forEach((r, idx) => {
@@ -850,8 +1118,15 @@ document.getElementById("btnExcel").addEventListener("click", () => {
 
 /* ===== POPUP ===== */
 tbody.addEventListener("click", e => {
-  // No abrir popup si se clickeo la celda editable de T.Hist
+  // No abrir popup de registros si se clickeo una celda/boton especial
   if (e.target.closest(".editable-hist")) return;
+  if (e.target.closest(".btn-borrar-row")) return; // handler dedicado
+  if (e.target.closest(".gauss-cell")) {
+    const td = e.target.closest(".gauss-cell");
+    const row = matData.find(r => r.numStr === td.dataset.nmat);
+    if (row) openGrafico(row);
+    return;
+  }
   const tr = e.target.closest("tr");
   if (!tr) return;
   const td = tr.querySelector("[data-mat]");
@@ -879,11 +1154,11 @@ function updatePopupStats(row) {
       const uni = Number(r.Uni || 1) || 1;
       return Number(r.Segundos_Trabajados || 0) / uni;
     });
-    promReal = tiempos.reduce((a, b) => a + b, 0) / tiempos.length;
+    promReal = gaussMean(tiempos);
   }
   popupStats.innerHTML =
     `<span>T. Historico: <strong>${row.historico > 0 ? row.historico.toFixed(1) + "s" : "Sin tiempo"}</strong></span>` +
-    `<span>Prom Real: <strong>${activeRegs.length > 0 ? promReal.toFixed(1) + "s" : "-"}</strong></span>` +
+    `<span>Gauss: <strong>${activeRegs.length > 0 ? promReal.toFixed(1) + "s" : "-"}</strong></span>` +
     `<span>Registros activos: <strong>${activeRegs.length} / ${row.regs.length}</strong></span>`;
 }
 
@@ -921,7 +1196,13 @@ function renderPopupRows(row) {
     const trClass = anulado ? ' class="anulado"' : '';
     const uni = Number(r.Uni || 1) || 1;
     const seg = Number(r.Segundos_Trabajados || 0);
-    const segUni = r.Tiempo_Toma != null ? Number(r.Tiempo_Toma).toFixed(1) : (uni > 0 ? (seg / uni).toFixed(1) : "0.0");
+    // T.Toma: usar Tiempo_Toma de la BD si > 0; sino caer en seg/uni. Antes solo
+    // miraba "!= null" y dejaba "0.0" cuando la BD venia con 0 explicito (registros
+    // viejos rotos donde Tiempo_Toma=0 pero seg y uni si estaban cargados).
+    const tToma = (r.Tiempo_Toma != null && Number(r.Tiempo_Toma) > 0)
+      ? Number(r.Tiempo_Toma)
+      : (uni > 0 ? seg / uni : 0);
+    const segUni = tToma > 0 ? tToma.toFixed(1) : "-";
     const legajo = String(r.Legajo || "").trim();
     const operario = empleadosMap[legajo] || legajo;
     const eyeClass = anulado ? "inactive" : "active";
@@ -936,6 +1217,25 @@ function renderPopupRows(row) {
         fecha = dd + "-" + mm + "-" + yy;
       } else { fecha = r.Fecha; }
     }
+    // PTJE: si la BD lo tiene cargado, usar ese. Si esta en 0 pero hay tiempo y T_Hist
+    // de la matriz madre, calcular al vuelo (el usuario quiere ver el puntaje aunque
+    // los registros esten rotos por el bug del Tiempo_Historico=0 al insertar).
+    // Independiente del gauss: outliers tambien tienen su PTJE.
+    const ptjeHtml = (() => {
+      let p = Number(r.Premio || 0);
+      let calculado = false;
+      if (!p && tToma > 0 && tHist > 0) {
+        p = Math.round(((1 - tToma / tHist) * 10) * 100) / 100;
+        calculado = true;
+      }
+      if (!p && !calculado) return "-";
+      if (p === 0) return calculado ? `<span title="calculado">0.00</span>` : "-";
+      const c = p > 0 ? "diff-pos" : "diff-neg";
+      const s = p > 0 ? "+" : "";
+      const titleAttr = calculado ? ' title="calculado al vuelo (Premio en BD = 0)"' : "";
+      const styleAttr = calculado ? ' style="font-style:italic"' : "";
+      return `<span class="${c}"${titleAttr}${styleAttr}>${s}${p.toFixed(2)}</span>`;
+    })();
 
     return `<tr${trClass}>
       <td>${fecha}</td>
@@ -943,7 +1243,7 @@ function renderPopupRows(row) {
       <td class="num">${uni}</td>
       <td class="num">${seg}</td>
       <td class="num">${segUni}</td>
-      <td class="num">${(() => { const p = Number(r.Premio || 0); if (!p) return "-"; const c = p > 0 ? "diff-pos" : "diff-neg"; const s = p > 0 ? "+" : ""; return '<span class="' + c + '">' + s + p.toFixed(2) + '</span>'; })()}</td>
+      <td class="num">${ptjeHtml}</td>
       <td><button class="eye-btn ${eyeClass}" data-id="${r.id}" data-mat="${row.numStr}" title="${anulado ? "Reactivar" : "Anular"} tiempo">${anulado ? "&#128683;" : "&#9989;"}</button></td>
     </tr>`;
   }).join("");
@@ -1025,7 +1325,266 @@ overlay.addEventListener("click", e => {
   if (e.target === overlay) overlay.classList.remove("visible");
 });
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") overlay.classList.remove("visible");
+  if (e.key === "Escape") {
+    overlay.classList.remove("visible");
+    document.getElementById("overlayGrafico").classList.remove("visible");
+  }
+});
+
+/* ===== GRAFICO GAUSS ===== */
+let chartInstance = null;
+const overlayGrafico = document.getElementById("overlayGrafico");
+
+function openGrafico(row) {
+  const activeRegs = row.regs.filter(r => !r.Anular_Tiempo);
+  if (activeRegs.length === 0) {
+    toastMsg("Sin registros activos para graficar");
+    return;
+  }
+  // Mantenemos el id de cada registro alineado con el indice de tiempos[] para que
+  // el click en un punto del scatter sepa que registro anular.
+  const tiempos = activeRegs.map(r => {
+    if (r.Tiempo_Toma != null && Number(r.Tiempo_Toma) > 0) return Number(r.Tiempo_Toma);
+    const uni = Number(r.Uni || 1) || 1;
+    return Number(r.Segundos_Trabajados || 0) / uni;
+  });
+  const regIds = activeRegs.map(r => r.id);
+
+  const n = tiempos.length;
+  const mean = tiempos.reduce((a, b) => a + b, 0) / n;
+  const variance = n < 2 ? 0 : tiempos.reduce((a, b) => a + (b - mean) * (b - mean), 0) / n;
+  const std = Math.sqrt(variance);
+  const low = mean - GAUSS_Z * std;
+  const high = mean + GAUSS_Z * std;
+  // Outliers solo INFORMATIVOS (puntos rojos). Ya NO se descartan del calculo —
+  // el Gauss promedia todos los activos. El usuario decide cuales anular haciendo
+  // click sobre el punto.
+  const outlierCount = std > 0 ? tiempos.filter(t => t < low || t > high).length : 0;
+  const gaussValue = mean;
+
+  // La campana y el eje X usan μ/σ de TODOS los activos (incluyendo outliers).
+  // Asi el grafico refleja la realidad de los datos sin filtrar de mas.
+  const meanView = mean;
+  let stdView = std > 0 ? std : 1;
+
+  // Curva de la campana (Normal PDF): f(x) = (1/(σ√(2π))) * e^(-((x-μ)²)/(2σ²))
+  // Eje X acotado a μ ± 4σ — todos los puntos activos quedan visibles.
+  const xStart = meanView - 4 * stdView;
+  const xEnd = meanView + 4 * stdView;
+  const steps = 160;
+  const pdfPoints = [];
+  for (let i = 0; i <= steps; i++) {
+    const x = xStart + (i / steps) * (xEnd - xStart);
+    let y = 0;
+    if (stdView > 0) {
+      y = (1 / (stdView * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * ((x - meanView) / stdView) ** 2);
+    }
+    pdfPoints.push({ x, y });
+  }
+  // Puntos de datos reales al pie del grafico (y=0). regId queda en el raw para
+  // que el onClick sepa cual registro anular.
+  const scatterPoints = tiempos.map((t, i) => ({
+    x: t,
+    y: 0,
+    outlier: std > 0 && (t < low || t > high),
+    regId: regIds[i]
+  }));
+
+  document.getElementById("graficoTitle").textContent = `Matriz ${row.numStr} — ${row.nombre}`;
+  const statCards = [
+    { label: "N Registros", value: n },
+    { label: "Media (μ)", value: mean.toFixed(2) + "s" },
+    { label: "Desvío (σ)", value: std.toFixed(2) },
+    { label: "Rango 70%", value: low.toFixed(1) + "–" + high.toFixed(1) + "s" },
+    { label: "Gauss", value: gaussValue.toFixed(2) + "s", highlight: true },
+    { label: "Outliers", value: outlierCount + " / " + n }
+  ];
+  document.getElementById("graficoStats").innerHTML = statCards.map(s =>
+    `<div class="gauss-stat${s.highlight ? ' highlight' : ''}"><span class="gauss-stat-label">${s.label}</span><span class="gauss-stat-value">${s.value}</span></div>`
+  ).join('');
+
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  // Plugin inline: lineas verticales μ y ±1.036σ con etiqueta con fondo solido
+  const refLinesPlugin = {
+    id: "refLines",
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea: { top, bottom, left, right }, scales: { x } } = chart;
+      const drawLine = (value, color, label, lane) => {
+        if (value < x.min || value > x.max) return;
+        const xPos = x.getPixelForValue(value);
+        ctx.save();
+        // Linea punteada
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(xPos, top + 6);
+        ctx.lineTo(xPos, bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Pill label con fondo solido
+        ctx.font = "600 11px Inter, sans-serif";
+        const text = label;
+        const textW = ctx.measureText(text).width;
+        const padX = 8, padY = 4, pillH = 20;
+        const pillW = textW + padX * 2;
+        const laneY = top + 2 + lane * (pillH + 4);
+        let pillX = xPos - pillW / 2;
+        if (pillX < left + 2) pillX = left + 2;
+        if (pillX + pillW > right - 2) pillX = right - 2 - pillW;
+        // redondeado
+        const r = 10;
+        ctx.beginPath();
+        ctx.moveTo(pillX + r, laneY);
+        ctx.lineTo(pillX + pillW - r, laneY);
+        ctx.quadraticCurveTo(pillX + pillW, laneY, pillX + pillW, laneY + r);
+        ctx.lineTo(pillX + pillW, laneY + pillH - r);
+        ctx.quadraticCurveTo(pillX + pillW, laneY + pillH, pillX + pillW - r, laneY + pillH);
+        ctx.lineTo(pillX + r, laneY + pillH);
+        ctx.quadraticCurveTo(pillX, laneY + pillH, pillX, laneY + pillH - r);
+        ctx.lineTo(pillX, laneY + r);
+        ctx.quadraticCurveTo(pillX, laneY, pillX + r, laneY);
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, pillX + pillW / 2, laneY + pillH / 2 + 0.5);
+        ctx.restore();
+      };
+      // lane 0 = arriba; lane 1 = un poco mas abajo (para evitar colision con μ)
+      // Usamos los valores "view" (filtrados) porque la campana se dibuja con esos;
+      // el mean/low/high originales pueden caer fuera de escala cuando hay outliers.
+      const lowView = meanView - GAUSS_Z * stdView;
+      const highView = meanView + GAUSS_Z * stdView;
+      drawLine(meanView, "#16a34a", "μ " + meanView.toFixed(1), 0);
+      if (stdView > 0) {
+        drawLine(lowView, "#f59e0b", "−1.036σ " + lowView.toFixed(1), 1);
+        drawLine(highView, "#f59e0b", "+1.036σ " + highView.toFixed(1), 1);
+      }
+    }
+  };
+
+  const ctxCanvas = document.getElementById("graficoCanvas").getContext("2d");
+  // Gradiente azul para el relleno debajo de la campana
+  const gradient = ctxCanvas.createLinearGradient(0, 0, 0, 380);
+  gradient.addColorStop(0, "rgba(59, 130, 246, 0.35)");
+  gradient.addColorStop(1, "rgba(59, 130, 246, 0.03)");
+
+  chartInstance = new Chart(ctxCanvas, {
+    type: "line",
+    data: {
+      datasets: [
+        {
+          label: "Campana de Gauss",
+          data: pdfPoints,
+          borderColor: "#1e3a8a",
+          backgroundColor: gradient,
+          borderWidth: 3,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          order: 2
+        },
+        {
+          type: "scatter",
+          label: "Datos",
+          data: scatterPoints,
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          pointBackgroundColor: (ctx) => ctx.raw?.outlier ? "rgba(220,38,38,0.85)" : "rgba(59,130,246,0.9)",
+          pointBorderColor: (ctx) => ctx.raw?.outlier ? "#991b1b" : "#1d4ed8",
+          pointBorderWidth: 1.5,
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { top: 56, right: 10, left: 10 } },
+      onHover: (e, elements) => {
+        const canvas = e.native?.target;
+        if (!canvas) return;
+        const overScatter = elements.some(el => el.datasetIndex === 1);
+        canvas.style.cursor = overScatter ? "pointer" : "default";
+      },
+      onClick: async (e, elements) => {
+        const el = elements.find(x => x.datasetIndex === 1);
+        if (!el) return;
+        const point = scatterPoints[el.index];
+        if (!point || point.regId == null) return;
+        const tag = point.outlier ? " (outlier)" : "";
+        if (!confirm("Anular este registro?\nTiempo: " + point.x.toFixed(2) + "s" + tag)) return;
+        const { data: newVal, error } = await sb.rpc("toggle_anular_tiempo", { row_id: Number(point.regId) });
+        if (error) { alert("Error al actualizar: " + error.message); return; }
+        if (newVal === null) { alert("No se encontro el registro en la BD"); return; }
+        const reg = registros.find(rr => String(rr.id) === String(point.regId));
+        if (reg) reg.Anular_Tiempo = newVal;
+        computeMatData();
+        renderTable();
+        // Sincronizar popup de registros si esta abierto sobre la misma matriz
+        if (currentPopupRow && currentPopupRow.numStr === row.numStr) {
+          const r2 = matData.find(rr => rr.numStr === row.numStr);
+          if (r2) {
+            currentPopupRow = r2;
+            updatePopupStats(r2);
+            renderPopupRows(r2);
+          }
+        }
+        const updated = matData.find(rr => rr.numStr === row.numStr);
+        if (updated) {
+          const stillActive = updated.regs.some(rr => !rr.Anular_Tiempo);
+          if (stillActive) openGrafico(updated);
+          else { overlayGrafico.classList.remove("visible"); toastMsg("Sin registros activos para graficar"); }
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        title: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) => {
+              if (item.dataset.label === "Datos") {
+                const d = item.raw;
+                return "Tiempo: " + d.x.toFixed(2) + "s" + (d.outlier ? " (outlier — click para anular)" : " (click para anular)");
+              }
+              return "x=" + item.parsed.x.toFixed(2) + ", densidad=" + item.parsed.y.toFixed(4);
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: "linear",
+          min: xStart,
+          max: xEnd,
+          title: { display: true, text: "Tiempo por unidad (seg)", font: { weight: 600 } },
+          grid: { color: "rgba(148, 163, 184, 0.25)", drawTicks: true },
+          ticks: { color: "#475569" }
+        },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: "Densidad de probabilidad", font: { weight: 600 } },
+          grid: { color: "rgba(148, 163, 184, 0.25)" },
+          ticks: { color: "#475569", callback: (v) => Number(v).toFixed(3) }
+        }
+      }
+    },
+    plugins: [refLinesPlugin]
+  });
+
+  overlayGrafico.classList.add("visible");
+}
+
+document.getElementById("closeGrafico").addEventListener("click", () => {
+  overlayGrafico.classList.remove("visible");
+});
+overlayGrafico.addEventListener("click", e => {
+  if (e.target === overlayGrafico) overlayGrafico.classList.remove("visible");
 });
 
 /* ===== TOAST ===== */
@@ -1125,6 +1684,85 @@ tbody.addEventListener("click", e => {
       }
     }, 150);
   });
+});
+
+/* ===== NUEVA MATRIZ (MODAL) ===== */
+const modalMatriz = document.getElementById("modalMatriz");
+function abrirModalNuevaMatriz() {
+  document.getElementById("modalMatrizTitle").textContent = "Nueva Matriz";
+  document.getElementById("mtzN").value = "";
+  document.getElementById("mtzNombre").value = "";
+  document.getElementById("mtzTipo").value = "";
+  document.getElementById("mtzTHist").value = "";
+  modalMatriz.classList.add("visible");
+  setTimeout(() => document.getElementById("mtzN").focus(), 50);
+}
+function cerrarModalNuevaMatriz() { modalMatriz.classList.remove("visible"); }
+
+document.getElementById("btnNuevaMatriz").addEventListener("click", abrirModalNuevaMatriz);
+document.getElementById("mtzCancel").addEventListener("click", cerrarModalNuevaMatriz);
+modalMatriz.addEventListener("click", e => { if (e.target === modalMatriz) cerrarModalNuevaMatriz(); });
+
+document.getElementById("mtzSave").addEventListener("click", async () => {
+  const nMat = document.getElementById("mtzN").value.trim();
+  const nombre = document.getElementById("mtzNombre").value.trim();
+  const tipo = document.getElementById("mtzTipo").value.trim();
+  const tHistRaw = document.getElementById("mtzTHist").value.trim();
+  if (!nMat) { toastMsg("Ingresá el N° de Matriz"); return; }
+  if (matrices.some(m => String(m.N_Matriz).trim() === nMat)) {
+    toastMsg("Ya existe una matriz con ese N°"); return;
+  }
+  const tHist = tHistRaw !== "" ? parseFloat(tHistRaw) : null;
+  if (tHistRaw !== "" && (isNaN(tHist) || tHist < 0)) { toastMsg("T. Histórico inválido"); return; }
+
+  const btnSave = document.getElementById("mtzSave");
+  btnSave.disabled = true; btnSave.textContent = "Guardando...";
+  const payload = {
+    N_Matriz: nMat,
+    Matriz: nombre || null,
+    Tipo_Matriz: tipo || null,
+    Tiempo_Historico: tHist
+  };
+  const { data, error } = await sb.from("Matrices").insert(payload).select().single();
+  btnSave.disabled = false; btnSave.textContent = "Guardar";
+  if (error) { toastMsg("Error: " + error.message); return; }
+  matrices.push(data);
+  cerrarModalNuevaMatriz();
+  toastMsg("Matriz creada: " + nMat);
+  computeMatData();
+  renderTable();
+});
+
+/* ===== BORRAR MATRIZ ===== */
+tbody.addEventListener("click", async e => {
+  const btn = e.target.closest(".btn-borrar-row");
+  if (!btn) return;
+  e.stopPropagation();
+  const matId = Number(btn.dataset.matidDel);
+  const nMat = btn.dataset.nmatDel;
+  const row = matData.find(r => r.numStr === nMat);
+  if (!row) return;
+
+  const tieneRegs = row.registros > 0;
+  const msg = tieneRegs
+    ? `⚠ La matriz ${nMat} "${row.nombre}" tiene ${row.registros} registro(s) en db_n8n_espejo.\n\nBorrarla puede dejar registros huérfanos o fallar por FK.\n\n¿Continuar igual?`
+    : `¿Borrar la matriz ${nMat} "${row.nombre}"?\n\nEsta acción no se puede deshacer.`;
+  if (!confirm(msg)) return;
+
+  btn.disabled = true;
+  const { error } = await sb.from("Matrices").delete().eq("id", matId);
+  btn.disabled = false;
+  if (error) { toastMsg("Error al borrar: " + error.message); return; }
+  // Quitar de la lista local
+  const idx = matrices.findIndex(m => m.id === matId);
+  if (idx >= 0) matrices.splice(idx, 1);
+  toastMsg("Matriz " + nMat + " borrada");
+  computeMatData();
+  renderTable();
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && modalMatriz.classList.contains("visible")) cerrarModalNuevaMatriz();
 });
 </script>
 </body>

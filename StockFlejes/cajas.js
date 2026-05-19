@@ -29,6 +29,10 @@ let consumoDetalleMap = new Map();
 let codigosPorCaja = new Map();
 // Detalles envíos: descripción → [{tallerista, diaMes, unidades, cajas}]
 let enviosDetalleMap = new Map();
+// Compras reales desde Recepcion_Insumos: nCaja → total cantidad
+let comprasCajasMap = new Map();
+// Detalle compras: nCaja → [{proveedor, fecha, cantidad, remito}]
+let comprasDetalleMap = new Map();
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function n(v) { return isNaN(v) ? 0 : Number(v); }
@@ -352,13 +356,31 @@ async function bloqueoMeOlvide() {
   setModo("stock");
 }
 
+// Compras reales: lee Recepcion_Insumos rubro=Cajas, suma cantidad por codigo (N_Caja).
+async function cargarCompras() {
+  comprasCajasMap.clear();
+  comprasDetalleMap.clear();
+  const { data, error } = await sb.from("Recepcion_Insumos").select("*").eq("rubro", "Cajas");
+  if (error) { console.error("Error compras Cajas:", error); return; }
+  (data || []).forEach(r => {
+    const nCaja = Number(String(r.codigo || "").trim());
+    if (!nCaja) return;
+    const cant = Number(r.cantidad) || 0;
+    comprasCajasMap.set(nCaja, (comprasCajasMap.get(nCaja) || 0) + cant);
+    if (!comprasDetalleMap.has(nCaja)) comprasDetalleMap.set(nCaja, []);
+    comprasDetalleMap.get(nCaja).push({
+      proveedor: r.proveedor, fecha: r.fecha, cantidad: cant, remito: r.remito
+    });
+  });
+}
+
 /* ================= INIT ================= */
 async function init() {
   statusEl.textContent = "Cargando cajas...";
 
   try {
     await cargarMapeoCajas();
-    await Promise.all([cargarConsumo(), cargarOCPendientes()]);
+    await Promise.all([cargarConsumo(), cargarOCPendientes(), cargarCompras()]);
     cajasData = await cargarCajas();
 
     poblarTalleristas();
@@ -381,7 +403,8 @@ function procesarRows() {
     const codISIS = c["Cod_ISIS_LK"] || "";
     const stockInicial = n(c["Stock_Inicial"]);
     const consumoMes = n(c["Cons_Mensual"]);
-    const compras = 0;
+    const compras = comprasCajasMap.get(nCaja) || 0;
+    const comprasDetalle = comprasDetalleMap.get(nCaja) || [];
     const consumoReal = consumoCajasMap.get(nCaja) || 0;
     const enviosReal = enviosCajasMap.get(nCaja) || 0;
     const entregasReal = entregasCajasMap.get(nCaja) || 0;
@@ -393,7 +416,7 @@ function procesarRows() {
     const paqVirg = stockVirg;
     const paqTotal = paqCerv + paqVirg;
 
-    return { nCaja, codISIS, stockOnline, stockInicial, compras, consumoReal, enviosReal, entregasReal, consumoMes, stockCerv, stockVirg, paqCerv, paqVirg, paqTotal };
+    return { nCaja, codISIS, stockOnline, stockInicial, compras, comprasDetalle, consumoReal, enviosReal, entregasReal, consumoMes, stockCerv, stockVirg, paqCerv, paqVirg, paqTotal };
   });
 }
 
@@ -576,8 +599,8 @@ function renderStock(rows) {
     html += `<tr>
       <td class="col-nfleje">${r.nCaja}</td>
       <td class="col-number col-clickable" onclick="popupStockOnline(${i})" style="${style}">${r.stockOnline.toLocaleString("es-AR")}</td>
-      <td class="col-number" style="font-size:11px;color:#555">${fmtN(r.paqCerv)}</td>
-      <td class="col-number" style="font-size:11px;color:#555">${fmtN(r.paqVirg)}</td>
+      <td class="col-number">${fmtN(r.paqCerv)}</td>
+      <td class="col-number">${fmtN(r.paqVirg)}</td>
       <td class="col-number col-clickable" onclick="popupStockMax(${i})">${r.stockMax.toLocaleString("es-AR")}</td>
       <td class="col-number">${r.consumoMes.toLocaleString("es-AR")}</td>
       <td class="col-number" style="${style}">${mesesRest}</td>
@@ -588,15 +611,15 @@ function renderStock(rows) {
   const ocItems = [...ocPendienteMap.entries()];
   if (ocItems.length > 0) {
     html += `<tr class="row-sep"><td colspan="7"></td></tr>`;
-    html += `<tr class="row-grupo-header"><td colspan="7" style="font-size:13px">OC Pendientes</td></tr>`;
+    html += `<tr class="row-grupo-header"><td colspan="7">OC Pendientes</td></tr>`;
     ocItems.forEach(([cod, oc]) => {
       const fechaOC = oc.fecha || "—";
       const fechaEst = oc.fechaEstimada || "sin confirmar";
       html += `<tr>
         <td class="col-nfleje">${esc(cod)}</td>
         <td class="col-number">${fmtN(oc.cantidad)}</td>
-        <td colspan="2" style="font-size:11px;color:#555;padding:4px 6px">OC: ${fechaOC}</td>
-        <td colspan="3" style="font-size:11px;color:${oc.fechaEstimada ? '#0a7a2f' : '#b42318'};padding:4px 6px">Entrega: ${fechaEst}</td>
+        <td colspan="2" style="color:#555;padding:4px 6px">OC: ${fechaOC}</td>
+        <td colspan="3" style="color:${oc.fechaEstimada ? '#0a7a2f' : '#b42318'};padding:4px 6px">Entrega: ${fechaEst}</td>
       </tr>`;
     });
   }

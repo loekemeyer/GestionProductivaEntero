@@ -23,47 +23,52 @@
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px}
   .overlay.open{display:flex}
   .modal{
-    width:min(720px, 100%);
-    max-height:90vh;
+    width:min(920px, 100%);
+    max-height:92vh;
     overflow-y:auto;
     background:#fff;
     border:1px solid #d0d7de;
     border-radius:14px;
-    padding:14px;
+    padding:18px;
     box-shadow:0 18px 50px rgba(0,0,0,.2);
   }
-  .modal-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
-  .modal-title{font-weight:900}
-  .xbtn{border:2px solid #d0d7de;background:#fff;border-radius:10px;padding:8px 10px;cursor:pointer;font-weight:900}
+  .modal-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+  .modal-title{font-weight:900;font-size:20px}
+  .xbtn{border:2px solid #d0d7de;background:#fff;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:900;font-size:16px}
 
   .grid{
     display:grid;
-    grid-template-columns:110px 90px minmax(220px,1fr);
-    gap:10px;
+    grid-template-columns:130px 110px minmax(260px,1fr);
+    gap:12px;
     align-items:center;
   }
-  .grid .h{font-weight:900;font-size:13px;color:#333}
+  .grid.con-unidades{
+    grid-template-columns:130px 110px 110px minmax(260px,1fr);
+  }
+  .grid .h{font-weight:900;font-size:16px;color:#333}
   .grid input[data-role="cajas"],
   .grid input[data-role="kg-grj"]{
     width:100% !important;
     min-width:0;
+    height:44px;
+    font-size:18px;
     text-align:center;
     letter-spacing:0 !important;
   }
 
   .descCell{
-    font-size:13px;
+    font-size:16px;
     color:#333;
-    line-height:1.25;
+    line-height:1.3;
     white-space:normal;
     word-break:break-word;
     overflow-wrap:anywhere;
   }
 
-  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:12px}
-  .btn-primary{background:#111;color:#fff;border:0}
-  .btn-secondary{background:#fff}
-  .hint{font-size:12px;color:#444;margin:8px 0 0}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+  .btn-primary{background:#111;color:#fff;border:0;padding:12px 18px;font-size:15px}
+  .btn-secondary{background:#fff;padding:12px 18px;font-size:15px}
+  .hint{font-size:14px;color:#444;margin:10px 0 0}
 
   .hidden{display:none}
 
@@ -89,7 +94,10 @@
   .codeRO{
     background:#f6f8fa;
     width:100% !important;
-    text-align:left !important;
+    height:44px;
+    font-size:18px;
+    font-weight:800;
+    text-align:center !important;
     letter-spacing:0 !important;
   }
 </style>
@@ -146,9 +154,10 @@
       <button id="closeModal" class="xbtn" type="button">✕</button>
     </div>
 
-    <div class="grid" style="margin-bottom:8px">
+    <div class="grid" id="modalGridHeader" style="margin-bottom:8px">
       <div class="h">Código</div>
       <div class="h" id="modalCajasHeader">Cajas</div>
+      <div class="h" id="modalUnidadesHeader" class="hidden">Unidades</div>
       <div class="h">Descripción</div>
     </div>
 
@@ -199,12 +208,24 @@
   };
   function isGRJ(codigo){ return Boolean(GRJ_COMPONENTES[codigo]); }
 
+  // Transformaciones 1:1: codigos que están en GRJ_COMPONENTES (para descontar el componente)
+  // pero el usuario los carga en CAJAS/UNIDADES (no en Kg). Ej: M6 (Poly: M10→M6), M8 (Poly: M9→M8).
+  // El input se interpreta literal y se inserta como Cod=componente con Cajas=user_input + Cod_GRJ=cod
+  // para trazabilidad. Diferente de los GRJ "reales" que se cargan en Kg.
+  // Se deriva de GRJ_Componentes.es_transformacion_unidades=TRUE (cargado en cargarGRJDesdeBD).
+  let TRANSFORMACION_UNIDADES = new Set();
+  function esTransUnidades(codigo){ return TRANSFORMACION_UNIDADES.has(codigo); }
+  function esGrjRealKg(codigo){ return isGRJ(codigo) && !esTransUnidades(codigo); }
+
   async function cargarGRJDesdeBD(){
     try {
-      const { data, error } = await sb.from("v_grj_componentes_con_peso").select("cod_grj,componente,orden,peso_componente");
-      if (error || !data || !data.length) return;
+      const [respComp, respFlag] = await Promise.all([
+        sb.from("v_grj_componentes_con_peso").select("cod_grj,componente,orden,peso_componente"),
+        sb.from("GRJ_Componentes").select("cod_grj,es_transformacion_unidades")
+      ]);
+      if (respComp.error || !respComp.data || !respComp.data.length) return;
       const comp = {}, pesos = {};
-      for (const r of data){
+      for (const r of respComp.data){
         if (!comp[r.cod_grj]) { comp[r.cod_grj] = []; pesos[r.cod_grj] = 0; }
         comp[r.cod_grj].push({ c: r.componente, o: r.orden||0 });
         pesos[r.cod_grj] += Number(r.peso_componente) || 0;
@@ -213,12 +234,30 @@
         GRJ_COMPONENTES[cod] = comp[cod].sort((a,b)=>a.o-b.o).map(x=>x.c);
         GRJ_PESOS[cod] = pesos[cod];
       }
-    } catch(e){ /* silencioso: fallback a hardcoded */ }
+      // Poblar TRANSFORMACION_UNIDADES desde flag
+      if (!respFlag.error && respFlag.data) {
+        const trans = new Set();
+        respFlag.data.forEach(r => {
+          if (r.es_transformacion_unidades) trans.add(r.cod_grj);
+        });
+        TRANSFORMACION_UNIDADES = trans;
+      }
+    } catch(e){ /* silencioso */ }
   }
 
   // Descripciones para códigos de sector que no están en despieceMap (que usa CODs de artículo)
-  // Sectores SC que al entregar deben incrementar SC Kg
-  const SC_SECTORES = new Set(["G3","G4"]);
+  // Sectores SC que al entregar deben incrementar SC Kg.
+  // Se carga al inicio desde SC Kg.incrementa_sc_al_entregar=TRUE. Fallback hardcoded preservado.
+  let SC_SECTORES = new Set(["G3","G4"]);
+
+  (async function cargarSCSectores(){
+    try {
+      const sbTmp = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      const { data, error } = await sbTmp.from("SC Kg").select("SC").eq("incrementa_sc_al_entregar", true);
+      if (error) { console.warn("[Recep Cervantes] No se pudo cargar SC_SECTORES:", error.message); return; }
+      if (data && data.length) SC_SECTORES = new Set(data.map(r => String(r.SC).trim()));
+    } catch (e) { console.warn("[Recep Cervantes] cargarSCSectores fallo:", e); }
+  })();
 
   const DESC_EXTRA = {
     G3: "Cpo Sacacorcho 520 p/cromar",
@@ -228,12 +267,34 @@
   // Qué artículos van a cada empresa por tallerista
   // Si la empresa tiene lista explícita → solo esos; si no tiene lista → todo menos los de la otra empresa
   const ARTICULOS_EMPRESA = {
-    CARLOS: { LK: ["GRJ7","GRJ9","GRJ10"], never: ["A10","C1","C10","A15"] },
-    MARTIN: { LK: ["GRJ1","GRJ7","G3","G4"], never: ["A10","C1","C10","A15"] },
-    POLY:   { CH: ["M10","M9"] }
+    CARLOS: { LK: ["GRJ7","GRJ9","GRJ10"], CH: [], never: ["A10","C1","C10","A15"] }, // CH va por Virgilio
+    MARTIN: { LK: ["GRJ1","GRJ7","G3","G4","X5","Toch"], CH: [], never: ["A10","C1","C10","A15","V9","X1"] }, // CH va por Virgilio
+    POLY:   { LK: ["M6"], CH: ["M8"], never: ["M10","M9"] } // En Cervantes Poly SOLO carga las transformaciones 1:1 (M6→M10 LK / M8→M9 CH). Los demás artículos de Poly (031/034/066/108/502/512/513/550 LK; 713/836/867 CH) se reciben en Virgilio.
   };
 
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Sanity check: validar que Talleristas con rec_cerv=TRUE coincida con los botones hardcoded.
+  // Si diverge (alguien activó/desactivó rec_cerv en BD), avisar por consola.
+  // Refactor completo (botones dinamicos + ARTICULOS_EMPRESA en BD) pendiente.
+  (async function validarTalleristasCervantes(){
+    try {
+      const { data, error } = await sb
+        .from("Tall_ProvAT_PS")
+        .select("nombre")
+        .eq("rec_cerv", true)
+        .eq("activo", true);
+      if (error) { console.warn("[Recep Cervantes] No se pudo validar Talleristas:", error.message); return; }
+      const enBD = new Set((data||[]).map(r => String(r.nombre).trim()));
+      const hardcoded = new Set(["Carlos","Martin","Poly"]);
+      const faltan = [...enBD].filter(n => !hardcoded.has(n));
+      const sobran = [...hardcoded].filter(n => !enBD.has(n));
+      if (faltan.length || sobran.length) {
+        console.warn("[Recep Cervantes] Divergencia con tabla Talleristas (rec_cerv=TRUE):",
+          { en_BD_no_en_HTML: faltan, en_HTML_no_en_BD: sobran });
+      }
+    } catch (e) { console.warn("[Recep Cervantes] Validacion Talleristas fallo:", e); }
+  })();
 
   // Precargar descripciones de artículos desde Despiece
   let despieceMap = new Map();
@@ -310,19 +371,26 @@
     codigosPorNombre = j.mapa || {};
   }
 
+  // Mapa cod → linea (LK/CH) para filtrar por empresa cuando ARTICULOS_EMPRESA
+  // no tiene lista explícita (caso Poly: lista por linea, no por GRJ).
+  const codeLineaMap = new Map();
+
   // Devuelve array de strings (solo codigos), con cache por tallerista
   async function fetchCodesForTallerista(nombreTallerista, cacheKey){
     if (cachePartes[cacheKey]) return cachePartes[cacheKey];
     const { data, error } = await sb
       .from(PARTES_TABLE)
-      .select("cod, cod_art")
+      .select("cod, cod_art, linea")
       .ilike("tallerista", nombreTallerista.trim().split(/\s+/)[0] + "%");
     if (error){ throw new Error(`Supabase error: ${error.message}`); }
     const codes = [];
     const seen = new Set();
     (data || []).forEach(r => {
       const codigo = String(r.cod || r.cod_art || "").trim();
-      if (!codigo || seen.has(codigo)) return;
+      if (!codigo) return;
+      const linea = String(r.linea || "").trim().toUpperCase();
+      if (linea && !codeLineaMap.has(codigo)) codeLineaMap.set(codigo, linea);
+      if (seen.has(codigo)) return;
       seen.add(codigo);
       codes.push(codigo);
     });
@@ -339,13 +407,19 @@
   // Filtra codigos segun reglas ARTICULOS_EMPRESA para tallerista+empresa
   function filterByEmpresa(allCodes, tall, emp){
     const reglas = ARTICULOS_EMPRESA[tall];
-    if (!reglas) return allCodes;
     // Si hay lista explícita para esta empresa, devolverla directamente
     // (no filtrar allCodes: los artículos GRJ a entregar ya no están en Partes x Tallerista)
-    if (reglas[emp]) return [...reglas[emp]];
-    // Sin lista explícita: excluir los "never" y los que van a otras empresas
+    if (reglas && reglas[emp]) return [...reglas[emp]];
+    // Sin lista explícita: filtrar primero por Linea (un cod_art tiene una sola linea
+    // en Articulos VxT). Si el cod no tiene linea cargada, dejarlo pasar (defensivo).
+    let codes = allCodes.filter(c => {
+      const linea = codeLineaMap.get(c);
+      return !linea || linea === emp;
+    });
+    if (!reglas) return codes;
+    // Excluir los "never" y los que van a otras empresas (lista explícita de la otra empresa)
     const never = new Set(reglas.never || []);
-    let codes = never.size ? allCodes.filter(c => !never.has(c)) : allCodes;
+    if (never.size) codes = codes.filter(c => !never.has(c));
     const excluir = new Set();
     Object.entries(reglas).forEach(([e, codigos]) => {
       if (e !== emp && e !== "never" && codigos) codigos.forEach(c => excluir.add(c));
@@ -566,19 +640,63 @@
       return;
     }
 
-    // Actualizar header y hint según si hay items GRJ (Kg) o normales (Cajas)
-    const hayGrj = items.some(item => isGRJ(item.codigo));
+    // Actualizar header y hint según si hay items GRJ "real" (Kg) o no.
+    // Las transformaciones 1:1 (M6, M8) cuentan como cajas, no GRJ.
+    const hayGrj = items.some(item => esGrjRealKg(item.codigo));
+    const esCarlos = tallerista === "CARLOS";
     const modalTitle = document.getElementById("modalTitle");
-    if (modalTitle) modalTitle.textContent = hayGrj ? "Código y Kg" : "Código y Cajas";
+    const modalGridHeader = document.getElementById("modalGridHeader");
     const hdrCajas = document.getElementById("modalCajasHeader");
-    if (hdrCajas) hdrCajas.textContent = hayGrj ? "Kg" : "Cajas";
+    const hdrUnidades = document.getElementById("modalUnidadesHeader");
     const hintEl = document.getElementById("modalHint");
-    if (hintEl) hintEl.textContent = hayGrj
-      ? "Tip: completá Kg por artículo (se permite decimal)."
-      : "Tip: completá solo cajas. Solo acepta números enteros.";
+
+    if (modalTitle) {
+      if (esCarlos) {
+        modalTitle.textContent = "Código y Kg";
+      } else {
+        modalTitle.textContent = hayGrj ? "Código y Kg" : "Código y Cajas";
+      }
+    }
+
+    // Detectar si TODOS los items son transformaciones 1:1 (M6/M8/etc) → mostrar "Unidades" en lugar de "Cajas".
+    // Poly entrega M6 (LK) o M8 (CH), ambas transformaciones 1:1, asi que su header pasa a "Unidades".
+    const todosTrans = items.length > 0 && items.every(it => esTransUnidades(it.codigo));
+
+    if (hdrCajas) {
+      if (esCarlos) {
+        hdrCajas.textContent = "Kg";
+      } else {
+        hdrCajas.textContent = hayGrj ? "Kg" : (todosTrans ? "Unidades" : "Cajas");
+      }
+    }
+
+    if (hdrUnidades) {
+      hdrUnidades.classList.toggle("hidden", !esCarlos);
+    }
+
+    if (modalGridHeader) {
+      modalGridHeader.classList.toggle("con-unidades", esCarlos);
+    }
+
+    linesWrap.classList.toggle("con-unidades", esCarlos);
+
+    if (hintEl) {
+      if (esCarlos) {
+        hintEl.textContent = "Tip: completá Kg y Unidades por artículo.";
+      } else if (hayGrj) {
+        hintEl.textContent = "Tip: completá Kg por artículo (se permite decimal).";
+      } else if (todosTrans) {
+        hintEl.textContent = "Tip: completá unidades por artículo. Solo acepta números enteros.";
+      } else {
+        hintEl.textContent = "Tip: completá solo cajas. Solo acepta números enteros.";
+      }
+    }
 
     items.forEach((item, i) => {
-      const esGrj = isGRJ(item.codigo);
+      // esGrj solo para los que se cargan en Kg. Las transformaciones 1:1
+      // (M6, M8) son GRJ a nivel BD pero se cargan como cajas en el modal.
+      const esGrj = esGrjRealKg(item.codigo);
+      const esCarlosInput = tallerista === "CARLOS";
 
       const code = document.createElement("input");
       code.type = "text";
@@ -590,13 +708,13 @@
 
       const kg = document.createElement("input");
       kg.type = "text";
-      kg.inputMode = esGrj ? "decimal" : "numeric";
-      kg.placeholder = esGrj ? "0 kg" : "0";
-      kg.setAttribute("data-role", esGrj ? "kg-grj" : "cajas");
+      kg.inputMode = esCarlosInput ? "decimal" : (esGrj ? "decimal" : "numeric");
+      kg.placeholder = esCarlosInput ? "0 kg" : (esGrj ? "0 kg" : "0");
+      kg.setAttribute("data-role", esCarlosInput ? "kg-carlos" : (esGrj ? "kg-grj" : "cajas"));
       kg.setAttribute("data-idx", String(i));
 
       kg.addEventListener("input", () => {
-        if (esGrj){
+        if (esCarlosInput || esGrj){
           kg.value = kg.value.replace(/[^\d.]/g, "");
         } else {
           kg.value = kg.value.replace(/\D/g, "");
@@ -606,18 +724,48 @@
       kg.addEventListener("keydown", (e) => {
         if (e.key === "Enter"){
           e.preventDefault();
-          const role = esGrj ? "kg-grj" : "cajas";
-          const next = linesWrap.querySelector(`input[data-role="${role}"][data-idx="${i + 1}"]`);
-          if (next) next.focus();
+          if (esCarlosInput){
+            const next = linesWrap.querySelector(`input[data-role="unidades"][data-idx="${i}"]`);
+            if (next) next.focus();
+          } else {
+            const role = esGrj ? "kg-grj" : "cajas";
+            const next = linesWrap.querySelector(`input[data-role="${role}"][data-idx="${i + 1}"]`);
+            if (next) next.focus();
+          }
         }
       });
+
+      linesWrap.appendChild(code);
+      linesWrap.appendChild(kg);
+
+      // Agregar input de unidades solo para Carlos
+      if (esCarlosInput){
+        const uni = document.createElement("input");
+        uni.type = "text";
+        uni.inputMode = "numeric";
+        uni.placeholder = "0 uni";
+        uni.setAttribute("data-role", "unidades");
+        uni.setAttribute("data-idx", String(i));
+
+        uni.addEventListener("input", () => {
+          uni.value = uni.value.replace(/\D/g, "");
+        });
+
+        uni.addEventListener("keydown", (e) => {
+          if (e.key === "Enter"){
+            e.preventDefault();
+            const next = linesWrap.querySelector(`input[data-role="kg-carlos"][data-idx="${i + 1}"]`);
+            if (next) next.focus();
+          }
+        });
+
+        linesWrap.appendChild(uni);
+      }
 
       const desc = document.createElement("div");
       desc.className = "descCell";
       desc.textContent = item.desc || "";
 
-      linesWrap.appendChild(code);
-      linesWrap.appendChild(kg);
       linesWrap.appendChild(desc);
     });
 
@@ -627,18 +775,26 @@
 
   function getItemsFromModal(){
   const codes = Array.from(linesWrap.querySelectorAll('input[data-role="codigo"]'));
+  const esCarlos = tallerista === "CARLOS";
 
   return codes.map((c, i) => {
     const cajasEl  = linesWrap.querySelector(`input[data-role="cajas"][data-idx="${i}"]`);
     const kgGrjEl  = linesWrap.querySelector(`input[data-role="kg-grj"][data-idx="${i}"]`);
+    const kgCarlosEl = linesWrap.querySelector(`input[data-role="kg-carlos"][data-idx="${i}"]`);
+    const unidadesEl = linesWrap.querySelector(`input[data-role="unidades"][data-idx="${i}"]`);
+
     const cajasStr = cajasEl  ? cajasEl.value.trim()  : "";
     const kgGrjStr = kgGrjEl  ? kgGrjEl.value.trim() : "";
+    const kgCarlosStr = kgCarlosEl ? kgCarlosEl.value.trim() : "";
+    const unidadesStr = unidadesEl ? unidadesEl.value.trim() : "";
+
     const itemBase = fetchedCodes[i] || {};
 
     return {
       codigo: String(c.value || "").trim(),
       cajas: cajasStr,
-      kg:    kgGrjStr,
+      kg:    kgGrjStr || kgCarlosStr,
+      unidades: unidadesStr,
       desc:  String(itemBase.desc || "").trim()
     };
   });
@@ -649,11 +805,20 @@
   }
 
   function filterItemsToSend(items){
+    const esCarlos = tallerista === "CARLOS";
     return items.filter(it => {
-      if (isGRJ(it.codigo)){
+      if (esCarlos){
+        const kg = Number(it.kg);
+        const uni = Number(it.unidades);
+        const kgValido = it.kg !== "" && !Number.isNaN(kg) && kg > 0;
+        const uniValido = it.unidades !== "" && !Number.isNaN(uni) && uni > 0;
+        return kgValido || uniValido;
+      }
+      if (esGrjRealKg(it.codigo)){
         const n = Number(it.kg);
         return it.kg !== "" && !Number.isNaN(n) && n > 0;
       }
+      // Transformaciones 1:1 (M6/M8) y normales: validan por cajas
       const n = Number(it.cajas);
       return it.cajas !== "" && !Number.isNaN(n) && n > 0;
     });
@@ -741,13 +906,22 @@
       return;
     }
 
+    const esCarlos = tallerista === "CARLOS";
     const detalle = items
       .map(it => {
-        if (isGRJ(it.codigo)){
+        if (esCarlos){
+          return `${it.codigo} - ${it.desc} - ${it.kg} kg - ${it.unidades} uni`;
+        }
+        if (esGrjRealKg(it.codigo)){
           const kg = Number(it.kg) || 0;
           const kgxuniGrj = GRJ_PESOS[it.codigo] || 0;
           const units = kgxuniGrj > 0 ? Math.round(kg / kgxuniGrj) : 0;
           return `${it.codigo} - ${it.desc} - ${it.kg} kg (≈ ${units} uni)`;
+        }
+        if (esTransUnidades(it.codigo)){
+          // Transformacion 1:1: descuenta el componente, mismo nro de unidades
+          const compList = (GRJ_COMPONENTES[it.codigo] || []).join(", ");
+          return `${it.codigo} - ${it.desc} - ${it.cajas} uni (descuenta ${compList || "—"})`;
         }
         return `${it.codigo} - ${it.desc} - ${it.cajas} cajas`;
       })
@@ -782,45 +956,101 @@
       modalMsg.className = "status";
       modalMsg.textContent = "Guardando...";
 
-      // Separar items normales (en Cajas) de items GRJ (en Kg)
-      const normalItems = items.filter(it => !isGRJ(it.codigo));
-      const grjItems    = items.filter(it =>  isGRJ(it.codigo));
+      const esCarlos = tallerista === "CARLOS";
 
-      // Insertar items normales tal cual
-      if (normalItems.length){
-        const registros = normalItems.map(it => ({
+      // Hoisteado fuera del if/else porque el bloque SC Kg de abajo lo necesita
+      // (antes vivía solo dentro del else y rompía con ReferenceError al enviar).
+      let normalItems = [];
+      let grjItems = esCarlos ? items : [];
+      let transItems = [];
+
+      // Caso Carlos: todos los items tienen Kg y Unidades
+      if (esCarlos){
+        const registrosCarlos = items.map(it => ({
           "Nombre_Tall": formatName(tallerista),
           "Codigo_Tall": Number(codigoProveedorResuelto) || 0,
-          "Cod":  String(it.codigo || "").trim(),
-          "Cajas": Number(it.cajas) || 0,
-          "Fecha": fechaSeleccionada
+          "Cod": String(it.codigo || "").trim(),
+          "Cajas": Number(it.unidades) || 0,
+          "Fecha": fechaSeleccionada,
+          "Kg_GRJ": Number(it.kg) || 0,
+          "Cod_GRJ": String(it.codigo || "").trim()
         }));
-        const { error: sbErr } = await sb.from(ENTREGAS_TABLE).insert(registros);
+        const { error: sbErr } = await sb.from(ENTREGAS_TABLE).insert(registrosCarlos);
         if (sbErr) throw new Error("Error guardando en Supabase: " + sbErr.message);
-      }
+      } else {
+        // 3 grupos:
+        //  - normalItems: cargados como cajas, insert directo (Cod=cod del item).
+        //  - grjItems: GRJ "real" cargados en Kg, insert por componente con Cod_GRJ/Kg_GRJ.
+        //  - transItems: transformacion 1:1 (M6/M8), cargados como cajas pero insertan
+        //    contra el componente (M10/M9) para que descuente el sector predecesor.
+        normalItems = items.filter(it => !isGRJ(it.codigo));
+        grjItems    = items.filter(it => esGrjRealKg(it.codigo));
+        transItems  = items.filter(it => esTransUnidades(it.codigo));
 
-      // Para items GRJ: calcular unidades y registrar cada componente
-      // Cajas = unidades calculadas (Kg / KgxUni_GRJ), Cod_GRJ y Kg_GRJ para trazabilidad
-      if (grjItems.length){
-        const registrosGrj = [];
-        grjItems.forEach(it => {
-          const kg         = Number(it.kg) || 0;
-          const kgxuniGrj  = GRJ_PESOS[it.codigo] || 0;
-          const units      = kgxuniGrj > 0 ? Math.round(kg / kgxuniGrj) : 0;
-          (GRJ_COMPONENTES[it.codigo] || []).forEach(comp => {
-            registrosGrj.push({
-              "Nombre_Tall": formatName(tallerista),
-              "Codigo_Tall": Number(codigoProveedorResuelto) || 0,
-              "Cod":    comp,
-              "Cajas":  units,
-              "Fecha":  fechaSeleccionada,
-              "Cod_GRJ": it.codigo,
-              "Kg_GRJ":  kg
+        // Insertar items normales tal cual
+        if (normalItems.length){
+          const registros = normalItems.map(it => ({
+            "Nombre_Tall": formatName(tallerista),
+            "Codigo_Tall": Number(codigoProveedorResuelto) || 0,
+            "Cod":  String(it.codigo || "").trim(),
+            "Cajas": Number(it.cajas) || 0,
+            "Fecha": fechaSeleccionada
+          }));
+          const { error: sbErr } = await sb.from(ENTREGAS_TABLE).insert(registros);
+          if (sbErr) throw new Error("Error guardando en Supabase: " + sbErr.message);
+        }
+
+        // Para items GRJ: calcular unidades y registrar cada componente
+        // Cajas = unidades calculadas (Kg / KgxUni_GRJ), Cod_GRJ y Kg_GRJ para trazabilidad
+        if (grjItems.length){
+          const registrosGrj = [];
+          grjItems.forEach(it => {
+            const kg         = Number(it.kg) || 0;
+            const kgxuniGrj  = GRJ_PESOS[it.codigo] || 0;
+            const units      = kgxuniGrj > 0 ? Math.round(kg / kgxuniGrj) : 0;
+            (GRJ_COMPONENTES[it.codigo] || []).forEach(comp => {
+              registrosGrj.push({
+                "Nombre_Tall": formatName(tallerista),
+                "Codigo_Tall": Number(codigoProveedorResuelto) || 0,
+                "Cod":    comp,
+                "Cajas":  units,
+                "Fecha":  fechaSeleccionada,
+                "Cod_GRJ": it.codigo,
+                "Kg_GRJ":  kg
+              });
             });
           });
-        });
-        const { error: grjErr } = await sb.from(ENTREGAS_TABLE).insert(registrosGrj);
-        if (grjErr) throw new Error("Error guardando entregas GRJ: " + grjErr.message);
+          const { error: grjErr } = await sb.from(ENTREGAS_TABLE).insert(registrosGrj);
+          if (grjErr) throw new Error("Error guardando entregas GRJ: " + grjErr.message);
+        }
+
+        // Transformaciones 1:1 (M6/M8): el usuario cargó cajas/unidades y el sistema
+        // descuenta esa misma cantidad del componente (M10/M9). Kg_GRJ se computa
+        // multiplicando por el peso del componente para mantener la trazabilidad.
+        if (transItems.length){
+          const registrosTrans = [];
+          transItems.forEach(it => {
+            const cajas = Number(it.cajas) || 0;
+            if (cajas <= 0) return;
+            const kgxuni = GRJ_PESOS[it.codigo] || 0; // peso del componente (1 sola pieza)
+            const kgGrj  = cajas * kgxuni;
+            (GRJ_COMPONENTES[it.codigo] || []).forEach(comp => {
+              registrosTrans.push({
+                "Nombre_Tall": formatName(tallerista),
+                "Codigo_Tall": Number(codigoProveedorResuelto) || 0,
+                "Cod":    comp,
+                "Cajas":  cajas,
+                "Fecha":  fechaSeleccionada,
+                "Cod_GRJ": it.codigo,
+                "Kg_GRJ":  kgGrj
+              });
+            });
+          });
+          if (registrosTrans.length){
+            const { error: trErr } = await sb.from(ENTREGAS_TABLE).insert(registrosTrans);
+            if (trErr) throw new Error("Error guardando entregas 1:1: " + trErr.message);
+          }
+        }
       }
 
       // Incrementar SC Kg para sectores crudo (G3, G4, etc.)

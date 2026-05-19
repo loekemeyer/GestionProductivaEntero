@@ -48,6 +48,32 @@ let rutasListaCache = [];            // items de la tab actual: { data, matchTex
 let renderItemFn = null;             // función que renderiza un item según tab
 
 /* =========================================================
+   SECCIONES (Rutas / Despiece x Articulo)
+========================================================= */
+function cambiarSeccion(sec) {
+  const secRutasBtn = $("secRutas");
+  const secDespieceBtn = $("secDespiece");
+  const seccionRutas = $("seccionRutas");
+  const seccionDespiece = $("seccionDespiece");
+  const frame = $("despieceFrame");
+
+  if (secRutasBtn) secRutasBtn.classList.toggle("sec-activo", sec === "rutas");
+  if (secDespieceBtn) secDespieceBtn.classList.toggle("sec-activo", sec === "despiece");
+
+  if (sec === "despiece") {
+    if (seccionRutas) seccionRutas.style.display = "none";
+    if (seccionDespiece) seccionDespiece.style.display = "";
+    if (frame && !frame.dataset.loaded) {
+      frame.src = "../Despiece x Articulo/index.html";
+      frame.dataset.loaded = "1";
+    }
+  } else {
+    if (seccionRutas) seccionRutas.style.display = "";
+    if (seccionDespiece) seccionDespiece.style.display = "none";
+  }
+}
+
+/* =========================================================
    TABS
 ========================================================= */
 function cambiarTab(tab) {

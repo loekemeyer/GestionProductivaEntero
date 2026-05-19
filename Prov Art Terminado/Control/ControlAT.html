@@ -5,59 +5,41 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Control Prov. Art. Terminado</title>
+
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <link rel="stylesheet" href="ControlAT.css" />
 </head>
 <body>
 
   <div class="card">
-    <div class="header-bar">
-      <div class="header-left">
-        <button onclick="window.location.href='../../Inicio/index.html'" class="btn-home">← Inicio</button>
-        <h1>Control Prov. Art. Terminado</h1>
-      </div>
+
+  <button onclick="window.location.href='../../Inicio/index.html'" class="tallerista-btn btn-volver-home">
+    ← Volver al inicio
+  </button>
+
+  <h1>Control Prov. Art. Terminado</h1>
+    <div class="row-tools">
+      <button id="btnVolver" class="btn-volver hidden" type="button">
+        ← Cambiar proveedor
+      </button>
     </div>
 
-    <div id="status" class="status">Cargando proveedores...</div>
-
-    <!-- Vista proveedores -->
-    <div id="provGridWrap" class="selector-wrap hidden">
-      <div id="provGrid" class="ps-grid"></div>
+    <div class="row">
+      <div id="provGrid" class="talleristas-grid"></div>
     </div>
 
-    <!-- Vista detalle -->
-    <div id="detailWrap" class="detail-wrap hidden">
-      <div class="header-right">
-        <button id="btnVolver" class="btn-volver" type="button">← Cambiar proveedor</button>
-        <div id="selectedBadge" class="selected-badge"></div>
-      </div>
-
-      <div class="table-shell">
-        <table class="table">
-          <thead>
-            <tr class="table-title-row">
-              <th colspan="7" id="tableTitle">Proveedor</th>
-            </tr>
-            <tr>
-              <th>Cod</th>
-              <th>Artículo</th>
-              <th>Cartón<br>Enviado</th>
-              <th>Cajas<br>Enviadas</th>
-              <th>Art.<br>Recibidos</th>
-              <th>Saldo<br>Cartón</th>
-              <th>Saldo<br>Cajas</th>
-            </tr>
-          </thead>
-          <tbody id="resultBody"></tbody>
-        </table>
-      </div>
-
-      <div class="bottom-actions">
-        <div id="tableMsg" class="status"></div>
-      </div>
+    <div id="searchRow" class="row hidden">
+      <input id="txtBuscar" type="text" placeholder="Buscar por código o descripción..." class="input-buscar" />
     </div>
+
+    <div id="status" class="status"></div>
+
+    <div id="result"></div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="ControlAT.js"></script>
+
 </body>
 </html>

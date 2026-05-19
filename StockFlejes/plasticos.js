@@ -17,6 +17,7 @@ let sectorMap = new Map();
 let entregasPorSector = new Map();
 let enviosPSPorSector = new Map();
 let enviosTallPorSector = new Map();
+let comprasPorCodISIS = new Map();
 let sectoresPorTallerista = new Map(); // tallerista → Set de sectores plásticos
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
@@ -45,11 +46,12 @@ async function init() {
   statusEl.textContent = "Cargando datos...";
 
   try {
-    const [plasRes, entregasPS, enviosPS, enviosTall, partesTall] = await Promise.all([
+    const [plasRes, entregasPS, enviosPS, enviosTall, recepcionInsumos, partesTall] = await Promise.all([
       sb.from("Partes_Plasticas").select("*").order("Proveedor", { ascending: true }),
       fetchAll("Entregas PS"),
       fetchAll("Envios a PS"),
       fetchAll("Envios a Talleristas"),
+      fetchAll("Recepcion_Insumos"),
       sb.from("Partes x Tallerista").select("tallerista,sector_proce").limit(20000)
     ]);
     if (plasRes.error) throw plasRes.error;
@@ -96,6 +98,18 @@ async function init() {
       m.uni += n(e["Unidades"]);
       m.cajones = (m.cajones || 0) + n(e["Cajones"]);
       m.detalle.push({ tall: e["Tallerista"], fecha: e["Dia-mes"], kg: n(e["KG"]), cajones: n(e["Cajones"]), uni: n(e["Unidades"]) });
+    }
+
+    // Compras: Recepcion_Insumos rubro=Plasticos, key=Cod_ISIS, suma cantidad
+    comprasPorCodISIS = new Map();
+    for (const r of recepcionInsumos) {
+      if (String(r.rubro || "").trim() !== "Plasticos") continue;
+      const cod = String(r.codigo || "").trim();
+      if (!cod) continue;
+      if (!comprasPorCodISIS.has(cod)) comprasPorCodISIS.set(cod, { cantidad: 0, detalle: [] });
+      const m = comprasPorCodISIS.get(cod);
+      m.cantidad += n(r.cantidad);
+      m.detalle.push({ proveedor: r.proveedor, fecha: r.fecha, cantidad: n(r.cantidad), remito: r.remito });
     }
 
     // Poblar filtro proveedores
@@ -149,6 +163,8 @@ function procesarRows() {
     const ent = entregasPorSector.get(sector) || { kg: 0, detalle: [] };
     const envPS = enviosPSPorSector.get(sector) || { kg: 0, detalle: [] };
     const envTall = enviosTallPorSector.get(sector) || { kg: 0, detalle: [] };
+    const codISIS = String(p["Cod_ISIS"] || "").trim();
+    const compras = comprasPorCodISIS.get(codISIS) || { cantidad: 0, detalle: [] };
 
     const kgxUni = n(p["Kg_x_Uni"]);
     const uniBolsa = n(p["Uni_x_Bolsa"]);
@@ -157,13 +173,15 @@ function procesarRows() {
     const entUni = kgxUni > 0 ? Math.round(ent.kg / kgxUni) : (n(ent.uni || 0) || Math.round(ent.kg));
     const envPSUni = kgxUni > 0 ? Math.round(envPS.kg / kgxUni) : (n(envPS.uni || 0) || Math.round(envPS.kg));
     const envTallUni = kgxUni > 0 ? Math.round(envTall.kg / kgxUni) : (n(envTall.uni || 0) || Math.round(envTall.kg));
+    const comprasUni = n(compras.cantidad);
 
-    const stockOnline = stockInicial + entUni - envPSUni - envTallUni;
+    const stockOnline = stockInicial + comprasUni + entUni - envPSUni - envTallUni;
 
     return {
       desc, prov, familia, sector, stockOnline, stockInicial, consumoMes, pedidoMin,
-      entUni, envPSUni, envTallUni,
+      entUni, envPSUni, envTallUni, comprasUni,
       entDetalle: ent.detalle, envPSDetalle: envPS.detalle, envTallDetalle: envTall.detalle,
+      comprasDetalle: compras.detalle,
       kgxUni
     };
   });
@@ -271,7 +289,7 @@ function renderTabla(rows) {
 
     const pedidoClass = r.pedido > 0 ? "col-number col-pedido col-clickable" : "col-number col-clickable";
     html += `<tr>
-      <td class="col-marca" style="font-size:11px;color:#555">${esc(r.familia || "")}</td>
+      <td class="col-marca">${esc(r.familia || "")}</td>
       <td class="col-sector">${esc(r.sector || "")}</td>
       <td class="col-desc" title="${esc(r.desc)}">${esc(r.desc)}</td>
       <td class="${pedidoClass}" onclick="popupPedido(${i})">${r.pedido.toLocaleString("es-AR")}</td>
@@ -312,8 +330,9 @@ function buildDetRows(detalle, tipo) {
   if (!detalle || !detalle.length) return '<div style="font-size:11px;color:#999;padding:4px 0">Sin movimientos</div>';
   let h = '<table style="width:100%;font-size:11px;margin:2px 0">';
   [...detalle].reverse().forEach(d => {
-    const quien = tipo === "tall" ? (d.tall || "") : (d.ps || "");
-    h += `<tr><td style="color:#666;padding:2px 4px">${esc(quien)}</td><td style="padding:2px 4px">${esc(d.fecha || "")}</td><td style="text-align:right;padding:2px 4px">${fmtN(d.kg)} kg</td></tr>`;
+    const quien = tipo === "tall" ? (d.tall || "") : tipo === "compra" ? (d.proveedor || "") : (d.ps || "");
+    const valor = tipo === "compra" ? `${fmtN(d.cantidad)} uni` : `${fmtN(d.kg)} kg`;
+    h += `<tr><td style="color:#666;padding:2px 4px">${esc(quien)}</td><td style="padding:2px 4px">${esc(d.fecha || "")}</td><td style="text-align:right;padding:2px 4px">${valor}</td></tr>`;
   });
   h += '</table>';
   return h;
@@ -325,6 +344,7 @@ function popupStockOnline(i) {
 
   const filas = [
     { label: "Conteo (Stock Inicial)", val: r.stockInicial, detalle: null },
+    { label: "+ Compras", val: r.comprasUni, detalle: r.comprasDetalle, tipo: "compra" },
     { label: "+ Entregas PS", val: r.entUni, detalle: r.entDetalle, tipo: "ps" },
     { label: "− Envios a PS", val: r.envPSUni, detalle: r.envPSDetalle, tipo: "ps" },
     { label: "− Envios a Talleristas", val: r.envTallUni, detalle: r.envTallDetalle, tipo: "tall" }

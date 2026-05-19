@@ -11,7 +11,8 @@
   <body>
     <div class="page">
       <div class="card">
-        <button onclick="window.location.href='../Inicio/index.html'" class="btn btn-volver">&larr; Volver al inicio</button>
+        <button onclick="window.location.href='../Inicio/index.html'" class="btn btn-volver" id="btnVolverInicio">&larr; Volver al inicio</button>
+        <script>if (window.self !== window.top) { const b = document.getElementById('btnVolverInicio'); if (b) b.style.display = 'none'; }</script>
         <h1>Despiece x Articulo</h1>
         <p class="sub">Trazado desde el tallerista hasta el fleje/compra, paso por paso.</p>
 
@@ -29,6 +30,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=11"></script>
   </body>
 </html>

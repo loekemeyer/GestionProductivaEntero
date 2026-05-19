@@ -217,7 +217,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (lastDay && lastDay !== today) {
-    const keepDays = getLastNWorkdays(5);
+    const keepDays = getLastNWorkdays(10);
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
       if (!k || !k.startsWith(LS_PREFIX + "::")) continue;
@@ -229,10 +229,40 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ================= COLA ================= */
   function readQueue() {
-    try { return JSON.parse(localStorage.getItem(LS_QUEUE) || "[]"); }
-    catch { return []; }
+    try {
+      const raw = localStorage.getItem(LS_QUEUE);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed;
+    } catch {
+      return [];
+    }
   }
-  function writeQueue(arr) { localStorage.setItem(LS_QUEUE, JSON.stringify(arr)); }
+
+  function writeQueue(arr) {
+    if (!Array.isArray(arr)) {
+      console.error("writeQueue: argumento no es array", arr);
+      return;
+    }
+    try {
+      localStorage.setItem(LS_QUEUE, JSON.stringify(arr));
+      // Validar que se escribió correctamente
+      const verify = localStorage.getItem(LS_QUEUE);
+      if (!verify) {
+        console.error("writeQueue: no se pudo escribir la cola");
+      }
+    } catch (err) {
+      console.error("writeQueue error:", err);
+    }
+  }
+
+  // Proteger la cola de limpiezas accidentales
+  function protectQueue() {
+    const q = readQueue();
+    if (q.length > 0) {
+      writeQueue(q); // Re-escribir para asegurar persistencia
+    }
+  }
 
   function enqueue(payload) {
     const q = readQueue();
@@ -251,6 +281,9 @@ document.addEventListener("DOMContentLoaded", () => {
       s.last2 = s.last2.slice(0, MAX_DAY_HISTORY);
       writeState(leg, s);
     }
+
+    // Solicitar sync en background cuando hay pendientes
+    requestBackgroundSync();
   }
 
   /* ================= ENVIO A SUPABASE ================= */
@@ -266,11 +299,16 @@ document.addEventListener("DOMContentLoaded", () => {
       matriz: item.matriz || ""
     };
 
-    const { error } = await sb.from(TABLA_REGISTROS).upsert(payload, { onConflict: "id" });
+    const { error } = await sb.from(TABLA_REGISTROS)
+      .upsert(payload, { onConflict: "id", ignoreDuplicates: true });
     if (error) throw new Error(error.message);
 
-    // Procesar y escribir en db_n8n_espejo (replica lógica n8n)
-    await procesarParaEspejo(item);
+    // Procesar espejo SIEMPRE - es idempotente via upsert con onConflict ID_Ejecucion.
+    // El check anterior wasInserted (data.length > 0) fallaba porque .select() con
+    // ignoreDuplicates puede devolver [] aun cuando se inserto.
+    procesarParaEspejo(item).catch(err => {
+      console.error("Error procesando espejo en background:", err.message || err);
+    });
   }
 
   /* ================= PROCESAMIENTO (replica n8n) ================= */
@@ -480,11 +518,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Nota: Las matrices sin Tiempo_Historico se muestran en informes sin premio
 
+      const esCM = op === "CM";
+      const cmDestino = esCM ? String(item.texto || "").trim() : "";
+
       const row = {
         Fecha: tsEvent,
         Legajo: legajo,
-        Nombre_Matriz: esCajon ? (item.nombreOverride || nombreMatriz) : (esRM_PM_RD_LT ? `${op} ${matNum}` : item.descripcion),
-        Matriz: esCajon ? matNum : (esRM_PM_RD_LT ? matNum : op),
+        Nombre_Matriz: esCajon ? (item.nombreOverride || nombreMatriz) : (esRM_PM_RD_LT ? `${op} ${matNum}` : (esCM ? "Cambiar Matriz" : item.descripcion)),
+        Matriz: esCajon ? matNum : (esRM_PM_RD_LT ? matNum : (esCM ? cmDestino : op)),
         Uni: uni,
         Premio: premio,
         Tiempo_Toma: uni === 0 ? 0 : tiempoToma,
@@ -503,8 +544,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       row.ID_Ejecucion = item.id ? hashId(item.id) : null;
 
-      const { error } = await sb.from("db_n8n_espejo").insert(row);
-      if (error) console.error("Error insertando en db_n8n_espejo:", error);
+      // Upsert idempotente DO NOTHING: si ya existe (re-procesamiento), no rompe ni dispara policy UPDATE de RLS.
+      const { error } = await sb.from("db_n8n_espejo").upsert(row, { onConflict: "ID_Ejecucion", ignoreDuplicates: true });
+      if (error) console.error("Error upsertando en db_n8n_espejo:", error);
 
       // Recalcular cajones del dia si se inserto un TM
       if (esTM && dateInfo.dia && dateInfo.mes) {
@@ -567,6 +609,28 @@ document.addEventListener("DOMContentLoaded", () => {
       isFlushing = false;
       renderSummary();
       renderPending();
+    }
+  }
+
+  // Función para solicitar Background Sync cuando hay pendientes
+  async function requestBackgroundSync() {
+    if ("serviceWorker" in navigator && "SyncManager" in window) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg.sync) {
+          await reg.sync.register("sync-queue");
+          console.log("Background Sync registrado para cola con", readQueue().length, "items");
+        }
+      } catch (err) {
+        console.error("Error registrando Background Sync:", err);
+        // Fallback: si falla el Background Sync, programar un reintentos manual
+        setTimeout(() => {
+          if (readQueue().length > 0 && navigator.onLine) {
+            console.log("Fallback: intentando flushQueue después de Background Sync fail");
+            flushQueue();
+          }
+        }, 1000);
+      }
     }
   }
 
@@ -640,15 +704,34 @@ document.addEventListener("DOMContentLoaded", () => {
     { code: "PC", desc: "Pare Comida", row: 3, input: { show: false } },
     { code: "RD", desc: "Rollo Fleje Doblado", row: 3, input: { show: false } },
     { code: "MOV P", desc: "Movimiento Piedra", row: 3, input: { show: false } },
-    { code: "CM", desc: "Cambiar Matriz", row: 4, input: { show: false } },
+    { code: "CM", desc: "Cambiar Matriz", row: 4, input: { show: true, label: "Matriz destino", placeholder: "Ej: 110", validate: /^[0-9]+[A-Za-z]?$/ } },
     { code: "PM", desc: "Pare Matriz", row: 4, input: { show: false } },
     { code: "RM", desc: "Rotura Matriz", row: 4, input: { show: false } },
     { code: "REM", desc: "Reparando Matriz", row: 4, input: { show: false } }
   ];
 
-  const NON_DOWNTIME = new Set(["E", "C", "RM", "PM", "RD", "LT"]);
+  // NON_DOWNTIME (codigos de PRODUCCION valida) se carga de "Codificacion Mensajes".tipo='PRODUCCION'.
+  // Fallback: {E, C} (apertura/cierre cajon — los unicos seguros sin consultar BD).
+  // Si la lista esta mal, el calculo de Segundos_Tiempo_Muerto y Premio queda mal — afecta disruptivas.
+  let NON_DOWNTIME = new Set(["E", "C"]);
   const isDowntime = (op) => !NON_DOWNTIME.has(op);
   const sameDowntime = (a, b) => a && b && a.opcion === b.opcion && (a.texto || "") === (b.texto || "");
+
+  async function cargarTiposCodigos() {
+    try {
+      const { data, error } = await supabaseClient
+        .from("Codificacion Mensajes")
+        .select("Codigo,tipo")
+        .eq("tipo", "PRODUCCION");
+      if (error) throw error;
+      if (data && data.length) {
+        NON_DOWNTIME = new Set(data.map(r => String(r.Codigo).toUpperCase()));
+      }
+    } catch (e) {
+      console.error("[RegistroApp] cargarTiposCodigos fallo, uso fallback:", e);
+    }
+  }
+  cargarTiposCodigos();
 
   let selected = null;
 
@@ -962,9 +1045,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const segTrabajados = Math.max(1, toSec(horaFin) - toSec(horaInicio));
             const dateInfo = dateFromISO(item.ts);
 
+            const esCMedit = code === "CM";
             const tmData = {
-              Matriz: code,
-              Nombre_Matriz: opt.desc,
+              Matriz: esCMedit ? String(texto || "").trim() : code,
+              Nombre_Matriz: esCMedit ? "Cambiar Matriz" : opt.desc,
               Uni: 0,
               Premio: 0,
               Tiempo_Toma: 0,
@@ -1056,15 +1140,27 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderPending() {
     const leg = legajoKey();
     const q = readQueue().filter(it => String(it.legajo || "").trim() === leg);
-    if (!q.length) { pendingSection.classList.add("hidden"); pendingList.innerHTML = ""; return; }
+
+    if (!q.length) {
+      pendingSection.classList.add("hidden");
+      pendingList.innerHTML = "";
+      return;
+    }
+
     pendingSection.classList.remove("hidden");
     pendingList.innerHTML = q.map(it => `
       <div style="padding:10px;border:1px solid rgba(0,0,0,.08);border-radius:12px;margin-top:8px;">
         <div style="font-weight:900;font-size:22px;">${it.opcion}${it.texto ? `: ${it.texto}` : ""}</div>
         <span style="padding:2px 8px;border-radius:999px;background:#fff7e6;color:#8a5a00;font-weight:800;font-size:12px;">PENDIENTE</span>
         ${it.__tries ? `<span style="font-size:12px;color:#666;"> intentos: ${it.__tries}</span>` : ""}
+        <div style="font-size:11px;color:#999;margin-top:6px;">
+          Encolado: ${it.__queuedAt ? formatDateTimeAR(it.__queuedAt) : "ahora"}
+        </div>
       </div>
     `).join("");
+
+    // Asegurar persistencia: escribir la cola otra vez para evitar que se pierda
+    writeQueue(q);
   }
 
   function renderMatrizInfo() {
@@ -1123,6 +1219,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // Guardar legajo en localStorage
+    localStorage.setItem("gp_legajo_record", leg);
+
     legajoScreen.classList.add("hidden");
     optionsScreen.classList.remove("hidden");
     renderOptions();
@@ -1148,12 +1247,17 @@ document.addEventListener("DOMContentLoaded", () => {
     errorEl.innerText = "";
     textInput.value = "";
 
-    if (opt.input.show) {
+    // CM: 2da pulsacion cierra el TM, no pide input
+    const stateSel = readState(legajoKey());
+    const cmCerrando = opt.code === "CM" && stateSel?.lastDowntime?.opcion === "CM";
+
+    if (opt.input.show && !cmCerrando) {
       inputArea.classList.remove("hidden");
       inputLabel.innerText = opt.input.label;
       textInput.placeholder = opt.input.placeholder;
     } else {
       inputArea.classList.add("hidden");
+      if (cmCerrando) textInput.value = stateSel.lastDowntime.texto || "";
     }
     renderMatrizInfo();
   }
@@ -1461,13 +1565,24 @@ document.addEventListener("DOMContentLoaded", () => {
       let ok;
       if (selected.code === "C" && isMatrix501(stateBefore)) {
         ok = /^\d+(?:[.,]\d+)?$/.test(texto);
+      } else if (selected.code === "CM") {
+        ok = /^[0-9]+[A-Za-z]?$/.test(texto);
       } else {
         ok = /^[0-9]+$/.test(texto);
       }
       if (!ok) {
         errorEl.style.color = "red";
-        errorEl.innerText = (selected.code === "C" && isMatrix501(stateBefore))
-          ? "Para matriz 501: usar coma o punto (ej: 12,5)" : "Solo se permiten numeros enteros";
+        if (selected.code === "C" && isMatrix501(stateBefore)) errorEl.innerText = "Para matriz 501: usar coma o punto (ej: 12,5)";
+        else if (selected.code === "CM") errorEl.innerText = "Matriz destino invalida (ej: 110 o 12B)";
+        else errorEl.innerText = "Solo se permiten numeros enteros";
+        return;
+      }
+    }
+
+    // Validacion matriz destino para CM (debe existir en Matrices)
+    if (selected.code === "CM") {
+      if (!matricesMap.has(texto)) {
+        alert(`La matriz ${texto} no existe. Verifica el numero.`);
         return;
       }
     }
@@ -1655,8 +1770,18 @@ document.addEventListener("DOMContentLoaded", () => {
     errorEl.innerText = "";
     document.querySelectorAll(".box.selected").forEach(x => x.classList.remove("selected"));
 
-    try { await flushQueue(); }
-    finally { btnEnviar.disabled = false; btnEnviar.innerText = "Enviar"; }
+    try {
+      await flushQueue();
+      // Si quedaron items en cola, reintentar agresivamente
+      if (readQueue().length > 0 && navigator.onLine) {
+        console.log("Reintentando envío agresivo (item aún en cola)");
+        await new Promise(r => setTimeout(r, 100));
+        await flushQueue();
+      }
+    } finally {
+      btnEnviar.disabled = false;
+      btnEnviar.innerText = "Enviar";
+    }
 
     // DEM: detectar huecos despues de enviar E
     if (selectedCode === "E") {
@@ -1784,7 +1909,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (clave === null) return;
     if (!clave.trim()) { alert("Ingresa una clave"); return; }
     try {
-      const { data, error } = await sb.from("app_login").select("id").eq("password_text", clave.trim()).single();
+      // Usar RPC check_app_password (SECURITY DEFINER) — bypasea RLS de app_login
+      const { data, error } = await sb.rpc("check_app_password", { p_password: clave.trim() });
       if (error || !data) { alert("Clave incorrecta"); }
       else { window.location.href = "../../Inicio/index.html"; }
     } catch { alert("Error de conexion. Intenta de nuevo."); }
@@ -1804,23 +1930,84 @@ document.addEventListener("DOMContentLoaded", () => {
     legajoTimer = setTimeout(renderSummary, 120);
   });
 
+  // Detectar cuando la app va a background
+  let backgroundTimeout = null;
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") { flushQueue(); flushDEMQueue(); }
+    if (document.visibilityState === "visible") {
+      clearTimeout(backgroundTimeout);
+      flushQueue();
+      flushDEMQueue();
+    } else {
+      // App va a background
+      clearTimeout(backgroundTimeout);
+      requestBackgroundSync();
+      // Hacer un último flush antes de ir a background
+      backgroundTimeout = setTimeout(async () => {
+        await flushQueue();
+      }, 500);
+    }
   });
-  window.addEventListener("focus", () => { flushQueue(); flushDEMQueue(); });
+
+  window.addEventListener("focus", () => {
+    clearTimeout(backgroundTimeout);
+    flushQueue();
+    flushDEMQueue();
+  });
+
+  window.addEventListener("blur", () => {
+    // Ventana pierde foco, solicitar sync
+    requestBackgroundSync();
+  });
+
   window.addEventListener("online", async () => {
-    const end = Date.now() + 3000;
-    while (Date.now() < end && readQueue().length) await flushQueue();
+    console.log("Conexión internet restaurada");
+    const end = Date.now() + 5000;
+    while (Date.now() < end && readQueue().length) {
+      await flushQueue();
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
     await flushDEMQueue();
+    requestBackgroundSync();
   });
-  setInterval(() => { flushQueue(); flushDEMQueue(); }, 5000);
+
+  // Intervalo principal de sync
+  const syncInterval = setInterval(() => {
+    protectQueue(); // Asegurar que la cola no se pierda
+    if (readQueue().length > 0 && navigator.onLine) {
+      flushQueue();
+    }
+    flushDEMQueue();
+  }, 5000);
+
+  // Escuchar mensajes del Service Worker
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      if (event.data.type === "SYNC_RESULTS") {
+        console.log("Resultados de sync desde Service Worker:", event.data.resultados);
+        renderSummary();
+        renderPending();
+      }
+    });
+  }
 
   /* ================= INIT ================= */
   cargarCatalogos().then(async () => {
+    // Proteger la cola desde el inicio
+    protectQueue();
+
+    // Auto-login con legajo guardado en localStorage
+    const legajoGuardado = localStorage.getItem("gp_legajo_record");
+
     renderOptions();
     renderSummary();
     renderPending();
-    console.log("app.js OK - Supabase directo v2");
+    console.log("app.js OK - Supabase directo v2 + Service Worker + Background Sync");
+
+    // Auto-login si hay legajo guardado
+    if (legajoGuardado && empleadosMap.has(legajoGuardado)) {
+      legajoInput.value = legajoGuardado;
+      setTimeout(() => goToOptions(), 300); // Pequeño delay para que UI se renderice primero
+    }
 
     // Recuperar DEM pendiente si cerro el navegador (mismo dia)
     const pendingDEM = loadPendingDEM();

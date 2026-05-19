@@ -7,7 +7,7 @@
     // Entry point: si ya hay sesion, va directo a Inicio; si no, al login.
     (function () {
       if (sessionStorage.getItem('gp_auth') === 'ok') {
-        window.location.replace('Inicio/');
+        window.location.replace('Inicio/index.html');
       } else {
         window.location.replace('login.html');
       }

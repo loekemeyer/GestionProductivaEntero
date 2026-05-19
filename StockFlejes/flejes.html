@@ -7,13 +7,28 @@
   <title>Stock Flejes</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="stock-flejes.css" />
+  <style>
+    /* Comprimir columnas para reducir desperdicio visual */
+    .page { max-width: 1050px; }
+    #tblStock { table-layout: fixed; }
+    #tblStock col.col-prov    { width: 11%; }
+    #tblStock col.col-nfleje  { width: 9%; }
+    #tblStock col.col-desc    { width: 31%; }
+    #tblStock col.col-med     { width: 11%; }
+    #tblStock col.col-num     { width: 12.66%; }
+    #tblStock td.col-desc {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
 </head>
 <body>
   <div class="page">
     <div class="sc-container">
       <div class="sc-header">
         <div class="sc-title">Stock Flejes</div>
-        <button class="btn-inicio" onclick="window.location.href='index.html'">Atrás</button>
+        <button class="btn-inicio" onclick="window.location.href='../Inicio/index.html'">Atrás</button>
       </div>
       <div id="status" class="status"></div>
 
@@ -43,6 +58,15 @@
       </div>
 
       <table class="sc-table" id="tblStock">
+        <colgroup>
+          <col class="col-prov">
+          <col class="col-nfleje">
+          <col class="col-desc">
+          <col class="col-med">
+          <col class="col-num">
+          <col class="col-num">
+          <col class="col-num">
+        </colgroup>
         <thead>
           <tr class="header-sub">
             <th><br>Prov</th>

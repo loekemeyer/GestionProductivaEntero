@@ -67,19 +67,23 @@
   }
 
   // --- Constantes comunes ---
+  // NOTA: TM_CODES y NON_DOWNTIME ya no estan hardcoded — se cargan de "Codificacion Mensajes" en cada
+  // modulo que los usa. helpers.js no es importado por ningun archivo (window.GP no se usa),
+  // estos defaults quedan como referencia/documentacion. Si en el futuro se usa GP.isTM, hay
+  // que poblar TM_CODES via fetch async.
+  const TM_CODES = []; // poblar via "Codificacion Mensajes" tipo=TIEMPO_MUERTO si se necesita
+  const NON_DOWNTIME = new Set(["E", "C"]); // codigos de PRODUCCION (apertura/cierre cajon)
 
-  // Códigos de Tiempo Muerto (no se cuentan como producción)
-  const TM_CODES = ["PB", "BC", "MOV", "PC", "PR", "AL", "LT", "RD", "PM", "RM", "E", "C", "PERM"];
-
-  // Set para búsqueda O(1)
-  const NON_DOWNTIME = new Set(["E", "C", "RM", "PM", "RD", "LT"]);
-
-  // Lista de talleristas que son proveedores de art terminado (no procesan internamente)
-  const PROV_AT = new Set(["Carriero", "Lopez Jose", "Manfer", "Maspoli", "Melinox", "Paternal Goma", "Pintos", "The Plast"]);
+  // PROV_AT eliminado — antes era hardcoded ["Carriero","Lopez Jose",...]. Ahora vive en tabla
+  // Talleristas (flag prov_at). Si en el futuro se necesita aca, hacer fetch async.
 
   // isTM: ¿un código de matriz es tiempo muerto?
+  // Heuristica: cualquier code que NO empiece con digito y no este en NON_DOWNTIME es TM.
   function isTM(code) {
-    return TM_CODES.includes(String(code || "").toUpperCase());
+    const c = String(code || "").trim().toUpperCase();
+    if (!c) return false;
+    if (/^\d/.test(c)) return false; // matrices numericas son produccion
+    return !NON_DOWNTIME.has(c);
   }
 
   // --- Cálculos de premio ---

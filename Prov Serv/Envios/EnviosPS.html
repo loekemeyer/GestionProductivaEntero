@@ -10,110 +10,87 @@
 <body>
 
   <div class="card">
-    <div class="header-bar">
-      
-      <div class="header-left">
-        <button onclick="window.location.href='../../Inicio/index.html'" class="btn-home">
-          ← Inicio
-        </button>
-        <h1>Envío a Proveedores de Servicios</h1>
-        <button id="btnSiguiente" class="btn-siguiente hidden" type="button">
-          Siguiente →
-        </button>
-        <button id="btnEnviar" class="btn-enviar hidden" type="button">
-          Enviar
-        </button>
-      </div>
-
-      <div class="header-right hidden" id="selectedBar">
-        <button id="btnVolver" class="btn-volver" type="button">← Cambiar proveedor</button>
-        <div id="selectedBadge" class="selected-badge"></div>
-      </div>
+    <!-- HEADER -->
+    <div class="header-top">
+      <button onclick="window.location.href='../../Inicio/index.html'" class="btn-home" type="button">← Inicio</button>
+      <h1>Envío a Proveedores de Servicios</h1>
+      <button id="btnVolver" class="btn-volver hidden" type="button">← Cambiar</button>
     </div>
 
-    <div id="status" class="status">Cargando proveedores...</div>
-
-    <!-- Vista inicial -->
-    <div id="psGridWrap" class="selector-wrap hidden">
-      <div id="psGrid" class="ps-grid"></div>
+    <!-- FASE 0: SELECCIONAR PROVEEDOR -->
+    <div id="fase0" class="fase-container">
+      <div id="psGridWrap" class="ps-grid-wrap">
+        <div id="psGrid" class="ps-grid"></div>
+      </div>
+      <div id="status" class="status"></div>
     </div>
 
-    <!-- FASE 1: Carga de datos -->
-    <div id="fase1" class="detail-wrap hidden">
-      <div class="table-shell">
-        <table class="table">
-          <thead>
-            <tr class="table-title-row">
-              <th colspan="6" id="tableTitle">Proveedor</th>
-            </tr>
-            <tr>
-              <th>Parte</th>
-              <th>Proceso</th>
-              <th>SC</th>
-              <th>Caj a<br> Env</th>
-              <th>Kg</th>
-              <th>Caj</th>
-            </tr>
-          </thead>
-          <tbody id="resultBody"></tbody>
-        </table>
-      </div>
-
-      <div class="bottom-actions">
-        <div id="tableMsg" class="status"></div>
-      </div>
-    </div>
-
-    <!-- FASE 2: Preview -->
-    <div id="fase2" class="detail-wrap hidden">
+    <!-- FASE 1: CARGAR CAJONES -->
+    <div id="fase1" class="fase-container hidden">
       <div class="fase-header">
-        <button id="btnVolverFase1" class="btn-volver" type="button">← Volver a editar</button>
-        <span class="fase-titulo">Preview del envío</span>
+        <h2 id="fase1Title">Proveedor</h2>
       </div>
-      <div class="table-shell">
+      <div class="table-wrap">
         <table class="table">
           <thead>
-            <tr class="table-title-row">
-              <th colspan="5" id="previewTitle">Proveedor</th>
-            </tr>
             <tr>
               <th>Parte</th>
               <th>Proceso</th>
               <th>SC</th>
-              <th>Kg</th>
-              <th>Caj</th>
+              <th class="right">Caj</th>
             </tr>
           </thead>
-          <tbody id="previewBody"></tbody>
-          <tfoot>
-            <tr class="total-row">
-              <td colspan="3" style="text-align:right;font-weight:800;">TOTAL</td>
-              <td id="previewTotalKg" style="text-align:center;font-weight:800;"></td>
-              <td id="previewTotalCaj" style="text-align:center;font-weight:800;"></td>
-            </tr>
-          </tfoot>
+          <tbody id="fase1TableBody"></tbody>
         </table>
       </div>
-    </div>
-
-    <!-- FASE 3: Confirmación -->
-    <div id="fase3" class="hidden">
-      <div id="successBox" class="successBox" style="display:block;">
-        <div class="title">Envío registrado</div>
-        <div>Tu código de envío:</div>
-        <div id="successCode" class="successCode">—</div>
-        <div class="success-actions">
-          <button id="okBtn" class="okBtn" type="button">OK</button>
-          <button id="btnVolverPS" class="btn-volver" type="button">← Cambiar proveedor</button>
-        </div>
+      <div class="footer-actions">
+        <button id="btnSiguiente" class="btn-enviar hidden" type="button">Siguiente →</button>
       </div>
     </div>
 
-    <iframe id="printFrame" style="display:none;width:0;height:0;border:0"></iframe>
-    <iframe name="sheet_iframe" style="display:none"></iframe>
-    <form id="sheetForm" action="TU_WEBAPP_URL_AQUI" method="POST" target="sheet_iframe" class="hidden">
-      <input type="hidden" name="payload" id="payloadField" value="">
-    </form>
+    <!-- FASE 2: CARGAR KG / UNI -->
+    <div id="fase2" class="fase-container hidden">
+      <div class="fase-header">
+        <h2 id="fase2Title">Cargar Pesos (Kg)</h2>
+        <button id="btnVolverFase1" class="btn-volver-fases" type="button">← Atrás</button>
+      </div>
+      <div style="padding:8px 12px;display:flex;align-items:center;gap:10px">
+        <label for="fechaEnvio" style="font-weight:800;font-size:14px">Fecha:</label>
+        <input type="date" id="fechaEnvio" style="height:38px;border-radius:10px;border:2px solid #d0d7de;padding:0 10px;font-size:14px">
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Parte</th>
+              <th>Proceso</th>
+              <th>SC</th>
+              <th class="right">Caj</th>
+              <th class="right" id="fase2HdrCantidad">Kg</th>
+            </tr>
+          </thead>
+          <tbody id="fase2TableBody"></tbody>
+        </table>
+      </div>
+      <div class="footer-actions">
+        <button id="btnEnviar" class="btn-enviar disabled" type="button" disabled>Enviar</button>
+      </div>
+    </div>
+
+    <!-- FASE 3: CONFIRMACIÓN -->
+    <div id="fase3" class="fase-container hidden">
+      <div class="fase-header success-header">
+        <h2>✓ Envío registrado</h2>
+      </div>
+      <div id="successBox" class="success-box">
+        <div class="success-msg">Tu código de envío:</div>
+        <div id="successCode" class="success-code">—</div>
+      </div>
+      <div class="footer-actions">
+        <button id="btnVolverPS" class="btn-enviar" type="button">← Cambiar proveedor</button>
+      </div>
+    </div>
+
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>

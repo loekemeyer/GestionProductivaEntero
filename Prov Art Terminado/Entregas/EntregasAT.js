@@ -186,7 +186,7 @@ btnEnviar.addEventListener("click", async () => {
     return;
   }
 
-  const detalle = items.map(it => `${it.cod} - ${it.desc} → Cantidad: ${it.cantidad}`).join("\n");
+  const detalle = items.map(it => `${it.cod} - ${it.desc} → Cajas: ${it.cantidad}`).join("\n");
   if (!confirm(`¿Confirmar entrega?\n\n${detalle}`)) return;
 
   const payload = items.map(it => ({
@@ -244,7 +244,7 @@ function imprimirComprobante({ codigo, proveedor, fecha, items }) {
     <h1>Comprobante de Entrega - Art. Terminado</h1>
     <div style="font-size:18px;margin-bottom:10px"><strong>Código:</strong> ${escapeHtml(codigo)}</div>
     <div class="meta"><div><strong>Fecha:</strong> ${escapeHtml(fecha)}</div><div><strong>Proveedor:</strong> ${escapeHtml(proveedor)}</div></div>
-    <table><thead><tr><th>Cod</th><th>Artículo</th><th>Cantidad</th></tr></thead><tbody>${rows}</tbody></table>
+    <table><thead><tr><th>Cod</th><th>Artículo</th><th>Cajas</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="foot">Comprobante generado automáticamente.</div>
     <script>window.onload=function(){window.print()}<\/script></body></html>`;
 

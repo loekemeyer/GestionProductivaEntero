@@ -566,6 +566,9 @@ function renderTabla(rows) {
 
   let tbodyHtml = "";
   const cajasInsertadas = new Set();
+  // Si hay busqueda de texto activa, no auto-anexar la fila Caja al final de cada cod
+  // (porque confunde: muestra la caja de cods cuyas piezas matchearon, no la pieza buscada en si)
+  const hayBusquedaTexto = !!(searchInput && searchInput.value && searchInput.value.trim());
 
   rows.forEach((r, idx) => {
     const cod    = escapeHtml(r["COD"]);
@@ -643,9 +646,10 @@ function renderTabla(rows) {
       `;
     }
 
-    // Insertar fila de caja como una parte más al final de cada grupo de código (solo si no es vista filtrada por cajas)
+    // Insertar fila de caja como una parte más al final de cada grupo de código
+    // (solo si no es vista filtrada por cajas y no hay busqueda de texto activa)
     const sigCod = idx < rows.length - 1 ? normCod(rows[idx + 1]["COD"]) : null;
-    if (!r._esCajaVirtual && codNorm !== sigCod && r["N_Caja"] != null && !cajasInsertadas.has(codNorm)) {
+    if (!hayBusquedaTexto && !r._esCajaVirtual && codNorm !== sigCod && r["N_Caja"] != null && !cajasInsertadas.has(codNorm)) {
       cajasInsertadas.add(codNorm);
       // Buscar Uni_x_Caja del artículo (cuántas unidades entran en la caja)
       const uniEnCaja = rows.find(x => normCod(x["COD"]) === codNorm && x["Uni_x_Caja"] != null);
@@ -998,8 +1002,22 @@ confirmOverlay.addEventListener("click", (e) => {
    BLOQUE: EXPORTAR DATOS
 ========================================================= */
 function getRowsParaExportar() {
-  const q = searchInput.value;
-  const rows = q ? filtrar(todosLosRows, q) : todosLosRows;
+  // Replica la logica de aplicarFiltros (rubro + busqueda) sobre todosLosRows.
+  let rows = todosLosRows;
+  const rubroSel = filtroRubro.value;
+  if (rubroSel) {
+    rows = rows.filter(r => getRubro(r["Sector Proce"], r["Descripcion de partes"]) === rubroSel);
+  }
+  const q = normalizeText(searchInput.value);
+  if (q) {
+    rows = rows.filter((r) => {
+      const cod    = normalizeText(r["COD"]);
+      const sector = normalizeText(r["Sector Proce"]);
+      const desc   = normalizeText(r["Descripcion de partes"]);
+      const rubro  = normalizeText(getRubro(r["Sector Proce"], r["Descripcion de partes"]));
+      return cod.includes(q) || sector.includes(q) || desc.includes(q) || rubro.includes(q);
+    });
+  }
   return rows.map(r => ({
     "Marca": (() => {
       const c = normCod(r["COD"]);

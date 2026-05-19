@@ -72,7 +72,10 @@ function clearBuffer(){
 
 function actualizarBtnSiguiente(){
   const buf = getBuffer();
-  const tieneItems = buf.some(b => Number(b.cajones) > 0 || Number(b.unidades) > 0);
+  const tieneItems = buf.some(b =>
+    b.tallerista === talleristaActivo &&
+    (Number(b.cajones) > 0 || Number(b.unidades) > 0)
+  );
   btnSiguiente.classList.toggle("hidden", !tieneItems);
 }
 /*************************************************
@@ -86,6 +89,49 @@ let cajasCache = null;
 let talleristaActivo = "";
 let listaTalleristas = [];
 let filasFiltradas = [];
+
+// Sectores crudos (SC) que recibe Martin — clasifican como "Sector Crudo".
+// Se carga al inicio desde SC Kg.crudo_martin = TRUE. Fallback hardcoded preservado.
+let SECTORES_CRUDO_MARTIN = new Set(["KF2", "LF16", "KF8"]);
+
+async function cargarSectoresCrudoMartin(){
+  try {
+    const { data, error } = await supabaseClient.from("SC Kg").select("SC").eq("crudo_martin", true);
+    if (error) { console.warn("[EnviosTall] No se pudo cargar SECTORES_CRUDO_MARTIN, uso fallback:", error.message); return; }
+    if (data && data.length) SECTORES_CRUDO_MARTIN = new Set(data.map(r => String(r.SC).trim()));
+  } catch (e) { console.warn("[EnviosTall] cargarSectoresCrudoMartin fallo, uso fallback:", e); }
+}
+
+// Orden de grupos en la tabla, espejo de ControlTall.
+const GRUPOS_ORDEN = ["Sector Procesado", "Sector Crudo", "Partes Plásticas", "Garaje", "Remaches", "Cartones", "Cajas", "Importados"];
+
+// Clasifica un item en uno de los grupos. Mismo criterio que ControlTall.clasificarParte:
+// usa rubro de Despiece (rubroBySector / rubroByPart en sectoresCache) como fuente de verdad
+// para Remaches y Plásticos, con fallbacks por patron de sector / descripción.
+function clasificarItem(item){
+  const desc = String(item.descripcion || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const sec = String(item.sector || "").trim().toUpperCase();
+
+  if (desc.startsWith("caja n") || sec === "CAJA") return "Cajas";
+  if (desc.startsWith("carton") || desc.startsWith("cartón")) return "Cartones";
+
+  // Rubro primario (fuente: Despiece x Articulo)
+  const rubroBySector = sectoresCache && sectoresCache.rubroBySector;
+  const rubroByPart   = sectoresCache && sectoresCache.rubroByPart;
+  const rubro = (rubroBySector && rubroBySector.get(item.sector)) || (rubroByPart && rubroByPart.get(desc)) || "";
+  if (rubro === "Importados") return "Importados";
+  if (rubro === "Remaches") return "Remaches";
+  if (rubro === "Plásticos" || rubro === "Plasticos") return "Partes Plásticas";
+
+  if (sec.startsWith("GRJ") || sec.startsWith("CP")) return "Garaje";
+  if (sec.startsWith("P")) return "Partes Plásticas";
+  // Fallback remaches: V seguido de digito (V1, V3C, V14, etc.) y otros sectores conocidos
+  if (/^V\d+[A-Z]?$/.test(sec)) return "Remaches";
+  if (["W4","W6","W8","S/S","SR","BOM7","BOM8"].includes(sec)) return "Remaches";
+  if (SECTORES_CRUDO_MARTIN.has(sec)) return "Sector Crudo";
+  if (/p\/\s*cromar/i.test(desc)) return "Sector Crudo";
+  return "Sector Procesado";
+}
 
 /*************************************************
  * HELPERS VISUALES
@@ -259,6 +305,13 @@ async function volverALista(){
   btnSiguiente.classList.add("hidden");
   if (txtFiltroArticulo) { txtFiltroArticulo.value = ""; }
   if (filtroArticuloWrap) { filtroArticuloWrap.classList.add("hidden"); }
+  // Asegurar que se vea fase1 (puede venir de fase2 o fase3)
+  const fase1 = document.getElementById("fase1");
+  const fase2 = document.getElementById("fase2");
+  const fase3 = document.getElementById("fase3");
+  if (fase1) fase1.classList.remove("hidden");
+  if (fase2) fase2.classList.add("hidden");
+  if (fase3) fase3.classList.add("hidden");
   renderTalleristas(listaTalleristas);
 }
 
@@ -392,10 +445,16 @@ async function cargarSectores(){
   const partesXUniByCodeAndPart = new Map();
   const partesXUniByPart = new Map();
 
+  // Rubro por sector y por parte (para clasificar igual que ControlTall — fuente de
+  // verdad: Despiece x Articulo). Cuenta frecuencias y se queda con el mayoritario.
+  const rubroCountsBySector = new Map();
+  const rubroCountsByPart = new Map();
+
   (data || []).forEach(r => {
     const cod = normalizeCode(pick(r, ["COD", "Cod", "cod"]));
     const parte = normalizeText(pick(r, ["Descripcion de partes", "Descripción de partes", "descripcion de partes"]));
     const sector = String(pick(r, ["Sector Proce", "sector proce", "Sector_Proce"]) || "").trim();
+    const rubro = String(pick(r, ["Rubro", "rubro", "RUBRO"]) || "").trim();
 
     const kgXCajon = parseDecimal(pick(r, ["Kg x Caj", "KG x Caj", "kg x caj", "Kg x caja", "kg x caja"]));
     const kgXUni = parseDecimal(pick(r, ["KGxUni", "KGxUNI", "KgxUni", "KgXUni", "kgxuni", "KG x Uni", "Kg x Uni", "kg x uni"]));
@@ -405,6 +464,17 @@ async function cargarSectores(){
 
     if (!mapByPart.has(parte)) mapByPart.set(parte, new Set());
     if (sector) mapByPart.get(parte).add(sector);
+
+    if (sector && rubro) {
+      if (!rubroCountsBySector.has(sector)) rubroCountsBySector.set(sector, {});
+      const counts = rubroCountsBySector.get(sector);
+      counts[rubro] = (counts[rubro] || 0) + 1;
+    }
+    if (rubro) {
+      if (!rubroCountsByPart.has(parte)) rubroCountsByPart.set(parte, {});
+      const counts = rubroCountsByPart.get(parte);
+      counts[rubro] = (counts[rubro] || 0) + 1;
+    }
 
     if (cod && sector){
       const key = `${cod}__${parte}`;
@@ -434,6 +504,27 @@ async function cargarSectores(){
     codsPorSector.get(sector).add(cod);
   });
 
+  // Rubro mayoritario por sector y por parte (mismo criterio que ControlTall)
+  function rubroMayoritario(counts){
+    let mejor = "";
+    let mejorCount = 0;
+    for (const [rubro, n] of Object.entries(counts || {})) {
+      if (n > mejorCount) { mejor = rubro; mejorCount = n; }
+      else if (n === mejorCount && rubro === "Otros") { mejor = rubro; }
+    }
+    return mejor;
+  }
+  const rubroBySector = new Map();
+  for (const [sector, counts] of rubroCountsBySector) {
+    const r = rubroMayoritario(counts);
+    if (r) rubroBySector.set(sector, r);
+  }
+  const rubroByPart = new Map();
+  for (const [parte, counts] of rubroCountsByPart) {
+    const r = rubroMayoritario(counts);
+    if (r) rubroByPart.set(parte, r);
+  }
+
   sectoresCache = {
     mapByCodeAndPart,
     mapByPart,
@@ -443,7 +534,9 @@ async function cargarSectores(){
     kgXUniByPart,
     partesXUniByCodeAndPart,
     partesXUniByPart,
-    codsPorSector
+    codsPorSector,
+    rubroBySector,
+    rubroByPart
   };
 
   return sectoresCache;
@@ -894,7 +987,7 @@ async function buscar(nombreParam){
     const onlineKg = onlineUni * kgXUni;
     const onlineCaj = kgXCajon > 0 ? (onlineKg / kgXCajon) : 0;
 
-    const cajonesEnviar = maxCajones - onlineCaj;
+    const cajonesEnviar = Math.max(0, maxCajones - onlineCaj);
 
     filasFiltradas.push({
       tallerista: nombre,
@@ -914,7 +1007,7 @@ async function buscar(nombreParam){
     const maximo = Number(c.maximo || 0);
 
     if (desc) {
-      const cajonesEnviar = maximo - stock;
+      const cajonesEnviar = Math.max(0, maximo - stock);
       filasFiltradas.push({
         tallerista: nombre,
         sector: "Sin sector",
@@ -941,17 +1034,6 @@ async function buscar(nombreParam){
   // Talleristas que arman GRJ: no se les envía GRJ, lo entregan ellos
   const TALL_NO_ENVIAR_GRJ = [];
 
-  function clasificarItem(item){
-    const desc = String(item.descripcion || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const sec = String(item.sector || "").trim().toUpperCase();
-    if (desc.startsWith("caja n") || sec === "CAJA") return "Cajas";
-    if (desc.startsWith("carton") || desc.startsWith("cartón")) return "Cartones";
-    if (sec.startsWith("GRJ") || sec.startsWith("CP")) return "Garaje";
-    if (sec.startsWith("P")) return "Partes Plásticas";
-    if (["V13","W4","W6","W8"].includes(sec)) return "Remaches";
-    return "Sector Procesado";
-  }
-
   // Filtrar GRJ de talleristas que arman (no se les envía GRJ)
   const talleristaNombre = String(filasFiltradas[0]?.tallerista || "").trim();
   const ocultarGaraje = TALL_NO_ENVIAR_GRJ.includes(talleristaNombre);
@@ -961,15 +1043,19 @@ async function buscar(nombreParam){
     }
   }
 
-  const gruposOrden = ["Sector Procesado", "Partes Plásticas", "Garaje", "Remaches", "Cartones", "Cajas"];
+  // Orden idéntico a ControlTall: por grupo (GRUPOS_ORDEN), después por sector con
+  // numeric:true (A8 < A10 < B4 ...) y finalmente por descripción.
   filasFiltradas.sort((a, b) => {
-    const ga = gruposOrden.indexOf(clasificarItem(a));
-    const gb = gruposOrden.indexOf(clasificarItem(b));
+    const ga = GRUPOS_ORDEN.indexOf(clasificarItem(a));
+    const gb = GRUPOS_ORDEN.indexOf(clasificarItem(b));
     if (ga !== gb) return ga - gb;
-    const sa = String(a.sector || "");
-    const sb = String(b.sector || "");
-    if (sa !== sb) return sa.localeCompare(sb, "es");
-    return String(a.descripcion || "").localeCompare(String(b.descripcion || ""), "es");
+    const sa = String(a.sector || "").trim();
+    const sb = String(b.sector || "").trim();
+    if (sa && sb) return sa.localeCompare(sb, "es", { numeric: true, sensitivity: "base" });
+    if (!sa && !sb) {
+      return String(a.descripcion || "").localeCompare(String(b.descripcion || ""), "es", { numeric: true, sensitivity: "base" });
+    }
+    return sa ? -1 : 1; // los que tienen sector primero
   });
 
   renderizarFilasFase1(txtFiltroArticulo ? txtFiltroArticulo.value : "");
@@ -992,17 +1078,6 @@ function renderizarFilasFase1(filtro){
       </div>
     `;
     return;
-  }
-
-  function clasificarItem(item){
-    const desc = String(item.descripcion || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const sec = String(item.sector || "").trim().toUpperCase();
-    if (desc.startsWith("caja n") || sec === "CAJA") return "Cajas";
-    if (desc.startsWith("carton") || desc.startsWith("cartón")) return "Cartones";
-    if (sec.startsWith("GRJ") || sec.startsWith("CP")) return "Garaje";
-    if (sec.startsWith("P")) return "Partes Plásticas";
-    if (["V13","W4","W6","W8"].includes(sec)) return "Remaches";
-    return "Sector Procesado";
   }
 
   let rows = "";
@@ -1228,24 +1303,30 @@ btnVolverFase1.addEventListener("click", () => {
 
 function renderizarFase2(){
   const buf = getBuffer();
-  const itemsConCaj = buf.filter(b => Number(b.cajones) > 0 || Number(b.unidades) > 0);
+  const itemsConCaj = buf
+    .map((b, bufIdx) => ({ ...b, _bufIdx: bufIdx }))
+    .filter(b =>
+      b.tallerista === talleristaActivo &&
+      (Number(b.cajones) > 0 || Number(b.unidades) > 0)
+    );
 
-  fase2TableBody.innerHTML = itemsConCaj.map((item, i) => {
+  fase2TableBody.innerHTML = itemsConCaj.map((item) => {
     const esCarton = !!item.esCarton;
+    const bufIdx = item._bufIdx;
     const cajCell = esCarton
       ? `<td class="right"><span class="zero">—</span></td>`
       : `<td class="right"><b>${item.cajones}</b></td>`;
     const cantCell = esCarton
       ? `<td class="right" style="font-weight:700;color:#111;">${Number(item.unidades)} <small style="color:#666;font-weight:400;">uni</small></td>`
-      : `<td class="right"><input type="text" inputmode="decimal" class="cell-input input-kg-fase2" data-buf-idx="${i}" placeholder="0,0" value="${item.kg || ""}" autocomplete="off"></td>`;
+      : `<td class="right"><input type="text" inputmode="decimal" class="cell-input input-kg-fase2" data-buf-idx="${bufIdx}" placeholder="0,0" value="${item.kg || ""}" autocomplete="off"></td>`;
     return `
-    <tr data-buf-idx="${i}" data-es-carton="${esCarton ? '1' : '0'}">
+    <tr data-buf-idx="${bufIdx}" data-es-carton="${esCarton ? '1' : '0'}">
       <td>${escapeHtml(item.tallerista)}</td>
       <td>${escapeHtml(item.sector || "")}</td>
       <td class="descripcion-cell">${escapeHtml(item.descripcionDisplay || item.descripcion)}</td>
       ${cajCell}
       ${cantCell}
-      <td class="center"><button type="button" class="btn-quitar-fase2" data-buf-idx="${i}">✕</button></td>
+      <td class="center"><button type="button" class="btn-quitar-fase2" data-buf-idx="${bufIdx}">✕</button></td>
     </tr>`;
   }).join("");
 
@@ -1290,8 +1371,19 @@ function validarFase2Completa(){
 }
 
 btnEnviar.addEventListener("click", async () => {
+  // Sincronizar valores de los inputs al buffer antes de validar (por si el user presionó Enviar sin blur)
+  const bufSync = getBuffer();
+  fase2TableBody.querySelectorAll(".input-kg-fase2").forEach(input => {
+    const idx = Number(input.dataset.bufIdx);
+    if (bufSync[idx]) bufSync[idx].kg = input.value.trim();
+  });
+  localStorage.setItem(BUFFER_KEY, JSON.stringify(bufSync));
+
   const buf = getBuffer();
-  const itemsConCaj = buf.filter(b => Number(b.cajones) > 0 || Number(b.unidades) > 0);
+  const itemsConCaj = buf.filter(b =>
+    b.tallerista === talleristaActivo &&
+    (Number(b.cajones) > 0 || Number(b.unidades) > 0)
+  );
 
   // Validar que todos los NO-cartones tengan Kg
   const faltanKg = itemsConCaj.filter(b => !b.esCarton && !(parseDecimal(b.kg) > 0));
@@ -1363,8 +1455,11 @@ btnEnviar.addEventListener("click", async () => {
       }));
     }
 
-    // Limpiar buffer y mostrar Fase 3
-    clearBuffer();
+    // Limpiar solo los items del tallerista activo; conservar otros talleristas pendientes
+    const bufRestante = getBuffer().filter(b => b.tallerista !== talleristaActivo);
+    localStorage.setItem(BUFFER_KEY, JSON.stringify(bufRestante));
+    actualizarBtnSiguiente();
+
     mostrarFase(3);
     renderizarFase3(itemsConCaj);
     mostrarToastDeshacer(ids, payload);
@@ -1408,27 +1503,16 @@ btnImprimir.addEventListener("click", () => {
   const fechaStr = hoy.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
   const horaStr = hoy.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 
-  // Agrupar por clasificación
-  function clasificarPrint(item){
-    const desc = String(item.descripcion || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const sec = String(item.sector || "").toUpperCase();
-    if (desc.startsWith("caja n") || sec === "CAJA") return "Cajas";
-    if (desc.startsWith("carton") || desc.startsWith("cartón")) return "Cartones";
-    if (sec.startsWith("GRJ") || sec.startsWith("CP")) return "Garaje";
-    if (sec.startsWith("P")) return "Partes Plásticas";
-    if (["V13","W4","W6","W8"].includes(sec)) return "Remaches";
-    return "Sector Procesado";
-  }
-
-  const gruposOrden = ["Sector Procesado", "Partes Plásticas", "Garaje", "Remaches", "Cartones", "Cajas"];
+  // Agrupar por clasificación (usa clasificarItem y GRUPOS_ORDEN module-level
+  // para mantener mismo orden y categorías que ControlTall y la tabla principal).
   const porGrupo = {};
-  gruposOrden.forEach(g => { porGrupo[g] = []; });
-  items.forEach(item => { porGrupo[clasificarPrint(item)].push(item); });
+  GRUPOS_ORDEN.forEach(g => { porGrupo[g] = []; });
+  items.forEach(item => { porGrupo[clasificarItem(item)].push(item); });
 
   let filas = "";
   let totalCaj = 0;
   let totalKg = 0;
-  gruposOrden.forEach(grupo => {
+  GRUPOS_ORDEN.forEach(grupo => {
     const lista = porGrupo[grupo];
     if (!lista.length) return;
     filas += `<tr class="grupo-row"><td colspan="4">${grupo}</td></tr>`;
@@ -1694,19 +1778,10 @@ function imprimirResumen(payload){
     else if (falt) itemsFaltantes.push(p);
   });
 
-  function clasificarPrint(p){
-    const desc = String(p["Descripcion"] || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const sec = String(p["Sector"] || "").trim().toUpperCase();
-    if (desc.startsWith("caja n") || sec === "CAJA") return "Cajas";
-    if (desc.startsWith("carton") || desc.startsWith("cartón")) return "Cartones";
-    if (sec.startsWith("GRJ") || sec.startsWith("CP")) return "Garaje";
-    if (sec.startsWith("P")) return "Partes Plásticas";
-    if (["V13","W4","W6","W8"].includes(sec)) return "Remaches";
-    return "Sector Procesado";
-  }
-  const gruposPrint = ["Sector Procesado", "Partes Plásticas", "Garaje", "Remaches", "Cartones", "Cajas"];
+  // Adapter: payload usa keys "Descripcion"/"Sector"; clasificarItem espera "descripcion"/"sector"
+  const clasificarPrint = p => clasificarItem({ descripcion: p["Descripcion"] || "", sector: p["Sector"] || "" });
   let filas = "";
-  gruposPrint.forEach(grupo => {
+  GRUPOS_ORDEN.forEach(grupo => {
     const items = itemsConDatos.filter(p => clasificarPrint(p) === grupo);
     if (!items.length) return;
     filas += `<tr><td colspan="5" style="background:#222;color:#fff;font-weight:800;padding:6px 10px;text-transform:uppercase">${escapeHtml(grupo)}</td></tr>`;
@@ -1784,5 +1859,6 @@ if (txtFiltroArticulo){
 /*************************************************
  * INICIO
  *************************************************/
+cargarSectoresCrudoMartin().catch(() => {});
 cargarTalleristas();
 mostrarFase(1);

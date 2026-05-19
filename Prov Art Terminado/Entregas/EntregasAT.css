@@ -9,7 +9,7 @@ body {
 }
 
 .card {
-  max-width: 1250px;
+  max-width: 580px;
   margin: 0 auto;
   background: #ececec;
   border: 1px solid #cfcfcf;
@@ -168,9 +168,9 @@ body {
 .table thead tr:nth-child(2) th:nth-child(2),
 .table tbody td:nth-child(2) { text-align: left; }
 
-/* Cantidad */
+/* Cajas */
 .table thead tr:nth-child(2) th:nth-child(3),
-.table tbody td:nth-child(3) { width: 90px; text-align: center; }
+.table tbody td:nth-child(3) { width: 70px; text-align: center; }
 
 .input-qty {
   width: 6ch;

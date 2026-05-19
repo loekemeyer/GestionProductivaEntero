@@ -26,7 +26,7 @@
       <div class="filtros">
         <div class="field" id="fieldFechaRango">
           <label>Rango de fechas</label>
-          <input type="text" id="fechaRango" placeholder="Seleccionar rango..." style="min-width:220px;" />
+          <input type="text" id="fechaRango" placeholder="Seleccionar rango..." autocomplete="off" style="min-width:220px;" />
           <input type="hidden" id="fechaDesde" />
           <input type="hidden" id="fechaHasta" />
         </div>
@@ -34,16 +34,20 @@
           <label>Vista</label>
           <select id="selVista">
             <option value="matriz">Rendimiento x Matriz</option>
+            <option value="matriz2">Rendimiento x Matriz 2.0</option>
             <option value="piedra">Rendimiento Piedra</option>
             <option value="persona">Rendimiento x Persona</option>
             <option value="operario">Produccion x Operario</option>
             <option value="unidades">Unidades x Matriz (dias productivos)</option>
+            <option value="rdiario">Reporte Diario</option>
+            <option value="mensajes">Mensajes Operarios</option>
           </select>
         </div>
         <div class="field field-btn">
           <button id="btnGenerar" class="btn btn-primary">Generar</button>
           <button id="btnExcelInf" class="btn btn-excel hidden">Excel</button>
           <button id="btnPDFInf" class="btn btn-pdf hidden">PDF</button>
+          <button id="btnPDFDiario" class="btn btn-pdf hidden">PDF Diario</button>
         </div>
       </div>
 
@@ -52,6 +56,10 @@
       <!-- SUBFILTROS (aparecen despues de generar) -->
       <div id="subfiltros" class="hidden">
         <div id="empGrid" class="emp-chips"></div>
+        <div id="tipoMatrizWrap" class="tipo-matriz-wrap">
+          <label class="tipo-label">Tipo de Matriz:</label>
+          <div id="tipoGrid" class="tipo-chips"></div>
+        </div>
         <div id="filtroMatrizWrap" class="filtro-matriz-wrap hidden">
           <div class="field" style="min-width:200px;">
             <label>Filtrar Matriz</label>

@@ -19,6 +19,8 @@ let partesXPSData = [];
 let despieceData = [];
 let eMadreLKData = [];
 let eMadreCHData = [];
+let comprasFlejesMap = new Map(); // N Fleje → total cantidad
+let comprasFlejesDetalleMap = new Map(); // N Fleje → [{proveedor, fecha, cantidad, remito}]
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function n(v) { return isNaN(v) ? 0 : Number(v); }
@@ -37,7 +39,7 @@ async function init() {
   statusEl.textContent = "Cargando datos...";
 
   try {
-    const [resFlejes, resCausa, resProd, resSC, resPS, resDesp, resLK, resCH] = await Promise.all([
+    const [resFlejes, resCausa, resProd, resSC, resPS, resDesp, resLK, resCH, resCompras] = await Promise.all([
       sb.from("Flejes").select("*"),
       sb.from("Causa-Efecto").select("*"),
       sb.from("db_n8n_espejo").select("*"),
@@ -45,8 +47,23 @@ async function init() {
       sb.from("Partes x PS").select("*"),
       sb.from("Despiece x Articulo").select("*"),
       sb.from("E. Madre LK").select("*"),
-      sb.from("E. Madre CH").select("*")
+      sb.from("E. Madre CH").select("*"),
+      sb.from("Recepcion_Insumos").select("*").eq("rubro","Flejes")
     ]);
+
+    // Procesar compras Flejes (rubro=Flejes, codigo=N Fleje)
+    comprasFlejesMap.clear();
+    comprasFlejesDetalleMap.clear();
+    (resCompras.data || []).forEach(r => {
+      const cod = String(r.codigo || "").trim();
+      if (!cod) return;
+      const cant = Number(r.cantidad) || 0;
+      comprasFlejesMap.set(cod, (comprasFlejesMap.get(cod) || 0) + cant);
+      if (!comprasFlejesDetalleMap.has(cod)) comprasFlejesDetalleMap.set(cod, []);
+      comprasFlejesDetalleMap.get(cod).push({
+        proveedor: r.proveedor, fecha: r.fecha, cantidad: cant, remito: r.remito
+      });
+    });
 
     if (resFlejes.error) throw resFlejes.error;
     if (resCausa.error) throw resCausa.error;
@@ -195,12 +212,13 @@ function procesarRows() {
     const medida = f["Medida mm"] || "";
     const prov = f["Proveedor"] || "";
     const stockInicial = n(f["Stock Inicial"]) || 0;
-    const compras = 0;
+    const compras = comprasFlejesMap.get(String(nFleje)) || 0;
+    const comprasDetalle = comprasFlejesDetalleMap.get(String(nFleje)) || [];
     const fabricacion = calcularFabricacion(nFleje);
     const stockOnline = stockInicial + compras - fabricacion;
     const { total: consumoMes, detalle: consumoDetalle } = calcularConsumoMensual(nFleje);
 
-    return { nFleje, desc, medida, prov, stockOnline, compras, fabricacion, stockInicial, consumoMes, consumoDetalle };
+    return { nFleje, desc, medida, prov, stockOnline, compras, comprasDetalle, fabricacion, stockInicial, consumoMes, consumoDetalle };
   });
 
   // Ordenar por proveedor, luego N° Fleje

@@ -141,11 +141,9 @@ h1{
 }
 
 .table td:nth-child(2){
-  width:22ch;
-  max-width:22ch;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
+  min-width:22ch;
+  white-space:normal;
+  word-break:break-word;
 }
 
 .right{

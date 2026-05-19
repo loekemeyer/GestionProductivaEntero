@@ -1824,8 +1824,24 @@
     /* ================================================================
        CARGA MANUAL
        ================================================================ */
-    const MANUAL_PS = ["Charcas","Chormium","Daniel","Gaston Almafuerte","Guazzaroni","Pedernera","Valeria"];
-    const MANUAL_TALL = ["Poly","Martin","Carlos"];
+    // MANUAL_PS y MANUAL_TALL se cargan de Tall_ProvAT_PS al inicio. Fallback hardcoded preservado.
+    let MANUAL_PS = ["Charcas","Chormium","Daniel","Gaston Almafuerte","Guazzaroni","Pedernera","Valeria"];
+    let MANUAL_TALL = ["Poly","Martin","Carlos"];
+
+    (async function cargarManualLists(){
+      try {
+        const { data, error } = await sb.from("Tall_ProvAT_PS")
+          .select("nombre, rec_cerv, factura_manual")
+          .eq("activo", true);
+        if (error) { console.warn("[Facturas] No se pudo cargar listas manuales:", error.message); return; }
+        if (data && data.length) {
+          const tall = data.filter(r => r.rec_cerv).map(r => String(r.nombre).trim()).sort();
+          const ps = data.filter(r => r.factura_manual).map(r => String(r.nombre).trim()).sort();
+          if (tall.length) MANUAL_TALL = tall;
+          if (ps.length) MANUAL_PS = ps;
+        }
+      } catch (e) { console.warn("[Facturas] cargarManualLists fallo:", e); }
+    })();
 
     let manualTipoActual = "";
     let manualProvActual = "";

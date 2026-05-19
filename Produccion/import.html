@@ -138,7 +138,19 @@
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
   const MONTHS = { ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,oct:10,nov:11,dic:12 };
-  const TM_MATRICES = new Set(['LIMP','MOV','BC','PB','AL','PR','PC','CM','MOV P','LT']);
+
+  // TM_MATRICES se carga de "Codificacion Mensajes" tipo='TIEMPO_MUERTO'.
+  // Fallback hardcoded preservado por si la BD falla (no incluye 'MOV P' que era typo).
+  let TM_MATRICES = new Set(['LIMP','MOV','BC','PB','AL','PR','PC','CM','LT']);
+
+  async function cargarTMMatrices(){
+    try {
+      const { data, error } = await sb.from("Codificacion Mensajes").select("Codigo").eq("tipo", "TIEMPO_MUERTO");
+      if (error) { console.warn("[import] No se pudo cargar TM_MATRICES, uso fallback:", error.message); return; }
+      if (data && data.length) TM_MATRICES = new Set(data.map(r => String(r.Codigo).toUpperCase().trim()));
+    } catch (e) { console.warn("[import] cargarTMMatrices fallo, uso fallback:", e); }
+  }
+  cargarTMMatrices();
 
   const yearInput   = document.getElementById('yearInput');
   const fileInput   = document.getElementById('fileInput');

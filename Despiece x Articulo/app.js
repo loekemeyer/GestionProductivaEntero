@@ -14,8 +14,28 @@ const setStatus = (t, cls) => {
   el.className = "status" + (cls ? " " + cls : "");
 };
 
-const PROV_AT = new Set(["Carriero","Lopez Jose","Manfer","Maspoli","Melinox","Paternal Goma","Pintos","The Plast"]);
-const INTERNO = new Set(["Log/ Fabr","TN"]);
+// PROV_AT y INTERNO se cargan al inicio desde tabla Talleristas (flags prov_at, interno).
+// Fallback hardcoded por si la BD falla — preserva comportamiento previo.
+let PROV_AT = new Set(["Carriero","Lopez Jose","Manfer","Maspoli","Melinox","Paternal Goma","Pintos","The Plast"]);
+let INTERNO = new Set(["Log/ Fabr","TN"]);
+
+async function cargarTalleristasFlags() {
+  try {
+    const { data, error } = await sb.from("Tall_ProvAT_PS").select("nombre, prov_at, interno").eq("activo", true);
+    if (error) { console.warn("[Despiece] No se pudo cargar Talleristas, uso fallback:", error.message); return; }
+    if (!data || !data.length) return;
+    const provAt = new Set();
+    const interno = new Set();
+    data.forEach(r => {
+      const n = String(r.nombre || "").trim();
+      if (!n) return;
+      if (r.prov_at) provAt.add(n);
+      if (r.interno) interno.add(n);
+    });
+    PROV_AT = provAt;
+    INTERNO = interno;
+  } catch (e) { console.warn("[Despiece] cargarTalleristasFlags fallo, uso fallback:", e); }
+}
 
 let CACHE = {
   articulos: [],
@@ -26,13 +46,34 @@ let CACHE = {
   cajas: [],
   grj_componentes: [],  // nuevo: mapeo de GRJ a sus componentes
   flejes: [],           // nuevo: Flejes con sector para detectar compra directa
+  flejes_prov: new Map(),   // sector -> proveedor (de Flejes)
   sp_kg_desc: new Map(),
-  sc_kg_desc: new Map()
+  sc_kg_desc: new Map(),
+  // Mapas sector -> proveedor, en orden de prioridad al resolver
+  prov_sectorplasticos: new Map(),
+  prov_spkg: new Map(),
+  prov_sckg: new Map(),
+  prov_remachessp: new Map(),
+  prov_remachessc: new Map(),
+  prov_bomb: new Map(),
+  prov_cepillos: new Map()
 };
+
+// Resolver proveedor de un sector, en orden: plásticos → SP → SC → remaches SP → remaches SC → BOMB → Cepillos
+function getProveedor(sector) {
+  for (const m of [CACHE.prov_sectorplasticos, CACHE.prov_spkg, CACHE.prov_sckg,
+                   CACHE.prov_remachessp, CACHE.prov_remachessc, CACHE.prov_bomb, CACHE.prov_cepillos]) {
+    if (m.has(sector)) {
+      const p = m.get(sector);
+      if (p) return p;
+    }
+  }
+  return "";
+}
 
 async function cargarInicio() {
   setStatus("Cargando datos maestros…");
-  const [arts, ce, pxps, pxtall, ac, cajas, grj, flejes, spkg, sckg] = await Promise.all([
+  const [arts, ce, pxps, pxtall, ac, cajas, grj, flejes, spkg, sckg, plast, remSP, remSC, bomb, cep] = await Promise.all([
     sb.from("Despiece x Articulo").select('"COD","ARTICULO"').then(r => r.data || []),
     sb.from("Causa-Efecto").select('"Matriz","Descripcion Matriz","Descuenta","Aumenta"').then(r => r.data || []),
     sb.from("Partes x PS").select('"PS","Proceso","SC","SP","Parte"').then(r => r.data || []),
@@ -40,9 +81,14 @@ async function cargarInicio() {
     sb.from("Articulos_Cajas").select('"Cod_Art","N_Caja","Uni_x_Caja","Descripcion"').then(r => r.data || []),
     sb.from("Cajas").select('"N_Caja","Sector","Descripcion","Medidas"').then(r => r.data || []),
     sb.from("GRJ_Componentes").select('cod_grj,componente,orden').then(r => r.data || []),
-    sb.from("Flejes").select('"N Fleje","Sector","Descripción"').then(r => r.data || []),
-    sb.from("SP Kg").select('"Sp","Parte"').then(r => r.data || []),
-    sb.from("SC Kg").select('"SC","Descripcion"').then(r => r.data || [])
+    sb.from("Flejes").select('"N Fleje","Sector","Descripción","Proveedor"').then(r => r.data || []),
+    sb.from("SP Kg").select('"Sp","Parte","Proveedor"').then(r => r.data || []),
+    sb.from("SC Kg").select('"SC","Descripcion","Proveedor"').then(r => r.data || []),
+    sb.from("SectorPlasticos").select('"Sector","Proveedor"').then(r => r.data || []),
+    sb.from("Remaches SP").select('"Sector","Proveedor"').then(r => r.data || []),
+    sb.from("Remaches SC").select('"Sector","Proveedor"').then(r => r.data || []),
+    sb.from("BOMB").select('"Sector","Proveedor"').then(r => r.data || []),
+    sb.from("Cepillos").select('"Sector","Proveedor"').then(r => r.data || [])
   ]);
   CACHE.ce = ce;
   CACHE.pxps = pxps;
@@ -53,6 +99,14 @@ async function cargarInicio() {
   CACHE.flejes = flejes;
   CACHE.sp_kg_desc = new Map(spkg.map(r => [r.Sp, r.Parte]));
   CACHE.sc_kg_desc = new Map(sckg.map(r => [r.SC, r.Descripcion]));
+  CACHE.flejes_prov = new Map(flejes.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
+  CACHE.prov_sectorplasticos = new Map(plast.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
+  CACHE.prov_spkg = new Map(spkg.filter(r => r.Sp).map(r => [r.Sp, r.Proveedor || ""]));
+  CACHE.prov_sckg = new Map(sckg.filter(r => r.SC).map(r => [r.SC, r.Proveedor || ""]));
+  CACHE.prov_remachessp = new Map(remSP.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
+  CACHE.prov_remachessc = new Map(remSC.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
+  CACHE.prov_bomb = new Map(bomb.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
+  CACHE.prov_cepillos = new Map(cep.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
 
   // Armar lista única de artículos desde Despiece
   const seen = new Map();
@@ -82,12 +136,6 @@ function trazarSector(sector, visitados = new Set(), profundidad = 0) {
 
   if (/^Fleje\s/i.test(sector)) {
     return [{ tipo: 'fleje', label: sector }];
-  }
-
-  // Si el sector coincide con un Fleje.Sector, es materia prima directa
-  const flejeDirecto = CACHE.flejes.find(f => f.Sector === sector);
-  if (flejeDirecto) {
-    return [{ tipo: 'fleje', label: `Fleje ${flejeDirecto["N Fleje"]} (${flejeDirecto["Descripción"] || ''})` }];
   }
 
   // Si el sector es un GRJ composite, expandir en sus componentes (cada uno se traza aparte)
@@ -127,7 +175,11 @@ function trazarSector(sector, visitados = new Set(), profundidad = 0) {
       continue;
     }
     const prev = trazarSector(descuenta, visitados, profundidad + 1);
-    pasos.push({ tipo: 'matriz', label, sector_prev: descuenta, ramas: prev });
+    if (prev.length === 1 && (prev[0].tipo === 'fleje' || prev[0].tipo === 'compra')) {
+      pasos.push({ tipo: 'matriz', label, sector_prev: prev[0].label, ramas: [] });
+    } else {
+      pasos.push({ tipo: 'matriz', label, sector_prev: descuenta, ramas: prev });
+    }
   }
 
   // Agrupar PS: múltiples PS con mismo Proceso + mismo SC -> 1 paso con lista de PS apilados
@@ -166,24 +218,44 @@ function trazarSector(sector, visitados = new Set(), profundidad = 0) {
         const psListST = g.map(x => x.PS);
         const labelST = psListST.join(' / ') + (p0.Proceso ? ' (' + p0.Proceso + ')' : '');
         const prevST = trazarSector(p0.SC, visitados, profundidad + 1);
-        ramasST.push({ tipo: 'ps', label: labelST, sector_prev: p0.SC, ramas: prevST });
+        if (prevST.length === 1 && (prevST[0].tipo === 'fleje' || prevST[0].tipo === 'compra')) {
+          ramasST.push({ tipo: 'ps', label: labelST, sector_prev: prevST[0].label, ramas: [] });
+        } else {
+          ramasST.push({ tipo: 'ps', label: labelST, sector_prev: p0.SC, ramas: prevST });
+        }
       }
       pasos.push({ tipo: 'ps', label, sector_prev: 'ST', ramas: ramasST });
       continue;
     }
     const prev = trazarSector(sc, visitados, profundidad + 1);
-    pasos.push({ tipo: 'ps', label, sector_prev: sc, psList, ramas: prev });
+    if (prev.length === 1 && (prev[0].tipo === 'fleje' || prev[0].tipo === 'compra')) {
+      pasos.push({ tipo: 'ps', label, sector_prev: prev[0].label, psList, ramas: [] });
+    } else {
+      pasos.push({ tipo: 'ps', label, sector_prev: sc, psList, ramas: prev });
+    }
   }
 
-  // Si no hay productor interno, es compra o materia de otro origen
+  // Si no hay productor interno, puede ser Fleje directo o Compra.
+  // Regla: si el sector es un SP (existe en SP Kg), NUNCA sale de Fleje aunque exista un
+  // Fleje homónimo — los SPs sin matriz en la cadena vienen de Compra (ej: D9-SP vs D9-Fleje).
   if (pasos.length === 0) {
-    // Dar más contexto si es conocida en tablas madre
     const spDesc = CACHE.sp_kg_desc.get(sector);
     const scDesc = CACHE.sc_kg_desc.get(sector);
-    let ctx = '';
-    if (spDesc) ctx = ` — SP Kg "${spDesc}"`;
-    else if (scDesc) ctx = ` — SC Kg "${scDesc}"`;
-    pasos.push({ tipo: 'compra', label: `Compra / materia externa${ctx}`, sector_prev: sector });
+
+    if (!spDesc) {
+      const flejeDirecto = CACHE.flejes.find(f => f.Sector === sector);
+      if (flejeDirecto) {
+        const nFleje = flejeDirecto["N Fleje"] || sector;
+        const desc = flejeDirecto["Descripción"] || "";
+        const prov = flejeDirecto["Proveedor"] || "sin proveedor";
+        const label = desc ? `Fleje ${nFleje} (${desc}) — ${prov}` : `Fleje ${nFleje} — ${prov}`;
+        pasos.push({ tipo: 'fleje', label });
+        return pasos;
+      }
+    }
+
+    const prov = getProveedor(sector) || "sin proveedor";
+    pasos.push({ tipo: 'compra', label: `${sector} (${prov})` });
   }
 
   return pasos;
@@ -423,5 +495,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("btnExport").addEventListener("click", exportarCSV);
   $("btnResumen").addEventListener("click", () => renderResumen().catch(e => setStatus("Error: " + e.message, "err")));
-  cargarInicio().catch(e => { setStatus("Error cargando: " + e.message, "err"); });
+  cargarTalleristasFlags().finally(() => {
+    cargarInicio().catch(e => { setStatus("Error cargando: " + e.message, "err"); });
+  });
 });

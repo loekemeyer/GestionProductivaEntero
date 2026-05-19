@@ -113,7 +113,8 @@
 
   <div id="tallGrid" class="row" style="flex-wrap:wrap"></div>
 
-  <div class="row">
+  <div style="margin-top:18px;font-weight:800;font-size:14px;color:#333">Empresa</div>
+  <div class="row" style="margin-top:4px">
     <button id="lk" type="button" disabled>LK</button>
     <button id="ch" type="button" disabled>CH</button>
   </div>
@@ -159,13 +160,13 @@
 
     <div class="grid" style="margin-bottom:8px">
       <div class="h">Código</div>
-      <div class="h">Cajas</div>
+      <div class="h" id="hdrCajas">Cajas</div>
       <div class="h">Descripción</div>
     </div>
 
     <div id="lines" class="grid"></div>
 
-    <div class="hint">Tip: completá solo cajas. Solo acepta números enteros.</div>
+    <div class="hint" id="modalHint">Tip: completá solo cajas. Solo acepta números enteros.</div>
 
     <div class="modal-actions">
       <button id="cancelModal" class="xbtn btn-secondary" type="button">Cancelar</button>
@@ -239,6 +240,16 @@
   // ===== Cargar talleristas como botones =====
   async function cargarListaTalleristas() {
     try {
+      // Lista de talleristas habilitados para Recepcion Virgilio: lee tabla Talleristas (rec_virg=TRUE)
+      const { data: tallRows, error: tallErr } = await sb
+        .from("Tall_ProvAT_PS")
+        .select("nombre")
+        .eq("rec_virg", true)
+        .eq("activo", true);
+      if (tallErr) throw tallErr;
+      const habilitados = new Set((tallRows || []).map(r => String(r.nombre).trim()));
+
+      // Codigos por linea (LK/Cervantes) siguen viniendo de Articulos VxT
       const { data, error } = await sb
         .from(SUPABASE_TABLE)
         .select(`${COL_TALLERISTA}, ${COL_TALLERISTA_NOMBRE}, Linea`);
@@ -256,9 +267,8 @@
         }
       });
 
-      const EXCLUIR = ["Esther", "Carlos", "Poly", "Racks"];
       const nombres = [...talleristaData.keys()]
-        .filter(n => !EXCLUIR.includes(n))
+        .filter(n => habilitados.has(n))
         .sort((a, b) => a.localeCompare(b, "es"));
 
       tallGrid.innerHTML = "";
@@ -366,6 +376,14 @@
   function openModalFn(){
     modalMsg.textContent = "";
     modalMsg.className = "status";
+    // Talleristas solo_grj (Blist-Pack, Oscar) reciben/entregan en unidades, no cajas.
+    const esSoloGrj = (tallerista === "Blist-Pack" || tallerista === "Oscar");
+    const hdrCajasEl = document.getElementById("hdrCajas");
+    const hintEl = document.getElementById("modalHint");
+    if (hdrCajasEl) hdrCajasEl.textContent = esSoloGrj ? "Unidades" : "Cajas";
+    if (hintEl) hintEl.textContent = esSoloGrj
+      ? "Tip: completá unidades por artículo. Solo acepta números enteros."
+      : "Tip: completá solo cajas. Solo acepta números enteros.";
     overlay.classList.add("open");
     overlay.setAttribute("aria-hidden","false");
   }
@@ -428,11 +446,13 @@
   }
 
   async function fetchCodesByNombreAndLinea(nombre, linea){
+    // Filtra solo articulos con destino_entrega='virgilio' (los de 'facturas' o 'cervantes' NO van aca)
     const { data, error } = await sb
       .from(SUPABASE_TABLE)
       .select(`${COL_CODIGO}, ${COL_DESC}, ${COL_TALLERISTA_NOMBRE}`)
       .eq(COL_TALLERISTA_NOMBRE, nombre)
       .eq("Linea", linea)
+      .eq("destino_entrega", "virgilio")
       .order(COL_CODIGO, { ascending: true });
 
     if (error) throw error;
@@ -454,10 +474,12 @@
   }
 
   async function fetchCodesForTallerista(tallerista4){
+    // Filtra solo articulos con destino_entrega='virgilio' (los de 'facturas' o 'cervantes' NO van aca)
     const { data, error } = await sb
       .from(SUPABASE_TABLE)
       .select(`${COL_CODIGO}, ${COL_DESC}, ${COL_TALLERISTA_NOMBRE}`)
       .eq(COL_TALLERISTA, tallerista4)
+      .eq("destino_entrega", "virgilio")
       .order(COL_CODIGO, { ascending: true });
 
     if (error) throw error;

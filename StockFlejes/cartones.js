@@ -22,6 +22,8 @@ let enviosDetalleMap = new Map(); // descripcion -> [{tallerista, diaMes, unidad
 let entregasLogMap = new Map(); // COD -> total cajas entregadas por Log/Fabrica
 let sectorCartonMap = new Map(); // COD (sin ceros) -> Sector
 let talleristasSet = new Set(); // talleristas únicos con envíos
+let comprasCartonesMap = new Map(); // COD (normalizado) -> total cantidad de Recepcion_Insumos
+let comprasCartonesDetalleMap = new Map(); // COD -> [{proveedor, fecha, cantidad, remito}]
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
@@ -33,38 +35,19 @@ function normalizeText(s) {
   return String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
-/* Stock Inicial del conteo físico (29/3/2026) — Col S: Conteo Paq × 1000 + Uni Suelta */
-const CONTEO_STOCK = {
-  // LK
-  "248":0, "500":0, "505":45615, "586":30900, "587":250, "513":20300, "504":14630,
-  "546":10200, "66":13500, "512":7900, "501":0, "502":9920, "521":5730, "525":7650,
-  "520":4323, "581":5150, "530":9150, "523":5000, "531":5615, "280":7000, "544":20000,
-  "562":2850, "564":610, "575":2550, "579":2050, "321":4000, "577":5070, "311":1200,
-  "312":3500, "395":2000, "507":1700, "517":0, "532":750, "548":1200, "559":950,
-  "570":0, "207":1300, "208":100, "229":4800, "511":2000, "560":4080, "561":0,
-  "565":2480, "594":2000, "595":2850, "596":3000, "542":500, "543":1640, "58":1000,
-  "569":1460, "519":2260, "508":1570, "550":4350, "57":1850, "498":2720, "499":1000,
-  "547":0, "518":1000, "551":1150, "299":1000, "580":2000, "942":1500, "943":1750,
-  "944":1000, "945":1100, "948":1850, "332":1900, "334":0, "28":0, "336":2000,
-  "337":2000, "535":5125, "338":1490, "389":1500, "315":2750, "390":350, "27":5000,
-  "26":11350, "325":3550, "223":1120, "222":1110, "221":2000, "224":2120, "220":2000,
-  "333":1750, "392":0, "394":0, "225":3360, "391":1470, "393":1210, "29":0, "30":3000,
-  // Lok
-  "193":0, "101":3000, "110":3000, "111":1000, "108":800, "112":0, "113":500, "115":520,
-  "116":1250, "117":0, "123":2500, "121":500, "114":3000, "186":2000, "103":3000, "102":0,
-  "104":1440, "109":300, "107":0, "119":1250,
-  // CH
-  "862":1350, "859":1500, "720":2280, "722":270, "54":1550, "708":1000, "711":0,
-  "803":0, "702":1610, "707":1800, "701":10000, "723":0, "864":3000, "719":500, "99":4950,
-  "732":1260, "700":8000, "615":1350, "817":2850, "857":0, "858":1600, "53":1670,
-  "856":0, "730":2620, "800":0, "809":13350, "760":7000, "840":5570, "709":0, "802":3800,
-  "725":1000, "713":3120, "55":2000, "43":0, "848":1130, "910":3130, "52":0, "307":1880,
-  "453":0, "456":0, "630":0, "631":0, "632":0, "633":0, "634":0, "635":0,
-  "636":0, "637":0, "843":0, "844":1110, "845":0, "846":2500, "847":10000, "609":4000,
-  "789":2130, "828":1310, "830":1290, "824":3220, "825":4000, "902":1120, "911":0,
-  "920":0, "901":3000, "922":1000, "908":1120, "816":2260, "863":0, "729":250, "878":275,
-  "735":2000, "731":1180, "97":4500, "842":2570
-};
+/* Stock Inicial del conteo físico (29/3/2026) se carga al inicio desde tabla Stock_Inicial_Cartones.
+   Antes era CONTEO_STOCK hardcoded ~155 codes; ahora vive en BD. Fallback {} si la BD falla. */
+let CONTEO_STOCK = {};
+
+async function cargarConteoStock(){
+  try {
+    const { data, error } = await sb.from("Stock_Inicial_Cartones").select("cod, stock_inicial");
+    if (error) { console.warn("[Cartones] No se pudo cargar Stock_Inicial_Cartones:", error.message); return; }
+    const m = {};
+    (data || []).forEach(r => { m[String(r.cod).trim()] = Number(r.stock_inicial) || 0; });
+    CONTEO_STOCK = m;
+  } catch (e) { console.warn("[Cartones] cargarConteoStock fallo:", e); }
+}
 
 /* Pedido mínimo por tipo (total del pliego) */
 const PEDIDO_MIN_TIPO = {
@@ -209,6 +192,24 @@ async function cargarEnvios() {
 }
 
 /* ================= CARGAR ENTREGAS LOG/FABRICA ================= */
+// Compras reales: Recepcion_Insumos rubro=Cartones, key=COD
+async function cargarComprasCartones() {
+  comprasCartonesMap.clear();
+  comprasCartonesDetalleMap.clear();
+  const { data, error } = await sb.from("Recepcion_Insumos").select("*").eq("rubro", "Cartones");
+  if (error) { console.error("Error compras Cartones:", error); return; }
+  (data || []).forEach(r => {
+    const cod = String(r.codigo || "").trim().toUpperCase();
+    if (!cod) return;
+    const cant = Number(r.cantidad) || 0;
+    comprasCartonesMap.set(cod, (comprasCartonesMap.get(cod) || 0) + cant);
+    if (!comprasCartonesDetalleMap.has(cod)) comprasCartonesDetalleMap.set(cod, []);
+    comprasCartonesDetalleMap.get(cod).push({
+      proveedor: r.proveedor, fecha: r.fecha, cantidad: cant, remito: r.remito
+    });
+  });
+}
+
 async function cargarEntregasLogFabrica() {
   try {
     const res = await sb.from("Entregas Tallerista Virgilio").select("*");
@@ -246,10 +247,12 @@ async function init() {
       cargarEntregasLogFabrica(),
       cargarPliegos(),
       cargarSectorCarton(),
+      cargarComprasCartones(),
+      cargarConteoStock(),
       sb.from("Despiece x Articulo").select("*").eq("Rubro", "Cartones")
     ]);
 
-    const res = resCartones[5];
+    const res = resCartones[7];
     if (res.error) throw res.error;
     cartonesData = res.data || [];
 
@@ -265,17 +268,14 @@ async function init() {
   }
 }
 
-/* Códigos excluidos (sin cartón o inactivos) */
-const EXCLUIR_CODS = new Set(["516", "67", "574"]);
-
 /* ================= PROCESAR Y ORDENAR ================= */
 function procesarRows() {
-  // Deduplicar por COD y excluir códigos sin cartón/inactivos
+  // Deduplicar por COD y excluir filas marcadas con excluir_listado=TRUE en BD.
+  // Antes: EXCLUIR_CODS hardcoded ["516","67","574"]. Ahora: flag por fila en Despiece.
   const seen = new Set();
   const unicos = cartonesData.filter(c => {
     const k = normCod(c["COD"]);
-    const limpio = k.replace(/^0+/, "") || "0";
-    if (seen.has(k) || EXCLUIR_CODS.has(limpio)) return false;
+    if (seen.has(k) || c.excluir_listado === true) return false;
     seen.add(k);
     return true;
   });
@@ -296,7 +296,8 @@ function procesarRows() {
     const consumoParte = partesXuni * eMadre;
     // Stock Inicial: usar conteo físico si existe, sino campo de la base
     const stockInicial = (codLimpio in CONTEO_STOCK) ? CONTEO_STOCK[codLimpio] : (n(c["Stock Inicial"]) || 0);
-    const compras = 0;
+    const compras = comprasCartonesMap.get(codNormPre) || comprasCartonesMap.get(codLimpio.toUpperCase()) || 0;
+    const comprasDetalle = comprasCartonesDetalleMap.get(codNormPre) || comprasCartonesDetalleMap.get(codLimpio.toUpperCase()) || [];
     const descParte = String(c["Descripcion de partes"] || "").trim();
     const sector = sectorCartonMap.get(codLimpio) || sectorCartonMap.get(codNormPre) || "";
     const enviosTall = enviosMap.get(descParte) || 0;

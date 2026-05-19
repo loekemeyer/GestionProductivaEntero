@@ -89,5 +89,24 @@
   </div>
 
   <script src="app.js"></script>
+  <script>
+    // Registrar Service Worker para sincronización en background
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
+        console.log("Service Worker registrado OK");
+        // Chequear update cada 60s para detectar nueva version
+        setInterval(() => { reg.update().catch(() => {}); }, 60000);
+      }).catch(err => {
+        console.error("Error registrando Service Worker:", err);
+      });
+      // Fallback: si SW manda mensaje SW_UPDATED, recargar
+      navigator.serviceWorker.addEventListener("message", (event) => {
+        if (event.data && event.data.type === "SW_UPDATED") {
+          console.log("[SW] Nueva version - recargando...");
+          window.location.reload();
+        }
+      });
+    }
+  </script>
 </body>
 </html>

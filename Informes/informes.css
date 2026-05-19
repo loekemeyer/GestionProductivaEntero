@@ -55,6 +55,41 @@ body{margin:0;font-family:Arial,sans-serif;background:#f5f6f8;color:#111;}
 .filtro-matriz-wrap{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;}
 .filtro-matriz-wrap.hidden{display:none !important;}
 
+.tipo-matriz-wrap{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
+.tipo-label{font-size:12px;color:#555;font-weight:600;}
+.tipo-chips{display:flex;gap:6px;flex-wrap:wrap;}
+.tipo-chip{padding:4px 10px;border:1px solid #c9d1d9;background:#fff;cursor:pointer;border-radius:8px;font-size:12px;transition:all .12s;}
+.tipo-chip:hover{background:#f3f4f6;border-color:#999;}
+.tipo-chip.active{background:#111;color:#fff;border-color:#111;}
+.tipo-chip-todos{font-weight:700;}
+
+/* === REPORTE DIARIO === */
+.rd-wrap{margin-top:10px;}
+.rd-title{font-size:16px;font-weight:700;margin-bottom:10px;color:#111;}
+.rd-cols{display:grid;grid-template-columns: 1fr 280px;gap:12px;align-items:flex-start;}
+@media(max-width:1100px){ .rd-cols{grid-template-columns:1fr;} }
+.rd-main{width:100%;border-collapse:collapse;font-size:11px;}
+.rd-main th,.rd-main td{border:1px solid #bfc7d4;padding:3px 4px;text-align:center;}
+.rd-main thead th{background:#f5f5f7;font-weight:700;}
+.rd-th-n{width:38px;}
+.rd-th-mat{text-align:left;min-width:150px;}
+.rd-th-seg{width:48px;}
+.rd-th-emp{font-size:11px;}
+.rd-th-sub{font-size:10px;background:#ededf1;}
+.rd-th-tmhdr{text-align:left;background:#f5f5f7;}
+.rd-num{font-weight:700;width:38px;}
+.rd-mat-name{text-align:left;}
+.rd-seg-prom{font-weight:700;}
+.rd-cell-seg{font-variant-numeric:tabular-nums;}
+.rd-cell-ptje{font-weight:700;font-variant-numeric:tabular-nums;}
+.rd-sum{background:#f9fafb;}
+.rd-sum-label{text-align:left;font-weight:700;padding:5px 6px !important;}
+.rd-sum-val{font-weight:700;font-variant-numeric:tabular-nums;}
+.rd-side{width:100%;border-collapse:collapse;font-size:11px;}
+.rd-side th,.rd-side td{border:1px solid #bfc7d4;padding:4px 6px;}
+.rd-side thead th{background:#f5f5f7;font-weight:700;text-align:center;}
+.rd-side td.r{text-align:right;font-variant-numeric:tabular-nums;}
+
 .status{margin-bottom:10px;color:#666;font-size:13px;}
 
 /* TABLAS */
