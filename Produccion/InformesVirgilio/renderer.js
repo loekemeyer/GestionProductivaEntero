@@ -3,15 +3,13 @@
  */
 
 // =============================================================================
-// BACKEND: Supabase browser client (anon key + RLS). PPP sigue en Google Sheets.
+// BACKEND: Supabase browser client (anon key + RLS).
 // =============================================================================
 const SUPABASE_URL = 'https://hrxfctzncixxqmpfhskv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs';
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWC2udCFY8fuOyUnj85nCMmOW3WjbLLrPiTYHAQqopbp4j5DHtWEtmL2ExNNwihU8-/exec';
-const APPS_SCRIPT_TOKEN = 'VGjGk3F0jtix2jyFHPKxR1DObcLdIbde';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const CACHE_KEY = 'virgilio_data_v5_web';
+const CACHE_KEY = 'virgilio_data_v6_web';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const FERIADOS_API_URL = 'https://api.argentinadatos.com/v1/feriados';
 const FERIADOS_CACHE_KEY = 'virgilio_feriados_v1';
@@ -87,12 +85,51 @@ async function fetchEmpleados() {
 }
 
 async function fetchPpp() {
-  // PPP sigue en Google Sheets via Apps Script
-  const r = await fetch(APPS_SCRIPT_URL + '?token=' + encodeURIComponent(APPS_SCRIPT_TOKEN));
-  if (!r.ok) throw new Error('Apps Script HTTP ' + r.status);
-  const j = await r.json();
-  if (j.error) throw new Error('Apps Script error: ' + j.error);
-  return { ppp: j.ppp || [], pppProgDiaria: j.pppProgDiaria || [] };
+  const SIZE = 1000;
+
+  const allEntregados = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await sb
+      .from('PPP_Pedidos_Entregados')
+      .select('tanda,mt3')
+      .range(from, from + SIZE - 1);
+    if (error) throw new Error('PPP_Pedidos_Entregados: ' + error.message);
+    if (!data || data.length === 0) break;
+    allEntregados.push(...data);
+    if (data.length < SIZE) break;
+    from += SIZE;
+  }
+
+  const allProgDiaria = [];
+  from = 0;
+  while (true) {
+    const { data, error } = await sb
+      .from('PPP_Programacion_Diaria')
+      .select('tanda,m3,razon_social')
+      .range(from, from + SIZE - 1);
+    if (error) throw new Error('PPP_Programacion_Diaria: ' + error.message);
+    if (!data || data.length === 0) break;
+    allProgDiaria.push(...data);
+    if (data.length < SIZE) break;
+    from += SIZE;
+  }
+
+  const ppp = allEntregados.map(r => ({
+    tanda: String(r.tanda == null ? '' : r.tanda).trim(),
+    mt3: Number(r.mt3) || 0,
+    mt3fc: 0,
+    razon: ''
+  })).filter(p => p.tanda);
+
+  const pppProgDiaria = allProgDiaria.map(r => ({
+    tanda: String(r.tanda == null ? '' : r.tanda).trim(),
+    mt3: Number(r.m3) || 0,
+    mt3fc: 0,
+    razon: String(r.razon_social || '').trim()
+  })).filter(p => p.tanda);
+
+  return { ppp, pppProgDiaria };
 }
 
 async function cargarDatos(forzar = false) {
@@ -120,7 +157,7 @@ async function cargarDatos(forzar = false) {
       operarios,
       ppp: pppRes.ppp,
       pppProgDiaria: pppRes.pppProgDiaria,
-      meta: { generadoEn: new Date().toISOString(), source: 'supabase+appscript' }
+      meta: { generadoEn: new Date().toISOString(), source: 'supabase' }
     };
     dataActual = data;
     guardarCache(data);
@@ -372,6 +409,11 @@ function abrirDetalleCelda(legajo, filaKey, labelTarea) {
   // Caso especial: Tiempo Faltante → modal de desglose distinto
   if (filaKey === 'faltante') {
     abrirDetalleFaltante(legajo);
+    return;
+  }
+  // Caso especial: Fin de Jornada → modal comparativo
+  if (filaKey === 'FJ') {
+    abrirDetalleFJ(legajo);
     return;
   }
 
@@ -832,6 +874,67 @@ function abrirDetalleFaltante(legajo) {
 
   document.getElementById('modalDetalle').classList.remove('hidden');
 }
+function abrirDetalleFJ(legajo) {
+  if (!resultadoActual) return;
+  const operario = nombreEmp(legajo);
+  const pivot = resultadoActual.pivotEmpleados[legajo] || {};
+  const fj = pivot.FJ || { dias: [] };
+
+  document.getElementById('modalTitulo').textContent = `Fin de Jornada — ${operario}`;
+  document.getElementById('modalTabla').classList.remove('hidden');
+  document.getElementById('modalSecciones').classList.add('hidden');
+
+  const tabla = document.getElementById('modalTabla');
+  tabla.querySelector('thead').innerHTML =
+    '<tr><th>Día</th><th>Hora FJ</th><th>Opción</th><th>Reportado celular</th><th>Recibido Supabase</th><th>Diferencia</th></tr>';
+  const tb = tabla.querySelector('tbody');
+  tb.innerHTML = '';
+
+  let totalMismatches = 0, totalRep = 0, totalAct = 0;
+  if (fj.dias.length === 0) {
+    tb.innerHTML = '<tr><td colspan="6" class="dim">Sin FJ registrado en el rango</td></tr>';
+  } else {
+    // Ordenar por fecha asc
+    const dias = fj.dias.slice().sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
+    dias.forEach(d => {
+      // Unión de opciones reportadas y recibidas
+      const opciones = new Set([
+        ...Object.keys(d.reportado || {}),
+        ...Object.keys(d.actual || {})
+      ]);
+      const arr = [...opciones].sort();
+      if (arr.length === 0) {
+        tb.innerHTML += `<tr><td><b>${esc(d.fecha)}</b></td><td>${(d.hora||'').slice(0,5)}</td><td colspan="4" class="dim">Sin eventos</td></tr>`;
+        return;
+      }
+      arr.forEach((op, i) => {
+        const rep = (d.reportado || {})[op] || 0;
+        const act = (d.actual || {})[op] || 0;
+        const diff = rep - act;
+        const cls = diff !== 0 ? 'tiene-olvidos' : '';
+        totalRep += rep; totalAct += act;
+        if (diff !== 0) totalMismatches++;
+        const diaCell = i === 0 ? `<td rowspan="${arr.length}"><b>${esc(d.fecha)}</b></td><td rowspan="${arr.length}">${(d.hora||'').slice(0,5)}</td>` : '';
+        const diffTxt = diff === 0 ? '<span class="dim">—</span>' : (diff > 0 ? `⚠️ +${diff} faltan` : `⚠️ ${diff} sobran`);
+        tb.innerHTML += `<tr class="${cls}">${diaCell}<td>${esc(op)}</td><td class="num">${rep}</td><td class="num">${act}</td><td class="num">${diffTxt}</td></tr>`;
+      });
+    });
+  }
+
+  // Footer
+  document.getElementById('modalInicio').textContent = fj.dias.length;
+  document.getElementById('modalFin').textContent    = totalRep;
+  document.getElementById('modalTotal').textContent  = totalAct;
+  document.getElementById('modalOlvidado').textContent = totalMismatches > 0 ? `⚠️ ${totalMismatches}` : '0';
+
+  document.querySelectorAll('.modal-total-row .lbl').forEach((el, i) => {
+    const labels = ['Días con FJ:', 'Total reportado:', 'Total recibido:', 'Opciones con discrepancia:'];
+    if (labels[i]) el.textContent = labels[i];
+  });
+
+  document.getElementById('modalDetalle').classList.remove('hidden');
+}
+
 function cerrarModal() {
   document.getElementById('modalDetalle').classList.add('hidden');
 }
@@ -847,6 +950,17 @@ function celdaValores(fila, data) {
       mt3: '—',
       rend: '—'
     };
+  }
+  if (fila.tipo === 'fj') {
+    const fj = data.FJ || { dias: [], hayFJ: false };
+    if (!fj.hayFJ) return { hs: '', mt3: '—', rend: '—' };
+    const conMismatch = fj.dias.some(d => d.mismatches && d.mismatches.length);
+    const marca = conMismatch ? '⚠️' : '✓';
+    if (fj.dias.length === 1) {
+      const h = (fj.dias[0].hora || '').slice(0, 5);
+      return { hs: `${marca} ${h}`, mt3: '—', rend: '—' };
+    }
+    return { hs: `${marca} ${fj.dias.length} días`, mt3: '—', rend: '—' };
   }
   let hs = 0, mt3 = 0, est = false;
   switch (fila.key) {

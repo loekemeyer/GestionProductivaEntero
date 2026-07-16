@@ -49,6 +49,7 @@
     .badge-issue { background: #c62828; animation: pulse-badge 1s infinite; }
     .badge-idle { background: #9e9e9e; }
     .badge-inicio { background: #1565c0; }
+    .badge-fj { background: #6b21a8; }
     @keyframes pulse-badge { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 
     .op-detail { font-size: 13px; color: #555; line-height: 1.6; word-wrap: break-word; }
@@ -76,6 +77,8 @@
     .op-card.issue .op-matriz { color: #c62828; border-top-color: #ffcdd2; }
     .op-card.idle .op-header { background: #f5f5f5; }
     .op-card.inicio .op-header { background: #e3f2fd; }
+    .op-card.fj .op-header { background: #f3e8ff; }
+    .op-card.fj { opacity: 0.85; }
     @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 
     /* Alertas */
@@ -175,6 +178,71 @@
     .regs-body .op-OTHER { background: #616161; }
     .regs-empty { padding: 40px; text-align: center; color: #999; }
     .popup-box.regs .popup-close { margin-top: 14px; }
+
+    /* ===== AUDITORIA STOCK CAJON ===== */
+    .btn-audit {
+      background: #f5f5f5; border: 2px solid #ccc; border-radius: 999px;
+      padding: 8px 16px; font-size: 14px; font-weight: 700; cursor: pointer;
+      color: #555; display: inline-flex; align-items: center; gap: 8px;
+    }
+    .btn-audit:hover { border-color: #888; }
+    .btn-audit.critica {
+      background: #c62828; color: #fff; border-color: #c62828;
+      animation: pulse-badge 1s infinite;
+    }
+    .btn-audit.normal { background: #f57c00; color: #fff; border-color: #f57c00; }
+    .btn-audit.hidden { display: none; }
+
+    .audit-modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .audit-modal.hidden { display: none; }
+    .audit-box {
+      background: #fff; border-radius: 14px; width: 90vw; max-width: 760px;
+      max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    }
+    .audit-head {
+      padding: 16px 22px; border-bottom: 2px solid #e5e5e5;
+      display: flex; align-items: center; justify-content: space-between;
+      background: #111; color: #fff;
+    }
+    .audit-head h2 { font-size: 17px; }
+    .audit-close {
+      background: transparent; border: 0; color: #fff; font-size: 22px;
+      cursor: pointer; padding: 0 6px;
+    }
+    .audit-body { padding: 14px; overflow-y: auto; flex: 1; }
+    .audit-item {
+      border: 2px solid #e5e5e5; border-radius: 10px; padding: 12px 14px;
+      margin-bottom: 10px; background: #fafafa;
+    }
+    .audit-item.critica { border-color: #c62828; background: #fff5f5; }
+    .audit-item-head {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+      font-weight: 700; font-size: 14px;
+    }
+    .audit-tag {
+      padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff;
+    }
+    .audit-tag.excedente { background: #c62828; }
+    .audit-tag.forzoso { background: #f57c00; }
+    .audit-tag.normal { background: #757575; }
+    .audit-meta { font-size: 12px; color: #888; margin-left: auto; }
+    .audit-detail {
+      font-size: 13px; color: #444; line-height: 1.5; margin-bottom: 10px;
+    }
+    .audit-detail b { color: #111; }
+    .audit-nota {
+      width: 100%; min-height: 50px; border: 1px solid #ccc; border-radius: 6px;
+      padding: 6px 8px; font-size: 13px; font-family: inherit; resize: vertical;
+      margin-bottom: 8px;
+    }
+    .audit-check-row { display: flex; align-items: center; gap: 8px; }
+    .audit-check-row input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; }
+    .audit-check-row label { font-size: 13px; font-weight: 600; cursor: pointer; }
+    .audit-empty { padding: 30px; text-align: center; color: #999; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -182,6 +250,10 @@
   <div class="top-bar">
     <a href="../Inicio/" class="btn-back">&#8592; Volver</a>
     <h1>Monitor en Vivo <span class="live-dot"></span></h1>
+    <button class="btn-audit hidden" id="btnAudit" onclick="abrirAuditModal()">
+      <span id="btnAuditIcon">⚠</span>
+      <span id="btnAuditTxt">0 problemas</span>
+    </button>
     <span class="update-info" id="updateInfo"></span>
   </div>
 
@@ -251,6 +323,7 @@
   let badPremios = [];
   let goodPremios = [];
   let lastCajonByLegMat = {}; // "legajo|matNum" -> { Tiempo_Toma, Hora_Fin } (último cajón cerrado hoy)
+  let sinSedeConActividad = []; // operarios sin Sede con mensajes hoy — para alerta
 
   // Dismiss persistente por dia. Key: legajo|matNum|horaFin (unico por cajon).
   // Si cierran un nuevo cajon malo (otro horaFin), el key cambia y reaparece.
@@ -296,7 +369,7 @@
   async function init() {
     // Cargar empleados activos, matrices y tipos de codigos (TM/PRODUCCION)
     const [empRes, matRes] = await Promise.all([
-      sb.from('Empleados').select('Legajo, Empleado, Activo').eq('Activo', 'SI'),
+      sb.from('Empleados').select('Legajo, Empleado, Activo, Sede').eq('Activo', 'SI'),
       sb.from('Matrices').select('N_Matriz, Matriz, Tiempo_Historico'),
       cargarTiposCodigos()
     ]);
@@ -314,7 +387,7 @@
 
     await refresh();
     // Auto-refresh cada 15 segundos
-    setInterval(refresh, 15000);
+    setInterval(refresh, 60000);
     // Actualizar timers y alertas cada segundo
     setInterval(() => { updateTimers(); renderAlertas(); }, 1000);
   }
@@ -376,13 +449,23 @@
     pcLegajosHoy = new Set();
     regs.forEach(r => { if (r.opcion === 'PC') pcLegajosHoy.add(String(r.legajo).trim()); });
 
-    // Procesar estado actual de cada operario activo
+    // Procesar estado actual de cada operario activo (solo Sede 'C')
     operarioStates = [];
+    sinSedeConActividad = [];
     const now = new Date();
 
     empleados.forEach(emp => {
       const leg = String(emp.Legajo).trim();
       const empRegs = regs.filter(r => String(r.legajo).trim() === leg);
+      const sede = String(emp.Sede || '').trim().toUpperCase();
+
+      // Detectar operarios SIN sede con actividad hoy (para alertar)
+      if (!sede && empRegs.length > 0 && leg !== '1') {
+        sinSedeConActividad.push({ legajo: leg, nombre: emp.Empleado });
+      }
+
+      // Filtro: solo Sede 'C'
+      if (sede !== 'C') return;
 
       if (empRegs.length === 0) {
         operarioStates.push({
@@ -399,6 +482,7 @@
       let pendingTM = null; // { opcion, ts_event }
       let lastAction = null;
       let lastCajonAction = null; // ultima E o C: marca inicio del cajon en curso
+      let fjEvent = null; // si hay FJ (Fin de Jornada), guarda el evento
 
       empRegs.forEach(r => {
         const op = r.opcion;
@@ -406,15 +490,24 @@
         // LT (Llegada Tarde) es un mensaje automatico cuando entran pasadas las 8:30 — no es TM real, ignorar
         if (op === 'LT') return;
 
+        // FJ (Fin de Jornada) — no es TM, marcar al operario como cerrado
+        if (op === 'FJ') {
+          fjEvent = r;
+          pendingTM = null; // cualquier TM abierto se cierra implicitamente con FJ
+          return;
+        }
+
         if (op === 'E') {
           currentMatriz = r.texto || r.matriz || null;
           currentMatrizNombre = currentMatriz ? (matricesMap[currentMatriz] || '') : '';
           lastAction = r;
           lastCajonAction = r;
+          pendingTM = null; // E cierra cualquier TM abierto
         } else if (op === 'C') {
           // Normalizar descripcion a "Produciendo cajon" (igual que post-TM)
           lastAction = { ...r, descripcion: 'Produciendo cajon' };
           lastCajonAction = r; // C marca inicio del proximo cajon
+          pendingTM = null; // C cierra cualquier TM abierto
         } else if (!NON_DOWNTIME.has(op)) {
           // TM toggle
           if (pendingTM && pendingTM.opcion === op) {
@@ -437,7 +530,19 @@
       });
 
       // Determinar estado actual
-      if (pendingTM) {
+      if (fjEvent) {
+        // Operario cerró su jornada — estado especial
+        const ts = new Date(fjEvent.ts_event);
+        const elapsed = (now - ts) / 1000;
+        operarioStates.push({
+          legajo: leg, nombre: emp.Empleado,
+          type: 'fj',
+          action: 'FJ', desc: 'Fin de Jornada',
+          inicio: fjEvent.ts_event,
+          matriz: currentMatriz, matrizNombre: currentMatrizNombre,
+          elapsed: elapsed
+        });
+      } else if (pendingTM) {
         // TM abierto
         const ts = new Date(pendingTM.ts_event);
         const elapsed = (now - ts) / 1000;
@@ -538,6 +643,12 @@
       alertas.push({ critica: true, icon: '⚠', titulo: 'Tiempo Muerto > 10 min', detalle: lista });
     }
 
+    // Alerta: operarios con mensajes hoy pero sin Sede asignada (probablemente falta marcarlos como C)
+    if (sinSedeConActividad && sinSedeConActividad.length) {
+      const lista = sinSedeConActividad.map(o => esc(o.nombre) + ' (#' + esc(o.legajo) + ')').join(', ');
+      alertas.push({ critica: true, icon: '🏷', titulo: 'Operarios sin Sede asignada con actividad hoy', detalle: lista });
+    }
+
     // Alerta 2: operarios que aún no empezaron PC (Para Comida) a las 12:05
     const hora1205 = new Date();
     hora1205.setHours(12, 5, 0, 0);
@@ -568,7 +679,7 @@
 
   function renderGrid() {
     // Ordenar: TM/Issues primero, luego produccion, luego idle
-    const order = { issue: 0, tm: 1, inicio: 2, produccion: 3, idle: 4 };
+    const order = { issue: 0, tm: 1, inicio: 2, produccion: 3, fj: 4, idle: 5 };
     const sorted = [...operarioStates].sort((a, b) => (order[a.type] || 9) - (order[b.type] || 9));
 
     // Map legajo -> ULTIMO bad premio (sin importar dismiss). Luego filtramos si está dismisseado.
@@ -616,6 +727,9 @@
       } else if (op.type === 'inicio') {
         badgeClass = 'badge-inicio';
         badgeText = 'Inicio Matriz';
+      } else if (op.type === 'fj') {
+        badgeClass = 'badge-fj';
+        badgeText = 'Fin de Jornada';
       } else {
         badgeClass = 'badge-idle';
         badgeText = 'Sin actividad';
@@ -646,13 +760,22 @@
           if (segUni != null) partes.push('Seg/Uni: <strong style="color:#222;">' + segUni.toFixed(2) + '</strong>');
           if (partes.length) thSegLine = '<div style="font-size:15px;color:#444;margin-top:6px;font-weight:600;">' + partes.join(' · ') + '</div>';
         }
-        detail = `
-          <div class="op-detail">
-            <strong>${esc(op.action)}</strong> - ${esc(op.desc)}${matInline}<br>
-            Inicio: <strong>${horaIni}</strong>
-            <span class="timer ${timerClass}" data-inicio="${op.inicio || ''}" data-type="${op.type}">${formatTimer(op.elapsed)}</span>
-            ${thSegLine}
-          </div>`;
+        if (op.type === 'fj') {
+          // Sin timer — es estado final, mostrar solo hora
+          detail = `
+            <div class="op-detail">
+              <strong>${esc(op.action)}</strong> - ${esc(op.desc)}<br>
+              Terminó: <strong>${horaIni}</strong>
+            </div>`;
+        } else {
+          detail = `
+            <div class="op-detail">
+              <strong>${esc(op.action)}</strong> - ${esc(op.desc)}${matInline}<br>
+              Inicio: <strong>${horaIni}</strong>
+              <span class="timer ${timerClass}" data-inicio="${op.inicio || ''}" data-type="${op.type}">${formatTimer(op.elapsed)}</span>
+              ${thSegLine}
+            </div>`;
+        }
       }
       const matrizInfo = ''; // ahora va inline en detail (arriba)
 
@@ -802,8 +925,148 @@
     });
   }
 
+  /* ===== AUDITORIA STOCK CAJON ===== */
+  let auditoriaPendientes = [];
+
+  async function cargarAuditoria() {
+    try {
+      const { data, error } = await sb
+        .from('UnixCajon_Stock_Auditoria')
+        .select('*')
+        .eq('visto', false)
+        .order('creado_en', { ascending: false });
+      if (error) throw error;
+      auditoriaPendientes = data || [];
+    } catch (e) {
+      console.warn('[monitor] cargarAuditoria fallo:', e);
+      auditoriaPendientes = [];
+    }
+    actualizarBtnAudit();
+  }
+
+  function esCritica(r) {
+    const max = Number(r.uni_x_cajon || 0);
+    if (!max) return false;
+    const exc = Number(r.excedente || 0);
+    const falt = Number(r.faltante_antes || 0);
+    if (exc > 0.05 * max) return true;
+    if (r.forzado_completo && falt > 0.05 * max) return true;
+    return false;
+  }
+
+  function tipoProblema(r) {
+    if (Number(r.excedente || 0) > 0) return { clase: 'excedente', label: 'Excedente' };
+    if (r.forzado_completo) return { clase: 'forzoso', label: 'Cierre forzoso' };
+    return { clase: 'normal', label: 'Otro' };
+  }
+
+  function actualizarBtnAudit() {
+    const btn = document.getElementById('btnAudit');
+    const txt = document.getElementById('btnAuditTxt');
+    const n = auditoriaPendientes.length;
+    if (!n) {
+      btn.classList.add('hidden');
+      return;
+    }
+    const criticas = auditoriaPendientes.filter(esCritica).length;
+    btn.classList.remove('hidden', 'critica', 'normal');
+    btn.classList.add(criticas > 0 ? 'critica' : 'normal');
+    const palabra = n === 1 ? 'problema' : 'problemas';
+    txt.textContent = n + ' ' + palabra + (criticas ? ' (' + criticas + ' crit)' : '');
+  }
+
+  function nombreOperario(legajo) {
+    const e = empleados.find(x => String(x.Legajo).trim() === String(legajo).trim());
+    return e ? e.Empleado : '?';
+  }
+
+  function fmtFechaHora(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const pad = n => String(n).padStart(2, '0');
+    return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function renderAuditModal() {
+    const body = document.getElementById('auditBody');
+    if (!auditoriaPendientes.length) {
+      body.innerHTML = '<div class="audit-empty">✅ Sin problemas pendientes</div>';
+      return;
+    }
+    body.innerHTML = auditoriaPendientes.map(r => {
+      const t = tipoProblema(r);
+      const crit = esCritica(r);
+      const matNombre = matricesMap[String(r.N_Matriz).trim()] || '';
+      const nom = nombreOperario(r.legajo);
+      const max = Number(r.uni_x_cajon || 0);
+      const exc = Number(r.excedente || 0);
+      const falt = Number(r.faltante_antes || 0);
+      const pctExc = max ? Math.round((exc / max) * 100) : 0;
+      const pctFalt = max ? Math.round((falt / max) * 100) : 0;
+      return '<div class="audit-item' + (crit ? ' critica' : '') + '" data-id="' + r.id + '">' +
+        '<div class="audit-item-head">' +
+          '<span class="audit-tag ' + t.clase + '">' + t.label + '</span>' +
+          (crit ? '<span class="audit-tag excedente">⚠ 5%+</span>' : '') +
+          '<span>Matriz ' + esc(r.N_Matriz) + (matNombre ? ' (' + esc(matNombre) + ')' : '') + '</span>' +
+          '<span class="audit-meta">' + fmtFechaHora(r.creado_en) + ' · Leg ' + esc(r.legajo) + ' ' + esc(nom) + '</span>' +
+        '</div>' +
+        '<div class="audit-detail">' +
+          'Cantidad cargada: <b>' + Number(r.cantidad) + '</b> | ' +
+          'Antes: <b>' + Number(r.uni_actual_antes) + '</b> → Después: <b>' + Number(r.uni_actual_despues) + '</b> / Max: <b>' + max + '</b>' +
+          (exc > 0 ? ' | Excedente: <b>+' + exc + '</b> (' + pctExc + '%)' : '') +
+          (r.forzado_completo ? ' | <b>Cierre forzoso</b> faltaban <b>' + falt + '</b> (' + pctFalt + '%)' : '') +
+        '</div>' +
+        '<textarea class="audit-nota" id="auditNota_' + r.id + '" placeholder="Nota opcional (antes de marcar visto)"></textarea>' +
+        '<div class="audit-check-row">' +
+          '<input type="checkbox" id="auditChk_' + r.id + '" onchange="marcarVisto(' + r.id + ', this)">' +
+          '<label for="auditChk_' + r.id + '">Marcar visto</label>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  window.abrirAuditModal = function() {
+    document.getElementById('auditModal').classList.remove('hidden');
+    renderAuditModal();
+  };
+  window.cerrarAuditModal = function() {
+    document.getElementById('auditModal').classList.add('hidden');
+  };
+  window.marcarVisto = async function(id, chk) {
+    if (!chk.checked) return; // solo actuamos al tildar
+    const nota = (document.getElementById('auditNota_' + id) || {}).value || null;
+    chk.disabled = true;
+    try {
+      const { error } = await sb.rpc('marcar_auditoria_visto', {
+        p_id: id, p_visto: true, p_nota: nota, p_legajo: null
+      });
+      if (error) throw error;
+      auditoriaPendientes = auditoriaPendientes.filter(x => x.id !== id);
+      actualizarBtnAudit();
+      renderAuditModal();
+    } catch (e) {
+      chk.checked = false;
+      chk.disabled = false;
+      alert('No se pudo marcar visto: ' + (e.message || e));
+    }
+  };
+
+  // Cargar auditoria al inicio y cada 15s en paralelo al refresh principal.
+  setInterval(cargarAuditoria, 60000);
+  cargarAuditoria();
+
   init();
 })();
 </script>
+
+<div class="audit-modal hidden" id="auditModal">
+  <div class="audit-box">
+    <div class="audit-head">
+      <h2>⚠ Problemas de stock cajón</h2>
+      <button class="audit-close" onclick="cerrarAuditModal()">✕</button>
+    </div>
+    <div class="audit-body" id="auditBody"></div>
+  </div>
+</div>
 </body>
 </html>

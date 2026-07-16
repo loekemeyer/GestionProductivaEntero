@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <script src="../../auth-guard.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Envios por Tallerista</title>
+
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="EnviosTall.css" />
+</head>
+<body>
+
+  <div class="card">
+
+    <!-- HEADER -->
+    <div class="header-top">
+      <button onclick="window.location.href='../../Inicio/index.html'" class="btn-home" type="button">← Inicio</button>
+      <h1>Envios por Tallerista</h1>
+      <button id="btnVolver" class="btn-volver hidden" type="button">← Cambiar</button>
+    </div>
+
+    <!-- FASE 1: SELECCIONAR CAJONES -->
+    <div id="fase1" class="fase-container">
+      <div id="talleristasGrid" class="talleristas-grid"></div>
+      <div id="filtroArticuloWrap" class="filtro-articulo-wrap hidden">
+        <input type="search" id="txtFiltroArticulo" class="filtro-articulo-input" placeholder="Buscar artículo..." autocomplete="off">
+      </div>
+      <div id="result"></div>
+      <div class="footer-actions">
+        <button id="btnSiguiente" class="btn-enviar hidden" type="button">Siguiente →</button>
+      </div>
+    </div>
+
+    <!-- FASE 2: INGRESAR KG -->
+    <div id="fase2" class="fase-container hidden">
+      <div class="fase-header">
+        <h2>Cargar Pesos (Kg)</h2>
+        <button id="btnVolverFase1" class="btn-volver-fases" type="button">← Atrás</button>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Tallerista</th>
+              <th>Sec</th>
+              <th>Descripción</th>
+              <th class="right">Caj</th>
+              <th class="right">Kg / Uni</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="fase2TableBody"></tbody>
+        </table>
+      </div>
+      <div class="footer-actions" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <label style="font-weight:800;font-size:14px;display:flex;align-items:center;gap:6px">
+          Fecha:
+          <input type="date" id="fechaEnvio" style="height:38px;border-radius:10px;border:2px solid #d0d7de;padding:0 10px;font-size:14px">
+        </label>
+        <button id="btnEnviar" class="btn-enviar disabled" type="button" disabled>Enviar</button>
+      </div>
+    </div>
+
+    <!-- FASE 3: LISTO PARA IMPRIMIR -->
+    <div id="fase3" class="fase-container hidden">
+      <div class="fase-header success-header">
+        <h2>✓ Listo para Imprimir</h2>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="fase3Table">
+          <thead>
+            <tr>
+              <th>Tallerista</th>
+              <th>Sec</th>
+              <th>Descripción</th>
+              <th class="right">Caj</th>
+              <th class="right">Kg</th>
+            </tr>
+          </thead>
+          <tbody id="fase3TableBody"></tbody>
+        </table>
+      </div>
+      <div class="footer-actions">
+        <button id="btnImprimir" class="btn-enviar" type="button">🖨️ Imprimir</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- TOAST DESHACER -->
+  <div id="toastDeshacer" class="toast-deshacer hidden">
+    <div class="toast-content">
+      <span class="toast-mensaje">✓ Envio guardado</span>
+      <div>
+        <button id="btnDeshacerEnvio" class="btn-deshacer" type="button">Deshacer</button>
+        <button id="btnCerrarToast" class="btn-cerrar-toast" type="button">✕</button>
+      </div>
+    </div>
+    <div class="toast-progress" id="toastProgress"></div>
+  </div>
+
+  <!-- JS -->
+  <script src="EnviosTall.js"></script>
+
+</body>
+</html>

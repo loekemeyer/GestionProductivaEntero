@@ -21,6 +21,8 @@ const resultEl = document.getElementById("result");
 const statusEl = document.getElementById("status");
 const btnVolver = document.getElementById("btnVolver");
 const btnIndex = document.getElementById("btnIndex");
+const filtroDesc = document.getElementById("filtroDesc");
+const btnImprimir = document.getElementById("btnImprimir");
 
 /*************************************************
  * STATE
@@ -292,12 +294,29 @@ async function cargarPlasticas(){
   return map;
 }
 
+// Helper: paginar + safety net contra loops infinitos
+async function fetchAllPaginated(table, selectCols = "*"){
+  const out = [];
+  const PAGE = 1000;
+  const MAX_PAGES = 100;
+  let from = 0;
+  for (let page = 0; page < MAX_PAGES; page++){
+    const { data, error } = await supabaseClient.from(table).select(selectCols).range(from, from + PAGE - 1);
+    if (error){ console.error(error); throw new Error(`${table}: ${error.message}`); }
+    if (!data || !data.length) return out;
+    out.push(...data);
+    if (data.length < PAGE) return out;
+    from += PAGE;
+    if (page === MAX_PAGES - 1) console.warn(`[fetchAllPaginated] ${table}: MAX_PAGES alcanzado, filas: ${out.length}`);
+  }
+  return out;
+}
+
 async function cargarEnviosPS(){
   if(enviosPSCache) return enviosPSCache;
 
-  const { data, error } = await supabaseClient
-    .from(TABLA_ENVIOS_PS)
-    .select("*");
+  const data = await fetchAllPaginated(TABLA_ENVIOS_PS);
+  const error = null;
 
   if (error){
     console.error(error);
@@ -307,6 +326,7 @@ async function cargarEnviosPS(){
   const detalleMap = new Map();
   const totalKgMap = new Map();
   const totalCajMap = new Map();
+  const totalUniMap = new Map();
 
   (data || []).forEach(r=>{
     const provServ = normalizeText(pick(r, ["Prov_Serv", "Prov Serv", "prov_serv"]));
@@ -317,9 +337,11 @@ async function cargarEnviosPS(){
     const fecha = String(pick(r, ["Dia-mes", "Dia_mes", "dia-mes", "dia_mes"]) || "").trim();
     const kg = parseDecimal(pick(r, ["KG", "Kg", "kg"]));
     const cajones = parseDecimal(pick(r, ["Cajones", "cajones", "CAJONES"]));
+    // Unidades cargadas directamente (PS por unidades, ej. AJ Adhesivos): en esos envíos KG queda null.
+    const unidades = parseDecimal(pick(r, ["Unidades", "unidades", "UNIDADES"]));
 
     if (!provServ) return;
-    if (!kg && !cajones) return;
+    if (!kg && !cajones && !unidades) return;
 
     // Clave unica: SC+SP+Parte para maxima precision, con fallbacks
     let key;
@@ -330,15 +352,17 @@ async function cargarEnviosPS(){
     else return;
 
     if (!detalleMap.has(key)) detalleMap.set(key, []);
-    detalleMap.get(key).push({ id: r.id, fecha, kg, cajones });
+    detalleMap.get(key).push({ id: r.id, fecha, kg, cajones, unidades });
     totalKgMap.set(key, (totalKgMap.get(key) || 0) + kg);
     totalCajMap.set(key, (totalCajMap.get(key) || 0) + cajones);
+    totalUniMap.set(key, (totalUniMap.get(key) || 0) + unidades);
   });
 
   enviosPSCache = {
     detalleMap,
     totalKgMap,
-    totalCajMap
+    totalCajMap,
+    totalUniMap
   };
 
   return enviosPSCache;
@@ -347,9 +371,8 @@ async function cargarEnviosPS(){
 async function cargarEntregasPS(){
   if(entregasPSCache) return entregasPSCache;
 
-  const { data, error } = await supabaseClient
-    .from(TABLA_ENTREGAS_PS)
-    .select("*");
+  const data = await fetchAllPaginated(TABLA_ENTREGAS_PS);
+  const error = null;
 
   if (error){
     console.error(error);
@@ -398,9 +421,8 @@ async function cargarEntregasPS(){
 async function cargarEnviosTalleristas(){
   if(enviosTalleristasCache) return enviosTalleristasCache;
 
-  const { data, error } = await supabaseClient
-    .from(TABLA_ENVIOS_TALLERISTAS)
-    .select("*");
+  const data = await fetchAllPaginated(TABLA_ENVIOS_TALLERISTAS);
+  const error = null;
 
   if (error){
     console.error(error);
@@ -452,11 +474,14 @@ function obtenerEnviosPS(ps, sp, parte, enviosData, kgXUni, sc){
 
   const totalKg = Number(enviosData.totalKgMap.get(key) || 0);
   const totalCaj = Number(enviosData.totalCajMap.get(key) || 0);
-  const totalUni = kgXUni > 0 ? Math.floor(totalKg / kgXUni) : 0;
+  const totalUniDirecto = Number((enviosData.totalUniMap && enviosData.totalUniMap.get(key)) || 0);
+  // PS por unidades: usar las Unidades cargadas directamente. Sino, derivar de KG / (Kg x Uni).
+  const totalUni = totalUniDirecto > 0 ? totalUniDirecto : (kgXUni > 0 ? Math.floor(totalKg / kgXUni) : 0);
   const detalleBase = enviosData.detalleMap.get(key) || [];
 
   const detalle = detalleBase.map(x => {
-    const unidades = kgXUni > 0 ? Math.floor(Number(x.kg || 0) / kgXUni) : 0;
+    const uniDirecto = Number(x.unidades || 0);
+    const unidades = uniDirecto > 0 ? uniDirecto : (kgXUni > 0 ? Math.floor(Number(x.kg || 0) / kgXUni) : 0);
     return {
       fecha: x.fecha,
       kg: x.kg,
@@ -569,6 +594,8 @@ async function seleccionar(ps){
   });
 
   let rows = "";
+  let grpIdx = 0;
+  const printRows = [];
 
   for (const [sc, grupo] of gruposSC.entries()) {
     // Datos compartidos del SC (usar primer item para info SC)
@@ -736,7 +763,7 @@ async function seleccionar(ps){
     subFilas.forEach((sf, idx) => {
       const codProvVal = escapeHtml(sf.item.Cod_Prov_Externo || "");
 
-      rows += `<tr>`;
+      rows += `<tr data-grp="${grpIdx}">`;
 
       // Columnas compartidas solo en la primera fila del grupo
       if (idx === 0) {
@@ -747,7 +774,7 @@ async function seleccionar(ps){
       // Columnas individuales: SP y Descripcion
       rows += `
         <td>${escapeHtml(sf.item.SP || sf.item.Sp || "")}</td>
-        <td>${escapeHtml(sf.item.Parte || "")}</td>`;
+        <td class="desc-cell">${escapeHtml(sf.item.Parte || "")}</td>`;
 
       // Columnas compartidas: Online, Enviar, Envios, Info
       if (idx === 0) {
@@ -810,7 +837,32 @@ async function seleccionar(ps){
         </td>
       </tr>`;
     });
+
+    // Datos para impresión (Descripción + Caj online + Cjn a enviar, nivel SC/grupo)
+    printRows.push({
+      desc: subFilas.map(sf => String(sf.item.Parte || "").trim()).filter(Boolean).join(" / "),
+      caj: onlinePSCaj,
+      cjn: enviar
+    });
+
+    grpIdx++;
   }
+
+  const printRowsHtml = printRows.length
+    ? printRows.map((r, i) => `
+        <tr data-pdesc="${escapeHtml(normalizeText(r.desc))}" class="${i % 2 ? "zebra" : ""}">
+          <td class="p-num">${i + 1}</td>
+          <td class="p-desc">${escapeHtml(r.desc)}</td>
+          <td class="p-caj">${formatCajones(r.caj)}</td>
+          <td class="p-cjn">${formatCajones(r.cjn)}</td>
+        </tr>`).join("")
+    : `<tr><td colspan="4" class="center">Sin datos</td></tr>`;
+
+  const totalCjnPrint = printRows.reduce((s, r) => s + Number(r.cjn || 0), 0);
+  const totalCajPrint = printRows.reduce((s, r) => s + Number(r.caj || 0), 0);
+  const fechaPrint = new Date().toLocaleDateString("es-AR", {
+    day: "2-digit", month: "2-digit", year: "numeric"
+  });
 
   resultEl.innerHTML = `
     <div class="articulo">
@@ -847,6 +899,38 @@ async function seleccionar(ps){
           </tr>
         </thead>
         <tbody>${rows}</tbody>
+      </table>
+    </div>
+
+    <div id="printArea" class="print-only">
+      <div class="print-header">
+        <div class="print-head-left">
+          <div class="print-doc">Cajones a Enviar</div>
+          <h2 class="print-title">${escapeHtml(ps)}</h2>
+        </div>
+        <div class="print-head-right">
+          <div class="print-date">Fecha: ${escapeHtml(fechaPrint)}</div>
+          <div class="print-count"><span id="printCount">${printRows.length}</span> ítems</div>
+        </div>
+      </div>
+      <table class="print-table">
+        <thead>
+          <tr>
+            <th class="p-num">#</th>
+            <th class="p-desc">Descripción</th>
+            <th class="p-caj">Caj</th>
+            <th class="p-cjn">Cjn a Enviar</th>
+          </tr>
+        </thead>
+        <tbody>${printRowsHtml}</tbody>
+        <tfoot>
+          <tr class="print-total">
+            <td></td>
+            <td>TOTAL</td>
+            <td class="p-caj" id="printTotalCaj">${formatCajones(totalCajPrint)}</td>
+            <td class="p-cjn" id="printTotalCjn">${formatCajones(totalCjnPrint)}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
 
@@ -936,8 +1020,144 @@ async function seleccionar(ps){
     });
   });
 
+  filtroDesc.classList.remove("hidden");
+  btnImprimir.classList.remove("hidden");
+  aplicarFiltro();
+
   setStatus(`Encontradas ${filas.length} filas`);
+
+  // Panel advertencia: envios/entregas sin match contra Partes x PS
+  renderPanelSinMatchPS(ps, filas, enviosData, entregasData);
 }
+
+// =====================================================
+// Panel "Sin match": envios/entregas cuyo (PS+SC+SP+parte) no esta en Partes x PS
+// =====================================================
+function renderPanelSinMatchPS(ps, filasPS, enviosData, entregasData){
+  const psNorm = normalizeText(ps);
+  // Set de keys esperadas (todas las variantes que arma cargarEnviosPS/cargarEntregasPS)
+  const keysEsperadas = new Set();
+  filasPS.forEach(r => {
+    const sc = normalizeText(r.SC || r.Sc || "");
+    const sp = normalizeText(r.SP || r.Sp || "");
+    const parte = normalizeText(r.Parte || "");
+    if (sc && sp) keysEsperadas.add(`${psNorm}__${sc}__${sp}__${parte}`);
+    if (sp) keysEsperadas.add(`${psNorm}__sp__${sp}__${parte}`);
+    if (sc) keysEsperadas.add(`${psNorm}__sc__${sc}__${parte}`);
+    if (parte) keysEsperadas.add(`${psNorm}__parte__${parte}`);
+  });
+
+  const sinMatchEnvios = [];
+  const sinMatchEntregas = [];
+  const prefijo = `${psNorm}__`;
+
+  const recolectar = (mapData, tipo, lista) => {
+    if (!mapData || !mapData.totalKgMap) return;
+    for (const [key, kg] of mapData.totalKgMap.entries()){
+      if (!key.startsWith(prefijo)) continue;
+      if (keysEsperadas.has(key)) continue;
+      const caj = mapData.totalCajMap ? (mapData.totalCajMap.get(key) || 0) : 0;
+      const uni = mapData.totalUniMap ? (mapData.totalUniMap.get(key) || 0) : 0;
+      const detalle = mapData.detalleMap ? (mapData.detalleMap.get(key) || []) : [];
+      if (kg <= 0 && caj <= 0 && uni <= 0) continue;
+      const fechas = detalle.map(d => d.fecha).filter(Boolean);
+      // Parsear key: psNorm__[sc|sp|parte|sc__sp]__parte
+      const resto = key.slice(prefijo.length);
+      lista.push({ resto, kg, caj, uni, cant: detalle.length, primera: fechas[0]||"", ultima: fechas[fechas.length-1]||"" });
+    }
+  };
+  recolectar(enviosData, "envio", sinMatchEnvios);
+  recolectar(entregasData, "entrega", sinMatchEntregas);
+
+  let panel = document.getElementById("panelSinMatchPS");
+  if (!sinMatchEnvios.length && !sinMatchEntregas.length){
+    if (panel) panel.remove();
+    return;
+  }
+  if (!panel){
+    panel = document.createElement("div");
+    panel.id = "panelSinMatchPS";
+    panel.style.cssText = "margin:14px 0;padding:12px 14px;border:2px solid #f59e0b;background:#fffbeb;border-radius:10px;font-size:14px";
+    if (resultEl && resultEl.parentNode) resultEl.parentNode.insertBefore(panel, resultEl);
+  }
+
+  sinMatchEnvios.sort((a,b) => b.kg - a.kg);
+  sinMatchEntregas.sort((a,b) => b.kg - a.kg);
+
+  const buildTable = (items, titulo) => items.length ? `
+    <div style="font-weight:700;color:#92400e;margin-top:10px">${titulo}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px">
+      <thead><tr style="background:#fde68a">
+        <th style="padding:4px 8px;border:1px solid #d97706;text-align:left">Clave (SC/SP/Parte)</th>
+        <th style="padding:4px 8px;border:1px solid #d97706">Σ Kg</th>
+        <th style="padding:4px 8px;border:1px solid #d97706">Σ Caj</th>
+        <th style="padding:4px 8px;border:1px solid #d97706">Σ Uni</th>
+        <th style="padding:4px 8px;border:1px solid #d97706">Reg</th>
+        <th style="padding:4px 8px;border:1px solid #d97706">Fechas</th>
+      </tr></thead>
+      <tbody>${items.map(x => `<tr>
+        <td style="padding:3px 8px;border:1px solid #d97706"><b>${escapeHtml(x.resto)}</b></td>
+        <td style="padding:3px 8px;border:1px solid #d97706;text-align:right">${Number(x.kg).toLocaleString('es-AR',{maximumFractionDigits:2})}</td>
+        <td style="padding:3px 8px;border:1px solid #d97706;text-align:right">${Number(x.caj).toLocaleString('es-AR')}</td>
+        <td style="padding:3px 8px;border:1px solid #d97706;text-align:right">${Number(x.uni).toLocaleString('es-AR')}</td>
+        <td style="padding:3px 8px;border:1px solid #d97706;text-align:center">${x.cant}</td>
+        <td style="padding:3px 8px;border:1px solid #d97706;text-align:center">${escapeHtml(x.primera)} → ${escapeHtml(x.ultima)}</td>
+      </tr>`).join("")}</tbody>
+    </table>` : "";
+
+  panel.innerHTML = `
+    <div style="font-weight:800;color:#92400e;font-size:15px;margin-bottom:6px">
+      ⚠ Envíos/Entregas sin match con Partes x PS (${sinMatchEnvios.length + sinMatchEntregas.length})
+    </div>
+    <div style="color:#78350f;margin-bottom:8px">Estas operaciones existen en DB pero su combinación (PS+SC+SP+Parte) no aparece en Partes x PS — revisar carga o agregar la fila.</div>
+    ${buildTable(sinMatchEnvios, "📤 Envíos sin match:")}
+    ${buildTable(sinMatchEntregas, "📥 Entregas sin match:")}
+  `;
+}
+
+/*************************************************
+ * FILTRO POR DESCRIPCION
+ *************************************************/
+function aplicarFiltro(){
+  const q = normalizeText(filtroDesc.value);
+
+  // Filas en pantalla: agrupadas por data-grp (respeta rowspan)
+  const porGrupo = {};
+  resultEl.querySelectorAll("tr[data-grp]").forEach(tr => {
+    const g = tr.dataset.grp;
+    (porGrupo[g] = porGrupo[g] || []).push(tr);
+  });
+
+  Object.values(porGrupo).forEach(trs => {
+    const match = !q || trs.some(tr => {
+      const d = tr.querySelector(".desc-cell");
+      return d && normalizeText(d.textContent).includes(q);
+    });
+    trs.forEach(tr => { tr.style.display = match ? "" : "none"; });
+  });
+
+  // Filas de impresión + recalcular totales/contador sobre lo visible
+  let totalCaj = 0, totalCjn = 0, visibles = 0;
+  resultEl.querySelectorAll("#printArea tr[data-pdesc]").forEach(tr => {
+    const match = !q || (tr.dataset.pdesc || "").includes(q);
+    tr.style.display = match ? "" : "none";
+    if (match){
+      visibles++;
+      totalCaj += parseDecimal(tr.querySelector(".p-caj")?.textContent);
+      totalCjn += parseDecimal(tr.querySelector(".p-cjn")?.textContent);
+    }
+  });
+
+  const elCount = document.getElementById("printCount");
+  const elCaj = document.getElementById("printTotalCaj");
+  const elCjn = document.getElementById("printTotalCjn");
+  if (elCount) elCount.textContent = visibles;
+  if (elCaj) elCaj.textContent = formatCajones(totalCaj);
+  if (elCjn) elCjn.textContent = formatCajones(totalCjn);
+}
+
+filtroDesc.addEventListener("input", aplicarFiltro);
+btnImprimir.addEventListener("click", () => window.print());
 
 /*************************************************
  * VOLVER
@@ -946,6 +1166,9 @@ btnVolver.onclick = ()=>{
   psActivo = "";
   resultEl.innerHTML = "";
   btnVolver.classList.add("hidden");
+  filtroDesc.value = "";
+  filtroDesc.classList.add("hidden");
+  btnImprimir.classList.add("hidden");
 
   document.querySelectorAll(".tallerista-btn").forEach(b=>{
     b.classList.remove("active");

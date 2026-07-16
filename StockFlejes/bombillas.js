@@ -41,7 +41,7 @@ async function init() {
   try {
     const [bombRes, entregasVirg, enviosTall, recepcionInsumos] = await Promise.all([
       sb.from("Bombillas").select("*").order("Sector", { ascending: true }),
-      fetchAll("Entregas Tallerista Virgilio"),
+      fetchAll("Entregas_Tall_Todas"),
       fetchAll("Envios a Talleristas"),
       fetchAll("Recepcion_Insumos")
     ]);

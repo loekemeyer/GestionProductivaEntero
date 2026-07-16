@@ -5,17 +5,26 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Envío a Proveedores de Servicios</title>
-  <link rel="stylesheet" href="EnviosPS.css" />
+  <link rel="stylesheet" href="EnviosPS.css?v=20260618f" />
+  <link rel="stylesheet" href="../../tandas-popup.css?v=20260617a" />
+  <link rel="stylesheet" href="../../cajones-popup.css?v=20260528a" />
 </head>
 <body>
 
   <div class="card">
     <!-- HEADER -->
     <div class="header-top">
-      <button onclick="window.location.href='../../Inicio/index.html'" class="btn-home" type="button">← Inicio</button>
-      <h1>Envío a Proveedores de Servicios</h1>
-      <button id="btnVolver" class="btn-volver hidden" type="button">← Cambiar</button>
+      <button id="btnVolver" class="btn-volver hidden" type="button">← Atras</button>
+      <button onclick="gpHome()" class="btn-home" type="button">← Inicio</button>
     </div>
+    <h1 class="page-title">Envío a Proveedores de Servicios</h1>
+    <script>
+      function gpHome(){
+        try { localStorage.removeItem('enviosPS_pendientes'); } catch(e){}
+        var r = sessionStorage.getItem('gp_role') || 'admin';
+        window.location.href = (r === 'envios') ? '../../envios-only.html' : '../../Inicio/index.html';
+      }
+    </script>
 
     <!-- FASE 0: SELECCIONAR PROVEEDOR -->
     <div id="fase0" class="fase-container">
@@ -25,55 +34,36 @@
       <div id="status" class="status"></div>
     </div>
 
-    <!-- FASE 1: CARGAR CAJONES -->
+    <!-- FASE 1: CARGAR CAJONES + KG NETO (unificado) -->
     <div id="fase1" class="fase-container hidden">
       <div class="fase-header">
         <h2 id="fase1Title">Proveedor</h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label for="fechaEnvio" style="font-weight:800;font-size:14px">Fecha:</label>
+          <input type="date" id="fechaEnvio" style="height:38px;border-radius:10px;border:2px solid #d0d7de;padding:0 10px;font-size:14px">
+          <button id="btnLimpiar" class="btn-volver-fases" type="button" title="Vaciar todo lo cargado">🗑 Limpiar</button>
+          <button id="btnEnviar" class="btn-enviar disabled" type="button" disabled>Enviar</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table class="table">
-          <thead>
+          <thead id="fase1TableHead">
             <tr>
               <th>Parte</th>
               <th>Proceso</th>
+              <th class="right col-caj-only">Max</th>
+              <th class="right col-caj-only">Online SP</th>
+              <th class="right col-caj-only">Online PS</th>
+              <th class="right col-cajenv col-caj-only">Cajones a Enviar</th>
               <th>SC</th>
-              <th class="right">Caj</th>
+              <th class="right" id="fase1HdrCantidad">Caj</th>
+              <th class="right col-caj-only" id="fase1HdrKg">KG<br>Neto</th>
+              <th class="center col-caj-only" title="Cargar por tandas">T</th>
+              <th class="col-caj-only">F</th>
             </tr>
           </thead>
           <tbody id="fase1TableBody"></tbody>
         </table>
-      </div>
-      <div class="footer-actions">
-        <button id="btnSiguiente" class="btn-enviar hidden" type="button">Siguiente →</button>
-      </div>
-    </div>
-
-    <!-- FASE 2: CARGAR KG / UNI -->
-    <div id="fase2" class="fase-container hidden">
-      <div class="fase-header">
-        <h2 id="fase2Title">Cargar Pesos (Kg)</h2>
-        <button id="btnVolverFase1" class="btn-volver-fases" type="button">← Atrás</button>
-      </div>
-      <div style="padding:8px 12px;display:flex;align-items:center;gap:10px">
-        <label for="fechaEnvio" style="font-weight:800;font-size:14px">Fecha:</label>
-        <input type="date" id="fechaEnvio" style="height:38px;border-radius:10px;border:2px solid #d0d7de;padding:0 10px;font-size:14px">
-      </div>
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Parte</th>
-              <th>Proceso</th>
-              <th>SC</th>
-              <th class="right">Caj</th>
-              <th class="right" id="fase2HdrCantidad">Kg</th>
-            </tr>
-          </thead>
-          <tbody id="fase2TableBody"></tbody>
-        </table>
-      </div>
-      <div class="footer-actions">
-        <button id="btnEnviar" class="btn-enviar disabled" type="button" disabled>Enviar</button>
       </div>
     </div>
 
@@ -94,6 +84,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script src="EnviosPS.js"></script>
+  <script src="../../cajones-popup.js?v=20260528a"></script>
+  <script src="../../tandas-popup.js?v=20260604a"></script>
+  <script src="EnviosPS.js?v=20260715a"></script>
 </body>
 </html>

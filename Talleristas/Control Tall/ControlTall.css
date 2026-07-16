@@ -355,6 +355,115 @@ h1{
   box-shadow:0 10px 30px rgba(0,0,0,.18);
 }
 
+.popup-box.popup-box-saldo{
+  width:min(680px, 100%);
+  max-height:85vh;
+  display:flex;
+  flex-direction:column;
+}
+
+.popup-box.popup-box-saldo .popup-body{
+  overflow-y:auto;
+  overflow-x:auto;
+}
+
+.saldo-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+}
+
+.saldo-table th,
+.saldo-table td{
+  border:1px solid #cfd3da;
+  padding:6px 8px;
+  text-align:center;
+  font-variant-numeric:tabular-nums;
+}
+
+.saldo-table thead th{
+  background:#f0f2f6;
+  font-weight:700;
+}
+
+.saldo-table tr.saldo-inicio{
+  background:#fafbfc;
+  font-weight:700;
+}
+
+.saldo-table tr.saldo-envio td{
+  background:#fff;
+}
+
+.saldo-table tr.saldo-entrega td{
+  background:#fff7f7;
+}
+
+.saldo-table tr.saldo-devolucion td{
+  background:#fef3c7;
+}
+
+.saldo-table tr.saldo-neg-row td.saldo-neg-cell{
+  background:#fee2e2;
+  color:#991b1b;
+  font-weight:800;
+}
+
+.saldo-table tr td.saldo-sobra-cell{
+  background:#2563eb;
+  color:#fff;
+  font-weight:800;
+}
+
+.saldo-leyenda-azul{
+  background:#eff6ff;
+  border-bottom:2px solid #2563eb;
+  padding:8px 14px;
+  color:#1e3a8a;
+  font-size:13px;
+}
+
+.saldo-motivos{
+  background:#fef2f2;
+  border-bottom:2px solid #dc2626;
+  padding:10px 14px;
+  color:#7f1d1d;
+}
+
+.saldo-motivos-title{
+  font-weight:800;
+  font-size:14px;
+  margin-bottom:6px;
+}
+
+.saldo-motivos-list{
+  margin:0;
+  padding-left:22px;
+  font-size:13px;
+  line-height:1.5;
+}
+
+.saldo-motivos-list li{
+  margin-bottom:2px;
+}
+
+.mini-saldo-btn--alerta{
+  background:#dc2626 !important;
+  color:#fff !important;
+  border-color:#7f1d1d !important;
+  animation:saldoAlertaPulse 1.6s ease-in-out infinite;
+}
+
+.mini-saldo-btn--alerta:hover{
+  background:#b91c1c !important;
+}
+
+@keyframes saldoAlertaPulse{
+  0%, 100%{ box-shadow:0 0 0 0 rgba(220, 38, 38, .55); }
+  50%{ box-shadow:0 0 0 6px rgba(220, 38, 38, 0); }
+}
+
+
 .popup-head{
   display:flex;
   align-items:center;
@@ -545,4 +654,117 @@ h1{
 
 .table-todos th:nth-child(5),
 .table-todos td:nth-child(5){ width:8ch; }
+
+/* ===== Toggle Saldo Uni/Kg (popup) ===== */
+.saldo-toggle{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:10px 14px;
+  border-bottom:1px solid #e3e6eb;
+  background:#f7f9fc;
+}
+
+.saldo-toggle-label{
+  font-size:13px;
+  font-weight:600;
+  color:#444;
+}
+
+.saldo-toggle-btn{
+  padding:5px 14px;
+  border:1px solid #111;
+  background:#fff;
+  color:#111;
+  border-radius:6px;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+
+.saldo-toggle-btn.active{
+  background:#111;
+  color:#fff;
+}
+
+.saldo-toggle-btn:disabled{
+  opacity:.4;
+  cursor:not-allowed;
+}
+
+.btn-imprimir-saldo{
+  margin-left:auto;
+  padding:5px 14px;
+  border:1px solid #111;
+  background:#111;
+  color:#fff;
+  border-radius:6px;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+
+.btn-imprimir-saldo:hover{
+  background:#333;
+}
+
+/* ===== Botón Imprimir ===== */
+.btn-imprimir{
+  height:42px;
+  padding:0 18px;
+  border-radius:10px;
+  border:1px solid #111;
+  background:#111;
+  color:#fff;
+  font-weight:700;
+  font-size:14px;
+  cursor:pointer;
+}
+
+.btn-imprimir:hover{
+  background:#333;
+}
+
+/* ===== Vista de impresión ===== */
+.print-only{ display:none; }
+
+@media print{
+  body{ padding:0; background:#fff; }
+  .card{ border:none; max-width:none; padding:0; margin:0; }
+
+  body *{ visibility:hidden; }
+  #printArea, #printArea *{ visibility:visible; }
+  #printArea{ display:block; position:absolute; left:0; top:0; width:100%; }
+
+  .print-head h2{ font-size:18px; margin:0 0 10px; }
+
+  .print-table{
+    width:100%;
+    border-collapse:collapse;
+  }
+
+  .print-table th,
+  .print-table td{
+    border:1px solid #111;
+    padding:6px 8px;
+    font-size:12px;
+  }
+
+  .print-table th{
+    background:#eee !important;
+    text-align:center;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
+  .print-table .pa-num{
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
+
+  .print-table thead{ display:table-header-group; }
+  .print-table tr{ page-break-inside:avoid; }
+
+  @page{ margin:14mm; }
+}
 

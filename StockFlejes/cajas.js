@@ -96,12 +96,31 @@ async function cargarMapeoCajas() {
   });
 }
 
+async function fetchAllPaginated(table, selectCols = "*") {
+  const out = [];
+  const PAGE = 1000;
+  const MAX_PAGES = 100;
+  let from = 0;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const { data, error } = await sb.from(table).select(selectCols).range(from, from + PAGE - 1);
+    if (error) { console.error(`${table}:`, error); return out; }
+    if (!data || !data.length) return out;
+    out.push(...data);
+    if (data.length < PAGE) return out;
+    from += PAGE;
+    if (page === MAX_PAGES - 1) console.warn(`[fetchAllPaginated] ${table}: MAX_PAGES alcanzado, filas: ${out.length}`);
+  }
+  return out;
+}
+
 async function cargarConsumo() {
-  // Leer envíos a talleristas (unidades enviadas por código)
-  const [resEnvios, resEntregas] = await Promise.all([
-    sb.from("Envios a Talleristas").select("Descripcion, Unidades, Tallerista, \"Dia-mes\""),
-    sb.from("Entregas Tallerista Virgilio").select("*")
+  // Leer envíos a talleristas (unidades enviadas por código) — paginado para evitar cap 1000
+  const [envData, entData] = await Promise.all([
+    fetchAllPaginated("Envios a Talleristas", "Descripcion, Unidades, Tallerista, \"Dia-mes\""),
+    fetchAllPaginated("Entregas_Tall_Todas")
   ]);
+  const resEnvios = { data: envData, error: null };
+  const resEntregas = { data: entData, error: null };
 
   consumoCajasMap.clear();
   enviosCajasMap.clear();

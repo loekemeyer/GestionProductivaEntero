@@ -152,10 +152,31 @@ async function cargarMarcas() {
   }
 }
 
+/* ================= HELPER PAGINACION + SAFETY NET ================= */
+async function fetchAllPaginated(table, selectCols = "*", eqFilters = null) {
+  const out = [];
+  const PAGE = 1000;
+  const MAX_PAGES = 100;
+  let from = 0;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let q = sb.from(table).select(selectCols).range(from, from + PAGE - 1);
+    if (eqFilters) eqFilters.forEach(f => { q = q.eq(f.col, f.val); });
+    const { data, error } = await q;
+    if (error) { console.error(`${table}:`, error); return out; }
+    if (!data || !data.length) return out;
+    out.push(...data);
+    if (data.length < PAGE) return out;
+    from += PAGE;
+    if (page === MAX_PAGES - 1) console.warn(`[fetchAllPaginated] ${table}: MAX_PAGES alcanzado, filas: ${out.length}`);
+  }
+  return out;
+}
+
 /* ================= CARGAR ENVIOS ================= */
 async function cargarEnvios() {
   try {
-    const res = await sb.from("Envios a Talleristas").select("Descripcion, Unidades, Tallerista, \"Dia-mes\"");
+    const data = await fetchAllPaginated("Envios a Talleristas", "Descripcion, Unidades, Tallerista, \"Dia-mes\"");
+    const res = { data, error: null };
 
     enviosMap.clear();
     enviosDetalleMap.clear();
@@ -212,7 +233,8 @@ async function cargarComprasCartones() {
 
 async function cargarEntregasLogFabrica() {
   try {
-    const res = await sb.from("Entregas Tallerista Virgilio").select("*");
+    const data = await fetchAllPaginated("Entregas_Tall_Todas");
+    const res = { data, error: null };
 
     entregasLogMap.clear();
 
@@ -694,12 +716,8 @@ async function cargarPliegos() {
       .select("Parte, SC, SP, \"KG x Uni\", \"KG x Cajon\", \"Stock Inicial\"")
       .eq("PS", "AJ Adhesivos")
       .order("Parte", { ascending: true }),
-    sb.from("Envios a PS")
-      .select("\"Sector SC\", Cajones, \"Dia-mes\"")
-      .eq("Prov_Serv", "AJ Adhesivos"),
-    sb.from("Entregas PS")
-      .select("\"Sector SP\", Cajones, \"Dia-mes\"")
-      .eq("Prov_Serv", "AJ Adhesivos")
+    fetchAllPaginated("Envios a PS", "\"Sector SC\", Cajones, \"Dia-mes\"", [{ col: "Prov_Serv", val: "AJ Adhesivos" }]).then(d => ({ data: d, error: null })),
+    fetchAllPaginated("Entregas PS", "\"Sector SP\", Cajones, \"Dia-mes\"", [{ col: "Prov_Serv", val: "AJ Adhesivos" }]).then(d => ({ data: d, error: null }))
   ]);
 
   if (partesPSRes.error) throw partesPSRes.error;

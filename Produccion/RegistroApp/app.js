@@ -6,17 +6,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
   const TABLA_REGISTROS = "Registros Produccion Cervantes";
 
-  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  // (v1.8.43) Forzar SIEMPRE rol anon: la app no tiene login. Ignoramos cualquier
+  // sesion "authenticated" que pueda haber dejado otra app del mismo dominio
+  // (loekemeyer.github.io) bajo la storageKey compartida del proyecto Supabase.
+  // persistSession:false + storageKey propia => esta app nunca hereda esa sesion.
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: "prodcerv_anon_only"
+    }
+  });
 
   /* ================= WHATSAPP ALERTA ================= */
-  // Credenciales seguras en Edge Function (servidor), NO en el frontend
   const EDGE_FN_URL = SUPABASE_URL + "/functions/v1/send-whatsapp";
 
   function _getPlantillaActiva() {
     return localStorage.getItem("wa_plantilla_activa") || "problemas_en_matriz_reducido";
   }
 
-  // datos = { problema, matriz, descripcion, operario, horaEvento }
   async function enviarAlertaWA(datos) {
     const plantilla = _getPlantillaActiva();
     let parametros;
@@ -57,15 +66,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* ================= CACHE EMPLEADOS/MATRICES ================= */
-  let empleadosMap = new Map(); // legajo → { Empleado, Sede, ... }
-  let matricesMap = new Map();  // N_Matriz → { Matriz, Tiempo_Historico, ... }
-  let _nombreMatrizOverride = null; // Override temporal para variantes con mismo N_Matriz (ej: Mat 10 recta/curva)
-  let _varianteYaElegida = false; // Flag para no re-preguntar variante al re-enviar
+  let empleadosMap = new Map();
+  let matricesMap = new Map();
+  let stockMap = new Map();          // (v1.8.40) N_Matriz -> fila de UnixCajon_Stock (excluye 501 y tipo E)
+  let _nombreMatrizOverride = null;
+  let _varianteYaElegida = false;
+  let _lastPreviewMatriz = null;     // (v1.8.40) ultima matriz consultada en preview de E
 
   async function cargarCatalogos() {
-    const [empRes, matRes] = await Promise.all([
+    const [empRes, matRes, stockRes] = await Promise.all([
       sb.from("Empleados").select("*"),
-      sb.from("Matrices").select("*")
+      sb.from("Matrices").select("*"),
+      sb.from("UnixCajon_Stock_Registro_Prod_Cerv").select("*")
     ]);
     if (empRes.data) {
       empRes.data.forEach(e => {
@@ -79,27 +91,110 @@ document.addEventListener("DOMContentLoaded", () => {
         if (nm) matricesMap.set(nm, m);
       });
     }
+    if (stockRes.data) {
+      stockRes.data.forEach(r => {
+        const nm = String(r.N_Matriz || "").trim();
+        if (nm) stockMap.set(nm, r);
+      });
+    }
   }
 
-  async function getTiempoPromedioFresh(matNum) {
-    if (!matNum) return 0;
-    const { data } = await sb.from("Matrices").select("Tiempo_Historico").eq("N_Matriz", matNum).limit(1);
-    const tp = Number(data?.[0]?.Tiempo_Historico || 0);
-    const cached = matricesMap.get(matNum);
-    if (cached) cached.Tiempo_Historico = tp;
-    return tp;
+  /* ================= STOCK DE CAJON (UnixCajon) — v1.8.40 ================= */
+  // El control de cajon (faltan X / uni_actual) esta activo solo si la matriz
+  // esta en el stock y tiene Uni_X_Cajon > 0. 501 y Tipo_Matriz=E NO estan en
+  // la tabla, por lo que stockActivo() devuelve false (se comportan como antes).
+  function stockRow(matriz) {
+    return stockMap.get(String(matriz || "").trim()) || null;
+  }
+  function stockActivo(matriz) {
+    const nm = String(matriz || "").trim();
+    if (!nm || nm === "501") return false;
+    const r = stockMap.get(nm);
+    return !!(r && Number(r.Uni_X_Cajon) > 0);
+  }
+  // Unidades que faltan para completar el cajon actual de esa matriz.
+  function faltanteCajon(matriz) {
+    const r = stockRow(matriz);
+    if (!r) return null;
+    const max = Number(r.Uni_X_Cajon) || 0;
+    if (max <= 0) return null;
+    const act = Number(r.Uni_Actual) || 0;
+    return Math.max(max - act, 0);
+  }
+  // Re-lee el stock de UNA matriz desde Supabase (es compartido, puede haber cambiado).
+  async function refreshStockMatriz(matriz) {
+    const nm = String(matriz || "").trim();
+    if (!nm) return null;
+    try {
+      const { data, error } = await sb
+        .from("UnixCajon_Stock_Registro_Prod_Cerv")
+        .select("*").eq("N_Matriz", nm).maybeSingle();
+      if (!error && data) stockMap.set(nm, data);
+      return data || null;
+    } catch { return null; }
+  }
+
+  /* ----- Cola de reintento para el RPC de stock (idempotente via p_evento_id) ----- */
+  function readStockQueue() {
+    try { return JSON.parse(localStorage.getItem(LS_STOCK_QUEUE) || "[]"); }
+    catch { return []; }
+  }
+  function writeStockQueue(arr) { localStorage.setItem(LS_STOCK_QUEUE, JSON.stringify(arr || [])); }
+
+  // Registra las unidades de un cajon en el stock compartido (RPC SECURITY DEFINER).
+  // Idempotente por p_evento_id (= id del cajon). Si falla (sin red), encola reintento.
+  async function registrarUnidadesStock(matriz, cantidad, completar, legajo, eventoId) {
+    const call = {
+      p_n_matriz: String(matriz || "").trim(),
+      p_cantidad: Number(cantidad) || 0,
+      p_completar: !!completar,
+      p_legajo: String(legajo || ""),
+      p_evento_id: eventoId
+    };
+    try {
+      const { data, error } = await sb.rpc("registrar_unidades", call);
+      if (error) throw error;
+      if (data && data[0]) {
+        const r = stockMap.get(call.p_n_matriz);
+        if (r) { r.Uni_Actual = data[0].uni_actual; stockMap.set(call.p_n_matriz, r); }
+      }
+      return true;
+    } catch (e) {
+      const q = readStockQueue();
+      if (!q.some(x => x.p_evento_id === eventoId)) { q.push(call); writeStockQueue(q); }
+      return false;
+    }
+  }
+
+  // Reintenta los RPC de stock pendientes. Seguro: el RPC es idempotente.
+  async function flushStockQueue() {
+    const q = readStockQueue();
+    if (!q.length) return;
+    const restantes = [];
+    for (const call of q) {
+      try {
+        const { error } = await sb.rpc("registrar_unidades", call);
+        if (error) throw error;
+      } catch { restantes.push(call); }
+    }
+    writeStockQueue(restantes);
   }
 
   /* ================= TIEMPO ================= */
   function isoNow() {
-    const d = new Date();
-    d.setMilliseconds(0);
-    return d.toISOString();
+    // Precision de milisegundos: la columna ts_event en Supabase es timestamptz(6)
+    // y aceptaba ms, pero antes redondeabamos a segundos perdiendo orden cuando
+    // varios eventos cierran al mismo segundo (ej: close-TM + FJ en Terminar Dia).
+    return new Date().toISOString();
   }
 
   function formatDateTimeAR(iso) {
-    try { return new Date(iso).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }); }
-    catch { return ""; }
+    try {
+      return new Date(iso).toLocaleString("es-AR", {
+        timeZone: "America/Argentina/Buenos_Aires",
+        hour12: false   // (v1.8.30) forzar 24h para evitar "04:18" ambiguo sin AM/PM
+      });
+    } catch { return ""; }
   }
 
   function dayKeyAR() {
@@ -131,11 +226,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function hashId(uuid) {
-    // ID_Ejecucion ahora es TEXT y guarda el UUID completo sin colisiones (fix 2026-04-19).
-    // La versión anterior truncaba a 15 hex chars y producía 30% de colisiones en db_n8n_espejo.
     if (!uuid) return null;
-    return String(uuid);
+    const hex = String(uuid).replace(/-/g, "").slice(0, 15);
+    return parseInt(hex, 16) || null;
   }
+
+  /* ================= VERSION (unica fuente de verdad) ================= */
+  const LOCAL_VERSION = "v1.8.45";
 
   /* ================= KEYS STORAGE ================= */
   const APP_TAG = "_Cervantes";
@@ -143,6 +240,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const MAX_DAY_HISTORY = 700;
   const LS_PREFIX = `prod_state${APP_TAG}${VERSION}`;
   const LS_QUEUE = `prod_queue${APP_TAG}${VERSION}`;
+  const LS_STOCK_QUEUE = `prod_stockq${APP_TAG}${VERSION}`;
   const DAY_GUARD_KEY = `prod_day_guard${APP_TAG}${VERSION}`;
 
   /* ================= UUID ================= */
@@ -165,7 +263,9 @@ document.addEventListener("DOMContentLoaded", () => {
     return {
       lastMatrix: null, lastCajon: null, lastDowntime: null,
       last2: [], lateArrivalSent: false, lateArrivalDiscarded: false,
-      matrixNeedsC: false, pcDone: false
+      matrixNeedsC: false, pcDone: false,
+      cajonContinuado: null,        // si el operario continuo cajon del dia anterior, info aca
+      continuacionConsultada: false  // flag para no preguntar 2 veces en el mismo dia
     };
   }
 
@@ -180,6 +280,11 @@ document.addEventListener("DOMContentLoaded", () => {
       s.lastCajon = s.lastCajon || null;
       s.lastDowntime = s.lastDowntime || null;
       s.matrixNeedsC = !!s.matrixNeedsC;
+      s.tdCajonPending = s.tdCajonPending || null;
+      s.cajonContinuado = s.cajonContinuado || null;
+      s.continuacionConsultada = !!s.continuacionConsultada;
+      s.tdCargaPreviaListo = !!s.tdCargaPreviaListo;
+      s.tdCargaPreviaInfo = s.tdCargaPreviaInfo || null;
       return s;
     } catch { return freshState(); }
   }
@@ -196,28 +301,29 @@ document.addEventListener("DOMContentLoaded", () => {
     writeState(legajo, s);
   }
 
-  /* ================= RESET DIARIO (retener 5 dias laborales) ================= */
+  /* ================= RESET DIARIO (retiene N dias calendario) ================= */
   const today = dayKeyAR();
-  const lastDay = localStorage.getItem(DAY_GUARD_KEY);
 
-  function getLastNWorkdays(n) {
-    const days = [];
+  // (v1.8.34) Retener ULTIMOS N DIAS CALENDARIO (incluyendo sabados/domingos/feriados).
+  // Antes solo retenia laborables: si operario trabajaba sabado con matriz abierta,
+  // el lunes el cleanup borraba el state y se perdia la continuacion.
+  // 14 dias calendario = ~10 laborables + 4 fin de semana (cubre vacaciones cortas).
+  function getLastNDays(n) {
+    const days = new Set();
     const d = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" }));
-    while (days.length < n) {
-      const dow = d.getDay(); // 0=dom, 6=sab
-      if (dow !== 0 && dow !== 6) {
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        days.push(`${y}-${m}-${dd}`);
-      }
+    for (let i = 0; i < n; i++) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      days.add(`${y}-${m}-${dd}`);
       d.setDate(d.getDate() - 1);
     }
-    return new Set(days);
+    return days;
   }
 
+  const lastDay = localStorage.getItem(DAY_GUARD_KEY);
   if (lastDay && lastDay !== today) {
-    const keepDays = getLastNWorkdays(10);
+    const keepDays = getLastNDays(14);
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
       if (!k || !k.startsWith(LS_PREFIX + "::")) continue;
@@ -229,45 +335,138 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ================= COLA ================= */
   function readQueue() {
-    try {
-      const raw = localStorage.getItem(LS_QUEUE);
-      const parsed = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(parsed)) return [];
-      return parsed;
-    } catch {
-      return [];
+    try { return JSON.parse(localStorage.getItem(LS_QUEUE) || "[]"); }
+    catch { return []; }
+  }
+  function writeQueue(arr) { localStorage.setItem(LS_QUEUE, JSON.stringify(arr)); }
+
+  /* ================= IDB ESPEJO PARA BACKGROUND SYNC ================= */
+  const IDB_NAME = "registro-prod";
+  const IDB_VERSION = 1;
+  const IDB_STORE = "queue";
+  let _dbPromise = null;
+
+  function idbOpen() {
+    if (_dbPromise) return _dbPromise;
+    if (!("indexedDB" in window)) {
+      _dbPromise = Promise.reject(new Error("IDB not available"));
+      return _dbPromise;
     }
+    _dbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE, { keyPath: "id" });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return _dbPromise;
   }
 
-  function writeQueue(arr) {
-    if (!Array.isArray(arr)) {
-      console.error("writeQueue: argumento no es array", arr);
-      return;
-    }
-    try {
-      localStorage.setItem(LS_QUEUE, JSON.stringify(arr));
-      // Validar que se escribió correctamente
-      const verify = localStorage.getItem(LS_QUEUE);
-      if (!verify) {
-        console.error("writeQueue: no se pudo escribir la cola");
+  function idbPut(item) {
+    return idbOpen().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      const r = tx.objectStore(IDB_STORE).put(item);
+      r.onsuccess = () => resolve();
+      r.onerror = () => reject(r.error);
+    }));
+  }
+
+  function idbDelete(id) {
+    return idbOpen().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      const r = tx.objectStore(IDB_STORE).delete(id);
+      r.onsuccess = () => resolve();
+      r.onerror = () => reject(r.error);
+    }));
+  }
+
+  function idbGetAll() {
+    return idbOpen().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const r = tx.objectStore(IDB_STORE).getAll();
+      r.onsuccess = () => resolve(r.result || []);
+      r.onerror = () => reject(r.error);
+    }));
+  }
+
+  // Reconcilia localStorage con IDB: items en LS que faltan en IDB = el SW ya los envio en background.
+  // Los marca sent y los saca de la cola de localStorage para evitar loop de reintentos.
+  async function reconcileQueueWithIDB() {
+    let idbItems;
+    try { idbItems = await idbGetAll(); } catch { return; }
+    const idbIds = new Set(idbItems.map(x => x.id));
+    const lsQueue = readQueue();
+    if (!lsQueue.length) return;
+    const stillQueued = [];
+    let recovered = 0;
+    for (const item of lsQueue) {
+      if (idbIds.has(item.id)) {
+        stillQueued.push(item);
+      } else {
+        if (item.legajo && item.id) {
+          try { updateHistoryItem(item.legajo, item.id, { status: "sent", sentAt: isoNow() }); } catch {}
+        }
+        recovered++;
       }
-    } catch (err) {
-      console.error("writeQueue error:", err);
+    }
+    if (recovered > 0) {
+      writeQueue(stillQueued);
+      console.log("[reconcile] " + recovered + " items ya enviados por SW, removidos de cola LS");
     }
   }
 
-  // Proteger la cola de limpiezas accidentales
-  function protectQueue() {
+  async function migrateQueueToIDB() {
     const q = readQueue();
-    if (q.length > 0) {
-      writeQueue(q); // Re-escribir para asegurar persistencia
+    if (!q.length) return;
+    for (const item of q) {
+      try { await idbPut(item); } catch { /* ignore */ }
+    }
+  }
+
+  async function registerBackgroundSync() {
+    if (!("serviceWorker" in navigator)) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg && "sync" in reg) {
+        await reg.sync.register("flush-queue");
+      }
+    } catch { /* not supported, ignore */ }
+  }
+
+  function updateSyncBadge() {
+    const badge = document.getElementById("syncBadge");
+    if (!badge) return;
+    const q = readQueue();
+    const failed = q.filter(x => (x.__tries || 0) > 0).length;
+    if (q.length === 0) {
+      badge.textContent = `${LOCAL_VERSION} ✓`;
+      badge.style.background = "#f0fdf4";
+      badge.style.color = "#166534";
+      badge.style.borderColor = "#bbf7d0";
+    } else if (failed > 0) {
+      badge.textContent = `${LOCAL_VERSION} ⚠ ${q.length}`;
+      badge.style.background = "#fef2f2";
+      badge.style.color = "#991b1b";
+      badge.style.borderColor = "#fecaca";
+    } else {
+      badge.textContent = `${LOCAL_VERSION} ⏳ ${q.length}`;
+      badge.style.background = "#fffbeb";
+      badge.style.color = "#92400e";
+      badge.style.borderColor = "#fde68a";
     }
   }
 
   function enqueue(payload) {
+    const item = { ...payload, __tries: 0, __queuedAt: isoNow() };
     const q = readQueue();
-    q.push({ ...payload, __tries: 0, __queuedAt: isoNow() });
+    q.push(item);
     writeQueue(q);
+    idbPut(item).catch(() => {});
+    registerBackgroundSync();
 
     const leg = String(payload.legajo || "").trim();
     if (leg) {
@@ -281,12 +480,39 @@ document.addEventListener("DOMContentLoaded", () => {
       s.last2 = s.last2.slice(0, MAX_DAY_HISTORY);
       writeState(leg, s);
     }
-
-    // Solicitar sync en background cuando hay pendientes
-    requestBackgroundSync();
+    updateSyncBadge();
   }
 
   /* ================= ENVIO A SUPABASE ================= */
+  const SEND_TIMEOUT_MS = 15000;
+
+  async function withTimeout(promise, ms, errMsg) {
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(errMsg)), ms);
+    });
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function logErrorToSupabase(item, err) {
+    try {
+      sb.from("Auditoria_Produccion").insert({
+        legajo:          String(item.legajo || ""),
+        accion:          "ERROR_ENVIO",
+        id_registro:     item.id ? String(item.id) : null,
+        opcion_original: item.opcion || null,
+        desc_original:   item.descripcion || null,
+        texto_original:  item.texto || null,
+        ts_evento:       item.ts_event || null,
+        texto_nuevo:     `Intento ${item.__tries || 1}: ${String(err.message || err).slice(0, 400)}`
+      }).then(() => {}, () => {});
+    } catch { /* fire and forget */ }
+  }
+
   async function postToSupabase(item) {
     const payload = {
       id: item.id,
@@ -299,13 +525,16 @@ document.addEventListener("DOMContentLoaded", () => {
       matriz: item.matriz || ""
     };
 
-    const { error } = await sb.from(TABLA_REGISTROS)
-      .upsert(payload, { onConflict: "id", ignoreDuplicates: true });
-    if (error) throw new Error(error.message);
+    const result = await withTimeout(
+      sb.from(TABLA_REGISTROS).upsert(payload, { onConflict: "id", ignoreDuplicates: true }),
+      SEND_TIMEOUT_MS,
+      `Timeout ${SEND_TIMEOUT_MS / 1000}s al enviar a Supabase`
+    );
+    if (result.error) throw new Error(result.error.message);
 
     // Procesar espejo SIEMPRE - es idempotente via upsert con onConflict ID_Ejecucion.
     // El check anterior wasInserted (data.length > 0) fallaba porque .select() con
-    // ignoreDuplicates puede devolver [] aun cuando se inserto.
+    // ignoreDuplicates puede devolver [] aun cuando se inserto, perdiendo cajones del 29/04.
     procesarParaEspejo(item).catch(err => {
       console.error("Error procesando espejo en background:", err.message || err);
     });
@@ -315,18 +544,15 @@ document.addEventListener("DOMContentLoaded", () => {
   function parseISOtoAR(iso) {
     if (!iso) return null;
     try {
-      // Normalizar formato: reemplazar espacios antes de hora con T
       let normalized = String(iso).trim().replace(/\s(\d{2}:\d{2})/, "T$1");
       return new Date(normalized);
     } catch { return null; }
   }
 
   function diffSeconds(isoStart, isoEnd) {
-    // Normalizar formatos de fecha
     const normalize = (s) => {
       if (!s) return null;
       try {
-        // Convertir espacios a T si es necesario
         s = String(s).trim().replace(/\s(\d{2}:\d{2})/, "T$1");
         return new Date(s);
       } catch (e) {
@@ -340,7 +566,6 @@ document.addEventListener("DOMContentLoaded", () => {
       console.warn("DEBUG diffSeconds: No se pudo parsear", { isoStart, isoEnd, a, b });
       return 0;
     }
-    // Usar valor absoluto para evitar negativos por diferencias de zona horaria
     const diff = Math.abs(Math.round((b - a) / 1000));
     return diff;
   }
@@ -359,21 +584,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function dateFromISO(iso) {
     const d = toAR(iso);
-    if (!d) return { dia: 0, mes: 0, quincena: 1 };
+    if (!d) return { dia: 0, mes: 0, quincena: 1, anio: 0 };
     const dia = d.getDate();
     const mes = d.getMonth() + 1;
-    return { dia, mes, quincena: dia > 15 ? 2 : 1 };
+    const anio = d.getFullYear();
+    return { dia, mes, quincena: dia > 15 ? 2 : 1, anio };
+  }
+
+  function rangoFechaAR(anio, mes, dia) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const ini = `${anio}-${pad(mes)}-${pad(dia)}T00:00:00-03:00`;
+    const finDate = new Date(ini);
+    finDate.setDate(finDate.getDate() + 1);
+    return { ini, fin: finDate.toISOString() };
   }
 
   async function buscarTiemposMuertos(legajo, hsInicio, horaFin, fecha) {
-    // Buscar registros de TM en db_n8n_espejo que caigan dentro del rango horario del cajon
     const dateInfo = dateFromISO(fecha);
-    if (!dateInfo.dia || !dateInfo.mes) return 0;
+    if (!dateInfo.dia || !dateInfo.mes || !dateInfo.anio) return 0;
 
     const hiTime = timeFromISO(hsInicio);
     const hfTime = timeFromISO(horaFin);
     if (!hiTime || !hfTime) return 0;
 
+    const rango = rangoFechaAR(dateInfo.anio, dateInfo.mes, dateInfo.dia);
     try {
       const { data } = await sb.from("db_n8n_espejo")
         .select("Segundos_Tiempo_Muerto, Hora_Inicio, Hora_Fin")
@@ -381,6 +615,8 @@ document.addEventListener("DOMContentLoaded", () => {
         .eq("Dia", dateInfo.dia)
         .eq("Mes", dateInfo.mes)
         .eq("Uni", 0)
+        .gte("Fecha", rango.ini)
+        .lt("Fecha", rango.fin)
         .is("Eliminar", null);
 
       if (!data || !data.length) return 0;
@@ -394,7 +630,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* ================= RECALCULAR CAJONES AFECTADOS POR CAMBIO DE TM ================= */
-  async function recalcularCajonesDelDia(legajo, dia, mes) {
+  async function recalcularCajonesDelDia(legajo, dia, mes, anio) {
+    if (!anio) return;
+    const rango = rangoFechaAR(anio, mes, dia);
     try {
       const { data: cajones } = await sb.from("db_n8n_espejo")
         .select("ID_Ejecucion, Hora_Inicio, Hora_Fin, Uni, Segundos_Trabajados, Tiempo_Historico")
@@ -402,6 +640,8 @@ document.addEventListener("DOMContentLoaded", () => {
         .eq("Dia", dia)
         .eq("Mes", mes)
         .gt("Uni", 0)
+        .gte("Fecha", rango.ini)
+        .lt("Fecha", rango.fin)
         .is("Eliminar", null);
 
       if (!cajones || !cajones.length) return;
@@ -412,6 +652,8 @@ document.addEventListener("DOMContentLoaded", () => {
         .eq("Dia", dia)
         .eq("Mes", mes)
         .eq("Uni", 0)
+        .gte("Fecha", rango.ini)
+        .lt("Fecha", rango.fin)
         .is("Eliminar", null);
 
       const tms = tiemposMuertos || [];
@@ -442,12 +684,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const tiempoToma = uni > 0 ? Math.round((segNeto / uni) * 100) / 100 : 0;
         const premio = segHist > 0 ? Math.round(((-(segNeto / segHist) + 1) * 10) * 100) / 100 : 0;
 
-        await sb.from("db_n8n_espejo").update({
+        const { error } = await sb.from("db_n8n_espejo").update({
           Segundos_Tiempo_Muerto: segTM,
           Segundos_Trabajados:    segNeto,
           Tiempo_Toma:            tiempoToma,
           Premio:                 premio
         }).eq("ID_Ejecucion", cajon.ID_Ejecucion);
+        if (error) {
+          console.warn("Error actualizando cajon en espejo:", error.message);
+          // Continuar: recálculo es importante pero no crítico
+        }
       }
     } catch (err) {
       console.error("Error recalculando cajones del dia:", err);
@@ -461,7 +707,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const emp = empleadosMap.get(legajo);
       const nombreEmpleado = emp?.Empleado || "";
 
-      // Solo procesar C (cajón) y TM (tiempos muertos con hs_inicio)
       const esCajon = op === "C";
       const esTM = !esCajon && item.hs_inicio && isDowntime(op);
       const esRM_PM_RD_LT = ["RM", "PM", "RD", "LT"].includes(op);
@@ -471,22 +716,33 @@ document.addEventListener("DOMContentLoaded", () => {
       const matNum = String(item.matriz || "").trim();
       const matInfo = matricesMap.get(matNum);
       const nombreMatriz = matInfo?.Matriz || "";
-      const tiempoPromedio = await getTiempoPromedioFresh(matNum);
+      const tiempoPromedio = Number(matInfo?.Tiempo_Historico || 0);
 
+      // FIX Bug 501: reemplazar coma por punto antes de Number()
       const uni = esCajon ? Number(String(item.texto || 0).replace(",", ".")) : 0;
       const tsEvent = item.ts_event;
       let hsInicio = item.hs_inicio || tsEvent;
 
-      // Si hsInicio está vacío, establecer un mínimo de 1 segundo de trabajo
       if (!item.hs_inicio) {
-        console.warn("DEBUG: hsInicio vacío para matriz", matNum, "usando tsEvent");
+        console.warn("DEBUG: hsInicio vacio para matriz", matNum, "usando tsEvent");
       }
 
-      let segTrabajados = diffSeconds(hsInicio, tsEvent);
-      // Asegurar que sea positivo y mínimo 1 segundo
-      if (segTrabajados <= 0) segTrabajados = 1;
+      // CONTINUACION CAJON CROSS-DIA: si viene cajon_continuado en payload, sumar seg de ayer
+      const cont = (esCajon && item.cajon_continuado) ? item.cajon_continuado : null;
+      let segTrabajados;
+      if (cont) {
+        // (tsActivacion -> tsEvent) hoy + segPostAyer ya calculado (tsInicioCajon -> hora_salida_ayer)
+        const segHoy = Math.max(1, diffSeconds(cont.tsActivacion || hsInicio, tsEvent));
+        segTrabajados = segHoy + Number(cont.segPostAyer || 0);
+      } else {
+        segTrabajados = diffSeconds(hsInicio, tsEvent);
+        if (segTrabajados <= 0) segTrabajados = 1;
+      }
       const dateInfo = dateFromISO(tsEvent);
-      const horaInicio = timeFromISO(hsInicio);
+      // Para continuacion: Hora_Inicio refleja el inicio real del caj (ts del lastMatrix/lastCajon de ayer)
+      const horaInicio = cont && cont.tsInicioCajon
+        ? timeFromISO(cont.tsInicioCajon)
+        : timeFromISO(hsInicio);
       const horaFin = timeFromISO(tsEvent);
 
       let segTiempoMuerto = 0;
@@ -496,36 +752,39 @@ document.addEventListener("DOMContentLoaded", () => {
       let anularTiempo = false;
 
       if (esCajon) {
-        // Buscar TM acumulados en el rango
-        segTiempoMuerto = await buscarTiemposMuertos(legajo, hsInicio, tsEvent, tsEvent);
+        if (cont) {
+          // TM solo del segmento de hoy (entre tsActivacion y tsEvent)
+          segTiempoMuerto = await buscarTiemposMuertos(legajo, cont.tsActivacion || hsInicio, tsEvent, tsEvent);
+        } else {
+          segTiempoMuerto = await buscarTiemposMuertos(legajo, hsInicio, tsEvent, tsEvent);
+        }
         segTrabajadosNeto = segTrabajados - segTiempoMuerto;
 
         if (uni > 0 && tiempoPromedio > 0) {
           tiempoToma = Math.round((segTrabajadosNeto / uni) * 100) / 100;
           premio = Math.round(((-(segTrabajadosNeto / uni / tiempoPromedio) + 1) * 10) * 100) / 100;
-        } else if (uni > 0) {
-          anularTiempo = true;
         }
       } else if (esTM) {
-        // Tiempo muerto: Uni=0, segundos = duración del TM
         segTiempoMuerto = segTrabajados;
         segTrabajadosNeto = segTrabajados;
         anularTiempo = false;
       } else if (esRM_PM_RD_LT) {
-        // Rotura/Paré Matriz: registrar como evento, Uni=0
         anularTiempo = false;
       }
 
-      // Nota: Las matrices sin Tiempo_Historico se muestran en informes sin premio
-
-      const esCM = op === "CM";
-      const cmDestino = esCM ? String(item.texto || "").trim() : "";
-
+      const destinoCM = op === "CM" ? String(item.texto || item.matriz || "").trim() : "";
+      const nombreBase = esCajon ? (item.nombreOverride || nombreMatriz) : "";
       const row = {
         Fecha: tsEvent,
         Legajo: legajo,
-        Nombre_Matriz: esCajon ? (item.nombreOverride || nombreMatriz) : (esRM_PM_RD_LT ? `${op} ${matNum}` : (esCM ? "Cambiar Matriz" : item.descripcion)),
-        Matriz: esCajon ? matNum : (esRM_PM_RD_LT ? matNum : (esCM ? cmDestino : op)),
+        // nombreOverride para variantes (ej: Mat 10 recta/curva)
+        // Si es continuacion cross-dia, prefijo [CONT] para auditar facil
+        Nombre_Matriz: esCajon
+          ? (cont ? `[CONT] ${nombreBase}`.trim() : nombreBase)
+          : (op === "CM" && destinoCM
+              ? `Cambiar Matriz a ${destinoCM}`
+              : (esRM_PM_RD_LT ? `${op} ${matNum}` : item.descripcion)),
+        Matriz: esCajon ? matNum : (esRM_PM_RD_LT ? matNum : op),
         Uni: uni,
         Premio: premio,
         Tiempo_Toma: uni === 0 ? 0 : tiempoToma,
@@ -533,6 +792,10 @@ document.addEventListener("DOMContentLoaded", () => {
         Nombre_Empleado: nombreEmpleado,
         Hora_Inicio: horaInicio,
         Hora_Fin: horaFin,
+        // (v1.8.35) Nuevas columnas timestamptz con DIA+hora. Mantienen Hora_Inicio/Hora_Fin
+        // para no romper modulos viejos. Cajon continuado: Fecha_Inicio es del dia anterior.
+        Fecha_Inicio: cont && cont.tsInicioCajon ? cont.tsInicioCajon : (hsInicio || tsEvent),
+        Fecha_Fin:    tsEvent,
         Anular_Tiempo: anularTiempo,
         Segundos_Historico: tiempoPromedio * uni,
         Segundos_Trabajados: esTM ? segTrabajados : segTrabajadosNeto,
@@ -546,90 +809,59 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Upsert idempotente DO NOTHING: si ya existe (re-procesamiento), no rompe ni dispara policy UPDATE de RLS.
       const { error } = await sb.from("db_n8n_espejo").upsert(row, { onConflict: "ID_Ejecucion", ignoreDuplicates: true });
-      if (error) console.error("Error upsertando en db_n8n_espejo:", error);
-
-      // Recalcular cajones del dia si se inserto un TM
+      if (error) {
+        console.warn("Error upsertando en db_n8n_espejo:", error.message);
+        // No bloquear: solo loguear y continuar
+      }
       if (esTM && dateInfo.dia && dateInfo.mes) {
-        await recalcularCajonesDelDia(legajo, dateInfo.dia, dateInfo.mes);
+        await recalcularCajonesDelDia(legajo, dateInfo.dia, dateInfo.mes, dateInfo.anio);
       }
     } catch (err) {
       console.error("Error procesando para espejo:", err);
+      // No relanzar: se ejecuta en background y no debe bloquear
     }
   }
 
   let isFlushing = false;
 
   async function flushQueue() {
-    if (isFlushing || !navigator.onLine) return;
+    if (isFlushing) return;
     isFlushing = true;
+    let didWork = false;
     try {
       let q = readQueue();
       if (!q.length) return;
 
       const batch = q.slice(0, 20);
       for (const item of batch) {
-        // Procesar items marcados para borrar (deleteHistItem offline)
-        if (item.__pendingDelete) {
-          try {
-            if (item.id) {
-              await sb.from(TABLA_REGISTROS).delete().eq("id", item.id);
-              await sb.from("db_n8n_espejo").delete().eq("ID_Ejecucion", hashId(item.id));
-            }
-            // Borrar de cola y de historial
-            q = readQueue();
-            const idx = q.findIndex(x => x.id === item.id);
-            if (idx !== -1) { q.splice(idx, 1); writeQueue(q); }
-            // Borrar del historial visual
-            const leg = String(item.legajo || "").trim();
-            if (leg) {
-              const s = readState(leg);
-              const hIdx = s.last2.findIndex(x => x && x.id === item.id);
-              if (hIdx !== -1) { s.last2.splice(hIdx, 1); writeState(leg, s); }
-            }
-          } catch { /* reintentar en proximo flush */ }
-          continue;
-        }
+        didWork = true;
         try {
           await postToSupabase(item);
           updateHistoryItem(item.legajo, item.id, { status: "sent", sentAt: isoNow() });
           q = readQueue();
           const idx = q.findIndex(x => x.id === item.id);
           if (idx !== -1) { q.splice(idx, 1); writeQueue(q); }
+          idbDelete(item.id).catch(() => {});
         } catch (err) {
           item.__tries = (item.__tries || 0) + 1;
           updateHistoryItem(item.legajo, item.id, {
             status: "failed", failedAt: isoNow(),
             tries: item.__tries, lastError: String(err.message || err)
           });
+          if (item.__tries === 1 || item.__tries % 5 === 0) {
+            logErrorToSupabase(item, err);
+          }
           const idx = q.findIndex(x => x.id === item.id);
           if (idx !== -1) { q[idx] = item; writeQueue(q); }
+          idbPut(item).catch(() => {});
         }
       }
     } finally {
       isFlushing = false;
-      renderSummary();
-      renderPending();
-    }
-  }
-
-  // Función para solicitar Background Sync cuando hay pendientes
-  async function requestBackgroundSync() {
-    if ("serviceWorker" in navigator && "SyncManager" in window) {
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        if (reg.sync) {
-          await reg.sync.register("sync-queue");
-          console.log("Background Sync registrado para cola con", readQueue().length, "items");
-        }
-      } catch (err) {
-        console.error("Error registrando Background Sync:", err);
-        // Fallback: si falla el Background Sync, programar un reintentos manual
-        setTimeout(() => {
-          if (readQueue().length > 0 && navigator.onLine) {
-            console.log("Fallback: intentando flushQueue después de Background Sync fail");
-            flushQueue();
-          }
-        }, 1000);
+      updateSyncBadge();
+      if (didWork) {
+        renderSummary();
+        renderPending();
       }
     }
   }
@@ -675,6 +907,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const btn = document.createElement("button");
         btn.textContent = op.label;
         btn.style.cssText = "display:block;width:100%;padding:14px;margin-bottom:10px;border:1px solid #c9d1d9;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;background:#f8f9fa";
+        // FIX: resolve el objeto completo, no solo op.matriz
         btn.onclick = () => { overlay.remove(); resolve(op); };
         modal.appendChild(btn);
       });
@@ -704,34 +937,15 @@ document.addEventListener("DOMContentLoaded", () => {
     { code: "PC", desc: "Pare Comida", row: 3, input: { show: false } },
     { code: "RD", desc: "Rollo Fleje Doblado", row: 3, input: { show: false } },
     { code: "MOV P", desc: "Movimiento Piedra", row: 3, input: { show: false } },
-    { code: "CM", desc: "Cambiar Matriz", row: 4, input: { show: true, label: "Matriz destino", placeholder: "Ej: 110", validate: /^[0-9]+[A-Za-z]?$/ } },
+    { code: "CM", desc: "Cambiar Matriz", row: 4, input: { show: true, label: "Numero matriz nueva", placeholder: "Ej: 110", validate: /^[0-9]+$/ } },
     { code: "PM", desc: "Pare Matriz", row: 4, input: { show: false } },
     { code: "RM", desc: "Rotura Matriz", row: 4, input: { show: false } },
     { code: "REM", desc: "Reparando Matriz", row: 4, input: { show: false } }
   ];
 
-  // NON_DOWNTIME (codigos de PRODUCCION valida) se carga de "Codificacion Mensajes".tipo='PRODUCCION'.
-  // Fallback: {E, C} (apertura/cierre cajon — los unicos seguros sin consultar BD).
-  // Si la lista esta mal, el calculo de Segundos_Tiempo_Muerto y Premio queda mal — afecta disruptivas.
-  let NON_DOWNTIME = new Set(["E", "C"]);
+  const NON_DOWNTIME = new Set(["E", "C", "RM", "PM", "RD", "LT"]);
   const isDowntime = (op) => !NON_DOWNTIME.has(op);
   const sameDowntime = (a, b) => a && b && a.opcion === b.opcion && (a.texto || "") === (b.texto || "");
-
-  async function cargarTiposCodigos() {
-    try {
-      const { data, error } = await supabaseClient
-        .from("Codificacion Mensajes")
-        .select("Codigo,tipo")
-        .eq("tipo", "PRODUCCION");
-      if (error) throw error;
-      if (data && data.length) {
-        NON_DOWNTIME = new Set(data.map(r => String(r.Codigo).toUpperCase()));
-      }
-    } catch (e) {
-      console.error("[RegistroApp] cargarTiposCodigos fallo, uso fallback:", e);
-    }
-  }
-  cargarTiposCodigos();
 
   let selected = null;
 
@@ -747,9 +961,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (st === "sent") return '<span style="padding:2px 8px;border-radius:999px;background:#e8fff0;color:#0b6b2c;font-weight:800;font-size:12px;">ENVIADO</span>';
       if (st === "queued") return '<span style="padding:2px 8px;border-radius:999px;background:#fff7e6;color:#8a5a00;font-weight:800;font-size:12px;">PENDIENTE</span>';
       if (st === "failed") return '<span style="padding:2px 8px;border-radius:999px;background:#ffecec;color:#9b1c1c;font-weight:800;font-size:12px;">ERROR</span>';
-      if (st === "deleting") return '<span style="padding:2px 8px;border-radius:999px;background:#fef3c7;color:#92400e;font-weight:800;font-size:12px;">ELIMINANDO</span>';
       return '';
     };
+
+    const prevScrollable = daySummary.querySelector(".t2");
+    const prevScroll = prevScrollable ? prevScrollable.scrollTop : 0;
 
     if (!s.last2.length) {
       daySummary.className = ""; daySummary.innerHTML = '<div class="day-item"><div class="t1">Historial del dia</div><div class="t2">Sin registros</div></div>';
@@ -761,23 +977,29 @@ document.addEventListener("DOMContentLoaded", () => {
       <div class="day-item">
         <div class="t1">Historial del dia (${s.last2.length})</div>
         <div class="t2" style="max-height:360px;overflow:auto;">
-          ${s.last2.map((it, idx) => `
+          ${s.last2.map((it, idx) => {
+            const isFJ = it.opcion === "FJ";
+            const showTexto = !isFJ && it.texto;
+            return `
             <div style="margin-top:10px;padding-bottom:10px;border-bottom:1px solid rgba(0,0,0,.08);" data-hist-idx="${idx}">
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-                <span style="font-weight:900;font-size:34px;">${it.opcion}${it.texto ? `: ${it.texto}` : ""}</span>
+                <span style="font-weight:900;font-size:34px;">${it.opcion}${showTexto ? `: ${it.texto}` : ""}</span>
                 ${badge(it.status)}
-                <span class="hist-btn hist-edit" data-idx="${idx}" title="Editar">&#9998;</span>
-                <span class="hist-btn hist-del" data-idx="${idx}" title="Eliminar">&#128465;</span>
+                ${isFJ ? "" : `<span class="hist-btn hist-edit" data-idx="${idx}" title="Editar">&#9998;</span>`}
+                ${isFJ ? "" : `<span class="hist-btn hist-del" data-idx="${idx}" title="Eliminar">&#128465;</span>`}
               </div>
               ${it.ts ? `<div style="color:#555;">Evento: ${formatDateTimeAR(it.ts)}</div>` : ""}
               ${it.sentAt ? `<div style="color:#0b6b2c;">Enviado: ${formatDateTimeAR(it.sentAt)}</div>` : ""}
               ${it.lastError ? `<div style="color:#9b1c1c;font-size:12px;">${it.lastError}</div>` : ""}
             </div>
-          `).join("")}
+          `;
+          }).join("")}
         </div>
       </div>`;
 
-    // Listeners editar/eliminar
+    const newScrollable = daySummary.querySelector(".t2");
+    if (newScrollable && prevScroll) newScrollable.scrollTop = prevScroll;
+
     daySummary.querySelectorAll(".hist-edit").forEach(btn => {
       btn.addEventListener("click", () => editHistItem(leg, parseInt(btn.dataset.idx)));
     });
@@ -793,12 +1015,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const item = s.last2[idx];
     if (!item) return;
 
-    // Guardar datos del item ANTES de eliminarlo
     const opUpper = String(item.opcion || "").toUpperCase();
     const eraUnTM = item.hsInicio && isDowntime(opUpper);
     const tsParaDia = item.ts_event || item.ts;
 
-    // Auditoría: registrar eliminación ANTES de borrar
+    // Auditoria: registrar eliminacion
     try {
       await sb.from("Auditoria_Produccion").insert({
         legajo:          String(leg),
@@ -811,44 +1032,15 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     } catch (err) { console.error("Error auditoria eliminar:", err); }
 
-    // Verificar si esta en cola (pendiente de envio)
-    const qBefore = readQueue();
-    const enCola = qBefore.some(x => x.id === item.id);
-
-    // Eliminar de Supabase
-    let supabaseOK = false;
     try {
       if (item.id) {
-        const { error: err1 } = await sb.from(TABLA_REGISTROS).delete().eq("id", item.id);
-        const { error: err2 } = await sb.from("db_n8n_espejo").delete().eq("ID_Ejecucion", hashId(item.id));
-        supabaseOK = !err1 && !err2;
-      } else {
-        supabaseOK = true; // sin id, nada que borrar en server
+        await sb.from(TABLA_REGISTROS).delete().eq("id", item.id);
+        await sb.from("db_n8n_espejo").delete().eq("ID_Ejecucion", hashId(item.id));
       }
-    } catch (err) {
-      console.error("Error eliminando de Supabase:", err);
-      supabaseOK = false;
-    }
+    } catch (err) { console.error("Error eliminando de Supabase:", err); }
 
-    // Si estaba en cola y no se pudo borrar de Supabase, NO borrar de cola
-    if (enCola && !supabaseOK) {
-      alert("Sin conexion. El registro se eliminara cuando vuelva internet.");
-      // Marcar en cola para borrar cuando haya internet
-      const qMark = readQueue();
-      const qIdx = qMark.findIndex(x => x.id === item.id);
-      if (qIdx !== -1) { qMark[qIdx].__pendingDelete = true; writeQueue(qMark); }
-      // Marcar en historial como pendiente de eliminacion
-      item.status = "deleting";
-      writeState(leg, s);
-      renderSummary();
-      renderPending();
-      return;
-    }
-
-    // Eliminar de localStorage
     s.last2.splice(idx, 1);
 
-    // Actualizar estado si se eliminó un E o C
     if (opUpper === "E") {
       if (s.lastMatrix && s.lastMatrix.texto === (item.texto || "")) {
         s.lastMatrix = null;
@@ -862,15 +1054,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     writeState(leg, s);
 
-    // Solo borrar de cola si Supabase confirmo o nunca estuvo en cola
     const q = readQueue().filter(x => x.id !== item.id);
     writeQueue(q);
+    if (item.id) idbDelete(item.id).catch(() => {});
 
-    // Si era un TM, recalcular cajones del mismo dia
     if (eraUnTM && tsParaDia) {
       const dateInfo = dateFromISO(tsParaDia);
       if (dateInfo.dia && dateInfo.mes) {
-        await recalcularCajonesDelDia(leg, dateInfo.dia, dateInfo.mes);
+        await recalcularCajonesDelDia(leg, dateInfo.dia, dateInfo.mes, dateInfo.anio);
       }
     }
 
@@ -891,7 +1082,6 @@ document.addEventListener("DOMContentLoaded", () => {
   let editingLeg = null;
   let editingIdx = null;
 
-  // Poblar select con opciones
   OPTIONS.forEach(o => {
     const opt = document.createElement("option");
     opt.value = o.code;
@@ -921,7 +1111,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!opt) return;
     const texto = opt.input?.show ? editTextoEl.value.trim() : "";
 
-    // Auditoría: registrar edición (original vs nuevo)
+    // Auditoria: registrar edicion
     const huboCambio = item.opcion !== code || item.texto !== texto;
     if (huboCambio) {
       try {
@@ -940,13 +1130,11 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch (err) { console.error("Error auditoria editar:", err); }
     }
 
-    // Actualizar localStorage
     item.opcion = code;
     item.descripcion = opt.desc;
     item.texto = texto;
     writeState(editingLeg, s);
 
-    // Actualizar Supabase - tabla registros
     try {
       if (item.id) {
         await sb.from(TABLA_REGISTROS).update({
@@ -955,7 +1143,6 @@ document.addEventListener("DOMContentLoaded", () => {
           texto: texto
         }).eq("id", item.id);
 
-        // Sincronizar db_n8n_espejo segun nuevo tipo
         const idEjec = hashId(item.id);
         if (idEjec) {
           const toSec = (hms) => {
@@ -964,7 +1151,6 @@ document.addEventListener("DOMContentLoaded", () => {
             return h * 3600 + m * 60 + (s || 0);
           };
 
-          // Buscar registro existente en espejo
           const { data: existente } = await sb.from("db_n8n_espejo")
             .select("*")
             .eq("ID_Ejecucion", idEjec).limit(1);
@@ -972,28 +1158,33 @@ document.addEventListener("DOMContentLoaded", () => {
           const fila = filaExiste ? existente[0] : null;
 
           if (code === "C" && texto) {
-            const uni = Number(texto) || 0;
+            const uni = Number(String(texto).replace(",", ".")) || 0;
             const matNum = String(item.matriz || "").trim();
             const matInfo = matricesMap.get(matNum);
-            const tProm = await getTiempoPromedioFresh(matNum);
+            const tProm = Number(matInfo?.Tiempo_Historico || 0);
             const segHist = tProm * uni;
 
-            // Calcular tiempos usando fila existente o datos del item
             const horaInicio = fila?.Hora_Inicio || timeFromISO(item.hsInicio || item.ts);
             const horaFin = fila?.Hora_Fin || timeFromISO(item.ts);
-            const dia = fila?.Dia || dateFromISO(item.ts).dia;
-            const mes = fila?.Mes || dateFromISO(item.ts).mes;
+            const diRef = dateFromISO(item.ts);
+            const dia = fila?.Dia || diRef.dia;
+            const mes = fila?.Mes || diRef.mes;
+            const anio = diRef.anio;
 
             const segBruto = Math.max(1, toSec(horaFin) - toSec(horaInicio));
 
-            // Buscar TMs actuales en el rango del cajon
-            const { data: tms } = await sb.from("db_n8n_espejo")
+            const rangoEdit = anio ? rangoFechaAR(anio, mes, dia) : null;
+            let queryTms = sb.from("db_n8n_espejo")
               .select("Hora_Inicio, Hora_Fin, Segundos_Tiempo_Muerto")
               .eq("Legajo", item.legajo)
               .eq("Dia", dia)
               .eq("Mes", mes)
               .eq("Uni", 0)
               .is("Eliminar", null);
+            if (rangoEdit) {
+              queryTms = queryTms.gte("Fecha", rangoEdit.ini).lt("Fecha", rangoEdit.fin);
+            }
+            const { data: tms } = await queryTms;
 
             const segTM = (tms || []).reduce((acc, tm) => {
               if (!tm.Hora_Inicio || !tm.Hora_Fin) return acc;
@@ -1015,14 +1206,12 @@ document.addEventListener("DOMContentLoaded", () => {
               Segundos_Tiempo_Muerto: segTM,
               Premio: premio,
               Tiempo_Historico: tProm,
-              Tiempo_Toma: uni > 0 ? Math.round((segNeto / uni) * 100) / 100 : 0,
-              Anular_Tiempo: tProm <= 0
+              Tiempo_Toma: uni > 0 ? Math.round((segNeto / uni) * 100) / 100 : 0
             };
 
             if (filaExiste) {
               await sb.from("db_n8n_espejo").update(cajonData).eq("ID_Ejecucion", idEjec);
             } else {
-              // No existía en espejo (era TM u otro tipo) → insertar como cajón
               const emp = empleadosMap.get(String(item.legajo || "").trim());
               await sb.from("db_n8n_espejo").insert({
                 ...cajonData,
@@ -1039,16 +1228,15 @@ document.addEventListener("DOMContentLoaded", () => {
               });
             }
           } else if (isDowntime(code) && item.hsInicio) {
-            // Editaron a un TM → actualizar o insertar en espejo
             const horaInicio = timeFromISO(item.hsInicio || item.ts);
             const horaFin = timeFromISO(item.ts);
             const segTrabajados = Math.max(1, toSec(horaFin) - toSec(horaInicio));
             const dateInfo = dateFromISO(item.ts);
 
-            const esCMedit = code === "CM";
+            const destinoCM = code === "CM" ? String(item.texto || item.matriz || "").trim() : "";
             const tmData = {
-              Matriz: esCMedit ? String(texto || "").trim() : code,
-              Nombre_Matriz: esCMedit ? "Cambiar Matriz" : opt.desc,
+              Matriz: code,
+              Nombre_Matriz: code === "CM" && destinoCM ? `Cambiar Matriz a ${destinoCM}` : opt.desc,
               Uni: 0,
               Premio: 0,
               Tiempo_Toma: 0,
@@ -1077,14 +1265,12 @@ document.addEventListener("DOMContentLoaded", () => {
               });
             }
           } else if (filaExiste) {
-            // Cambió a algo que no va al espejo (E, etc) → eliminar
             await sb.from("db_n8n_espejo").delete().eq("ID_Ejecucion", idEjec);
           }
         }
       }
     } catch (err) { console.error("Error actualizando Supabase:", err); }
 
-    // Si el item editado era o pasó a ser un TM, recalcular cajones del dia
     const opAnterior = String(s.last2[editingIdx]?.opcion || item.opcion || "").toUpperCase();
     const eraOesTM = (isDowntime(opAnterior) && item.hsInicio) ||
                      (isDowntime(code) && item.hsInicio);
@@ -1093,12 +1279,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (tsParaDia) {
         const dateInfo = dateFromISO(tsParaDia);
         if (dateInfo.dia && dateInfo.mes) {
-          await recalcularCajonesDelDia(editingLeg, dateInfo.dia, dateInfo.mes);
+          await recalcularCajonesDelDia(editingLeg, dateInfo.dia, dateInfo.mes, dateInfo.anio);
         }
       }
     }
 
-    // Si se editó a "E" (Empecé Matriz), actualizar estado del operario
     if (code === "E" && texto) {
       const st = readState(editingLeg);
       st.lastMatrix = { opcion: "E", texto: texto, ts: item.ts || item.ts_event };
@@ -1106,12 +1291,12 @@ document.addEventListener("DOMContentLoaded", () => {
       writeState(editingLeg, st);
     }
 
-    // Actualizar cola
     const q = readQueue();
     const qItem = q.find(x => x.id === item.id);
     if (qItem) {
       qItem.opcion = code; qItem.descripcion = opt.desc; qItem.texto = texto;
       writeQueue(q);
+      idbPut(qItem).catch(() => {});
     }
 
     editModal.classList.add("hidden");
@@ -1140,27 +1325,15 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderPending() {
     const leg = legajoKey();
     const q = readQueue().filter(it => String(it.legajo || "").trim() === leg);
-
-    if (!q.length) {
-      pendingSection.classList.add("hidden");
-      pendingList.innerHTML = "";
-      return;
-    }
-
+    if (!q.length) { pendingSection.classList.add("hidden"); pendingList.innerHTML = ""; return; }
     pendingSection.classList.remove("hidden");
     pendingList.innerHTML = q.map(it => `
       <div style="padding:10px;border:1px solid rgba(0,0,0,.08);border-radius:12px;margin-top:8px;">
         <div style="font-weight:900;font-size:22px;">${it.opcion}${it.texto ? `: ${it.texto}` : ""}</div>
         <span style="padding:2px 8px;border-radius:999px;background:#fff7e6;color:#8a5a00;font-weight:800;font-size:12px;">PENDIENTE</span>
         ${it.__tries ? `<span style="font-size:12px;color:#666;"> intentos: ${it.__tries}</span>` : ""}
-        <div style="font-size:11px;color:#999;margin-top:6px;">
-          Encolado: ${it.__queuedAt ? formatDateTimeAR(it.__queuedAt) : "ahora"}
-        </div>
       </div>
     `).join("");
-
-    // Asegurar persistencia: escribir la cola otra vez para evitar que se pierda
-    writeQueue(q);
   }
 
   function renderMatrizInfo() {
@@ -1174,6 +1347,32 @@ document.addEventListener("DOMContentLoaded", () => {
     const varianteLabel = s.lastMatrix.nombreOverride ? `<br><small style="color:#1e6bd6;font-weight:700;">${s.lastMatrix.nombreOverride}</small>` : "";
     matrizInfo.innerHTML = `Matriz en uso: <span style="font-size:22px;">${s.lastMatrix.texto}</span>${varianteLabel}
       <small>Ultima matriz: ${s.lastMatrix.ts ? formatDateTimeAR(s.lastMatrix.ts) : ""}</small>`;
+    // (v1.8.40) Faltante para completar el cajon (stock compartido)
+    const mtx = s.lastMatrix.texto;
+    if (stockActivo(mtx)) {
+      const falta = faltanteCajon(mtx);
+      const act = Number(stockRow(mtx)?.Uni_Actual) || 0;
+      matrizInfo.innerHTML += `<div class="cajon-faltante" style="margin-top:8px;padding:8px;border-radius:8px;background:#eff6ff;color:#1e3a8a;font-weight:800;">Faltan ${falta} unidades para completar el cajón${act > 0 ? ` <small style="font-weight:500;">(ya hay ${act})</small>` : ""}</div>`;
+    }
+  }
+
+  // (v1.8.40) Muestra "faltan X" mientras el operario tipea el numero de matriz en E.
+  function previewFaltanteMatrizE() {
+    if (!selected || selected.code !== "E") return;
+    const nm = String(textInput.value || "").trim();
+    if (nm && stockActivo(nm)) {
+      const falta = faltanteCajon(nm);
+      const act = Number(stockRow(nm)?.Uni_Actual) || 0;
+      matrizInfo.classList.remove("hidden");
+      matrizInfo.innerHTML = `Matriz <b>${escapeHtml(nm)}</b>: faltan <b>${falta}</b> unidades para completar el cajón` +
+        (act > 0 ? ` <small>(ya hay ${act})</small>` : "");
+      if (_lastPreviewMatriz !== nm) {
+        _lastPreviewMatriz = nm;
+        refreshStockMatriz(nm).then(() => { if (selected && selected.code === "E") previewFaltanteMatrizE(); });
+      }
+    } else {
+      matrizInfo.classList.add("hidden");
+    }
   }
 
   /* ================= OPCIONES RENDER ================= */
@@ -1191,16 +1390,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const allowedPending = !pending || o.code === pending.opcion;
       const allowedMatrix = o.code !== "E" || !state?.matrixNeedsC;
+      // C deshabilitado si no hay matriz activa (sin sentido cerrar caj sin matriz abierta)
+      const allowedC = o.code !== "C" || !!state?.lastMatrix;
 
-      if (!allowedPending || !allowedMatrix) {
+      if (!allowedPending || !allowedMatrix || !allowedC) {
         d.style.opacity = "0.35"; d.style.pointerEvents = "none"; d.style.filter = "grayscale(100%)";
       } else {
-        d.addEventListener("click", () => selectOption(o, d));
+        // (v1.8.31) Si hay boton Continuar Cajon visible y el operario aprieta OTRA cosa,
+        // mostrar modal advertencia + pedir codigo logistica (151515) antes de proceder.
+        d.addEventListener("click", () => {
+          if (hayContinuarPendiente()) {
+            mostrarAdvertenciaIgnorarContinuar(() => selectOption(o, d));
+            return;
+          }
+          selectOption(o, d);
+        });
       }
 
       const target = o.row === 1 ? row1 : o.row === 2 ? row2 : o.row === 3 ? row3 : row4;
       target.appendChild(d);
     });
+
+    // (v1.8.26) Inyectar boton "Continuar Cajon" en row1 (a la derecha de C) si hay matriz pendiente de ayer
+    inyectarBotonContinuarEnRow1();
 
     if (!pending && state?.matrixNeedsC) {
       errorEl.style.color = "#b26a00";
@@ -1213,14 +1425,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const leg = legajoKey();
     if (!leg) { alert("Ingresa el numero de legajo"); return; }
 
-    // Validar legajo contra Supabase
     if (!empleadosMap.has(leg)) {
       alert("Legajo no encontrado. Verifica el numero.");
       return;
     }
-
-    // Guardar legajo en localStorage
-    localStorage.setItem("gp_legajo_record", leg);
 
     legajoScreen.classList.add("hidden");
     optionsScreen.classList.remove("hidden");
@@ -1259,6 +1467,30 @@ document.addEventListener("DOMContentLoaded", () => {
       inputArea.classList.add("hidden");
       if (cmCerrando) textInput.value = stateSel.lastDowntime.texto || "";
     }
+
+    // (v1.8.40) Checkbox "cajon completo" + preview de faltante de cajon
+    const chkWrap = document.getElementById("cajonCompletoWrap");
+    const chk = document.getElementById("cajonCompletoChk");
+    if (chk) chk.checked = false;
+    if (chkWrap) chkWrap.classList.add("hidden");
+    textInput.oninput = null;
+    _lastPreviewMatriz = null;
+
+    if (opt.code === "E") {
+      // mostrar "faltan X" en vivo segun la matriz que va tipeando
+      textInput.oninput = previewFaltanteMatrizE;
+      previewFaltanteMatrizE();
+    } else if (opt.code === "C") {
+      const mtx = stateSel?.lastMatrix?.texto;
+      if (mtx && stockActivo(mtx)) {
+        if (chkWrap) chkWrap.classList.remove("hidden");
+        // refrescar el stock compartido y re-renderizar el faltante
+        refreshStockMatriz(mtx).then(() => {
+          if (selected && selected.code === "C") renderMatrizInfo();
+        });
+      }
+    }
+
     renderMatrizInfo();
   }
 
@@ -1272,11 +1504,292 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".box.selected").forEach(x => x.classList.remove("selected"));
   }
 
+  /* ================= CONTINUACION DE CAJON CROSS-DIA ================= */
+  // Convierte time "HH:MM:SS" + fecha date a Date object (zona AR)
+  function timeStrToDate(timeStr, fechaDate) {
+    if (!timeStr || !fechaDate) return null;
+    const [h, m, s] = timeStr.split(":").map(Number);
+    const d = new Date(fechaDate);
+    d.setHours(h || 0, m || 0, s || 0, 0);
+    return d;
+  }
+
+  // Devuelve YYYY-MM-DD de ayer en zona AR
+  function dayKeyARYesterday() {
+    const now = new Date();
+    now.setDate(now.getDate() - 1);
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  // Busca state guardado en localStorage de un dia anterior del mismo legajo
+  // que tenga una matriz abierta sin cerrar (E sin C posterior = matrixNeedsC=true).
+  // Retorna { dia, state } del dia mas reciente que cumpla, o null.
+  // NO consulta Supabase. Aprovecha que el cleanup retiene 10 dias laborables.
+  function getStateAnteriorConMatrizAbierta(legajo) {
+    const legStr = String(legajo).trim();
+    const todayStr = dayKeyAR();
+    let mejor = null;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(LS_PREFIX + "::")) continue;
+      const parts = k.split("::");
+      if (parts.length < 3) continue;
+      const dia = parts[1];
+      const leg = parts[2];
+      if (leg !== legStr || dia === todayStr) continue;
+      try {
+        const s = JSON.parse(localStorage.getItem(k));
+        if (!s || !s.lastMatrix?.texto || !s.matrixNeedsC) continue;
+        if (!mejor || dia > mejor.dia) mejor = { dia, state: s };
+      } catch { /* skip */ }
+    }
+    return mejor;
+  }
+
+  // Evalua si mostrar el banner "Continuar Cajon" para el legajo dado.
+  // Condiciones: state dia anterior tiene matriz abierta (matrixNeedsC=true) Y
+  // operario eligio "voy a seguir manana" en TD (terminoConContinuacion=true).
+  // Devuelve info para usar en el banner, o null.
+  function evaluarBannerContinuar(legajo) {
+    const state = readState(legajo);
+    // Si ya hay caj activo hoy o ya se descarto el banner -> no mostrar
+    if (state.lastMatrix || state.lastCajon) return null;
+    if (state.continuacionConsultada) return null;
+
+    const emp = empleadosMap.get(legajo);
+    if (!emp || !emp.hora_salida) return null;
+
+    const anterior = getStateAnteriorConMatrizAbierta(legajo);
+    if (!anterior) return null;
+    // Solo si ayer en TD eligio "voy a seguir manana"
+    if (!anterior.state.terminoConContinuacion) return null;
+
+    const lastMatrix = anterior.state.lastMatrix;
+    const lastCajon  = anterior.state.lastCajon;
+    const matriz = String(lastMatrix.texto || "").trim();
+    if (!matriz) return null;
+    const nombreMatriz = lastMatrix.nombreOverride ||
+      matricesMap.get(matriz)?.Matriz || "";
+
+    // tsInicioCajon = el ts MAS RECIENTE entre lastMatrix y lastCajon ayer.
+    // Si lastCajon es null, usar lastMatrix.ts.
+    const tsLM = lastMatrix.ts || "";
+    const tsLC = lastCajon?.ts || "";
+    let tsInicioCajon = tsLM;
+    if (tsLC && tsLC > tsLM) tsInicioCajon = tsLC;
+    if (!tsInicioCajon) return null;
+
+    // Calcular segPostAyer = hora_salida_ayer - tsInicioCajon
+    const fechaAyer = new Date(anterior.dia + "T00:00:00-03:00");
+    const dHorSal = timeStrToDate(emp.hora_salida, fechaAyer);
+    const dInicio = new Date(tsInicioCajon);
+    if (isNaN(dHorSal) || isNaN(dInicio)) return null;
+    const segPostAyer = Math.max(0, Math.floor((dHorSal - dInicio) / 1000));
+
+    return {
+      legajo,
+      matriz,
+      nombreMatriz,
+      fechaAyer: anterior.dia,
+      tsInicioCajon,
+      segPostAyer,
+      horaSalidaAyer: emp.hora_salida,
+      horaEntradaHoy: emp.hora_entrada || "08:30:00"
+    };
+  }
+
+  // (v1.8.33) Inyecta dinamicamente el boton "Continuar Matriz" ENTRE E y C.
+  // Llamada desde renderOptions() despues de pintar E/C.
+  function inyectarBotonContinuarEnRow1() {
+    const row1 = document.getElementById("row1");
+    if (!row1) return;
+    // Volver a row-2 por default
+    row1.classList.remove("row-3");
+    row1.classList.add("row-2");
+    const leg = legajoKey();
+    if (!leg) return;
+    const info = evaluarBannerContinuar(leg);
+    if (!info) return;
+    // Hay matriz pendiente: agregar boton ENTRE E y C
+    const d = document.createElement("div");
+    d.className = "box box-cont";
+    d.id = "btnContinuarCajonRow1";
+    const min = Math.round(info.segPostAyer / 60);
+    d.innerHTML =
+      `<div class="box-title">&#9889; Continuar Matriz</div>` +
+      `<div class="box-desc">Mat ${info.matriz} &mdash; ayer ${min} min</div>`;
+    d.dataset.legajo = info.legajo;
+    d.dataset.matriz = info.matriz;
+    d.dataset.nombreMatriz = info.nombreMatriz;
+    d.dataset.fechaAyer = info.fechaAyer;
+    d.dataset.tsInicioCajon = info.tsInicioCajon;
+    d.dataset.segPostAyer = String(info.segPostAyer);
+    d.dataset.horaSalidaAyer = info.horaSalidaAyer;
+    d.dataset.horaEntradaHoy = info.horaEntradaHoy;
+    d.addEventListener("click", handleClickBotonContinuar);
+    // Insertar antes del segundo hijo (C). Row1 actual: [E, C] -> queda [E, Cont, C]
+    const cBox = row1.querySelector('.box[data-code="C"]');
+    if (cBox) {
+      row1.insertBefore(d, cBox);
+    } else {
+      row1.appendChild(d);
+    }
+    // Cambiar grid a 3 cols
+    row1.classList.remove("row-2");
+    row1.classList.add("row-3");
+  }
+
+  // (v1.8.31) True si actualmente hay un boton "Continuar Cajon" pendiente en row1.
+  function hayContinuarPendiente() {
+    const leg = legajoKey();
+    if (!leg) return false;
+    return !!evaluarBannerContinuar(leg);
+  }
+
+  // (v1.8.31) Muestra modal de advertencia cuando el operario aprieta otra opcion
+  // teniendo el banner Continuar visible. Pide codigo de logistica (151515).
+  // Si el codigo es correcto -> ejecuta el callback (la opcion que apreto).
+  // Si cancela / codigo mal -> no hace nada.
+  const CODIGO_LOGISTICA_IGNORAR_CONT = "151515";
+  function mostrarAdvertenciaIgnorarContinuar(onConfirm) {
+    let modal = document.getElementById("advIgnorarContModal");
+    if (!modal) {
+      // Construir el modal si no existe
+      modal = document.createElement("div");
+      modal.id = "advIgnorarContModal";
+      modal.className = "adv-cont-modal hidden";
+      modal.innerHTML =
+        '<div class="adv-cont-card">' +
+        '  <div class="adv-cont-header">&#9888; Caj&oacute;n pendiente de continuar</div>' +
+        '  <div class="adv-cont-body">' +
+        '    <p>Ten&eacute;s un caj&oacute;n pendiente del d&iacute;a anterior.</p>' +
+        '    <p>Si segu&iacute;s con otra opci&oacute;n, <b>perd&eacute;s la posibilidad de continuar el caj&oacute;n</b> (no va a aparecer m&aacute;s el bot&oacute;n).</p>' +
+        '    <p><b>Avis&aacute; a Log&iacute;stica</b> antes de seguir. Te van a dar un c&oacute;digo:</p>' +
+        '    <input type="text" id="advIgnorarContCodigo" inputmode="numeric" placeholder="C&oacute;digo de Log&iacute;stica" autocomplete="off">' +
+        '    <div class="adv-cont-fb" id="advIgnorarContFb"></div>' +
+        '  </div>' +
+        '  <div class="adv-cont-footer">' +
+        '    <button type="button" class="adv-cont-cancel" id="advIgnorarContCancel">Cancelar</button>' +
+        '    <button type="button" class="adv-cont-ok" id="advIgnorarContOk">Continuar con otra opci&oacute;n</button>' +
+        '  </div>' +
+        '</div>';
+      document.body.appendChild(modal);
+    }
+    const input = modal.querySelector("#advIgnorarContCodigo");
+    const fb = modal.querySelector("#advIgnorarContFb");
+    const btnCancel = modal.querySelector("#advIgnorarContCancel");
+    const btnOk = modal.querySelector("#advIgnorarContOk");
+    if (input) input.value = "";
+    if (fb) fb.innerText = "";
+
+    function cerrar() { modal.classList.add("hidden"); }
+    function handleCancel() { cerrar(); cleanup(); }
+    function handleOk() {
+      const cod = (input?.value || "").trim();
+      if (cod !== CODIGO_LOGISTICA_IGNORAR_CONT) {
+        if (fb) { fb.style.color = "#b91c1c"; fb.innerText = "Código incorrecto. Pedile el código a Logística."; }
+        return;
+      }
+      // Codigo OK -> marcar continuacionConsultada=true para que el boton ya no aparezca
+      const leg = legajoKey();
+      if (leg) {
+        const s = readState(leg);
+        s.continuacionConsultada = true;
+        writeState(leg, s);
+      }
+      cerrar();
+      cleanup();
+      // Ejecutar la accion original (la opcion que apreto)
+      if (typeof onConfirm === "function") onConfirm();
+      // Re-renderizar para que desaparezca el boton Continuar
+      renderOptions();
+    }
+    function cleanup() {
+      btnCancel?.removeEventListener("click", handleCancel);
+      btnOk?.removeEventListener("click", handleOk);
+    }
+    btnCancel?.addEventListener("click", handleCancel);
+    btnOk?.addEventListener("click", handleOk);
+    modal.classList.remove("hidden");
+    setTimeout(() => input?.focus(), 50);
+  }
+
+  // Handler del click en el boton "Continuar Cajon".
+  // Setea state.cajonContinuado + lastMatrix/lastCajon como si fuera continuacion activa.
+  function handleClickBotonContinuar(e) {
+    const el = e?.currentTarget || document.getElementById("btnContinuarCajonRow1");
+    if (!el) return;
+    const leg = el.dataset.legajo;
+    const matriz = el.dataset.matriz;
+    const nombreMatriz = el.dataset.nombreMatriz || "";
+    const fechaAyer = el.dataset.fechaAyer;
+    const tsInicioCajon = el.dataset.tsInicioCajon;
+    const segPostAyer = Number(el.dataset.segPostAyer || 0);
+
+    const s = readState(leg);
+    const tsActivacion = isoNow();
+    s.lastMatrix = { opcion: "E", texto: matriz, ts: tsActivacion, nombreOverride: nombreMatriz || null };
+    s.lastCajon  = { opcion: "C", texto: matriz, ts: tsActivacion };
+    s.matrixNeedsC = true;
+    s.continuacionConsultada = true;
+    s.cajonContinuado = {
+      matriz,
+      nombreMatriz,
+      fechaAyer,
+      tsInicioCajon,
+      segPostAyer,
+      tsActivacion,
+      horaEntradaHoy: el.dataset.horaEntradaHoy || "08:30:00"
+    };
+    writeState(leg, s);
+
+    // (v1.8.36) Encolar Llegada Tarde si entra despues de hora_entrada.
+    // maybeSendLateArrival ya valida que sea primer evento del dia + hora > 08:30.
+    // Como ya seteamos lastMatrix/lastCajon antes, el "isFirst" check fallaria.
+    // Workaround: llamar antes de setear state? No, queremos que cuente como llegada tarde.
+    // Mejor: encolar el LT directamente aqui si corresponde.
+    try {
+      const day = dayKeyAR();
+      const horaEntrada = el.dataset.horaEntradaHoy || "08:30:00";
+      const horaEntradaIso = `${day}T${horaEntrada.length === 5 ? horaEntrada + ':00' : horaEntrada}-03:00`;
+      const ahora = new Date(tsActivacion);
+      const dEntrada = new Date(horaEntradaIso);
+      if (!isNaN(dEntrada) && ahora > dEntrada) {
+        const segTarde = Math.floor((ahora - dEntrada) / 1000);
+        if (segTarde >= 60) {
+          const ltPayload = {
+            id: uuidv4(), legajo: leg, opcion: "LT", descripcion: "Llegada Tarde",
+            texto: "", ts_event: tsActivacion, hs_inicio: horaEntradaIso, matriz: ""
+          };
+          // Marcar para que maybeSendLateArrival no lo duplique despues
+          const s2 = readState(leg);
+          s2.lateArrivalSent = true;
+          writeState(leg, s2);
+          updateStateAfterSend(leg, ltPayload);
+          enqueue(ltPayload);
+        }
+      }
+    } catch (e) { console.warn("LT continuar error:", e); }
+
+    renderOptions();      // re-render: el boton desaparecera (continuacionConsultada=true)
+    renderMatrizInfo();
+
+    const eEl = document.getElementById("error");
+    if (eEl) {
+      eEl.style.color = "#16a34a";
+      eEl.innerText = `Continuando Matriz ${matriz}. Apreta C cuando termines el cajon.`;
+      setTimeout(() => { if (eEl.innerText.startsWith("Continuando")) eEl.innerText = ""; }, 8000);
+    }
+  }
+
   /* ================= LOGICA DE ESTADO ================= */
   function computeHsInicio(state) {
     if (state.lastCajon?.ts) return state.lastCajon.ts;
     if (state.lastMatrix?.ts) return state.lastMatrix.ts;
-    console.log("DEBUG: No se encontró hs_inicio en state", state);
+    console.log("DEBUG: No se encontro hs_inicio en state", state);
     return "";
   }
 
@@ -1294,6 +1807,8 @@ document.addEventListener("DOMContentLoaded", () => {
       s.lastCajon = { opcion: payload.opcion, texto: payload.texto || "", ts: payload.ts_event };
       s.lastDowntime = null;
       s.matrixNeedsC = false;
+      // Cerrar continuacion: ya se envio el C que completa el cajon de ayer
+      if (s.cajonContinuado) s.cajonContinuado = null;
       writeState(legajo, s); return;
     }
     if (["RM", "PM", "RD"].includes(payload.opcion)) {
@@ -1308,222 +1823,6 @@ document.addEventListener("DOMContentLoaded", () => {
       writeState(legajo, s); return;
     }
     writeState(legajo, s);
-  }
-
-  /* ================= DEM - DETECCION HUECOS ================= */
-  const DEM_UMBRAL_SEG = 300; // 5 minutos
-  const LS_DEM_PENDING = `prod_dem_pending${APP_TAG}${VERSION}`;
-
-  function detectarHuecosDEM(legajo) {
-    const s = readState(legajo);
-    const hist = [...s.last2].reverse(); // orden cronologico
-    if (hist.length < 2) return null;
-
-    // El ultimo evento es el E recien enviado
-    const currentE = hist[hist.length - 1];
-    if (String(currentE.opcion || "").toUpperCase() !== "E") return null;
-
-    // Buscar el ultimo C o E anterior (inicio de la cadena)
-    let startIdx = -1;
-    for (let i = hist.length - 2; i >= 0; i--) {
-      const op = String(hist[i].opcion || "").toUpperCase();
-      if (op === "C" || op === "E") { startIdx = i; break; }
-    }
-    if (startIdx === -1) return null;
-
-    const sequence = hist.slice(startIdx);
-    if (sequence.length < 2) return null;
-
-    const gaps = [];
-    for (let i = 0; i < sequence.length - 1; i++) {
-      const curr = sequence[i];
-      const next = sequence[i + 1];
-      const currOp = String(curr.opcion || "").toUpperCase();
-      const nextOp = String(next.opcion || "").toUpperCase();
-
-      // Saltar pares de TM (apertura → cierre del mismo codigo)
-      if (isDowntime(currOp) && !curr.hsInicio && nextOp === currOp && next.hsInicio) continue;
-
-      const tsCurr = new Date(curr.ts).getTime();
-      const tsNext = new Date(next.ts).getTime();
-      const gapSec = Math.max(0, Math.round((tsNext - tsCurr) / 1000));
-
-      if (gapSec > 0) {
-        gaps.push({ id: uuidv4(), desde: curr.ts, hasta: next.ts, segundos: gapSec });
-      }
-    }
-
-    const totalSeg = gaps.reduce((sum, g) => sum + g.segundos, 0);
-    if (totalSeg > DEM_UMBRAL_SEG) return { gaps, totalSeg };
-    return null;
-  }
-
-  function mostrarModalDEM(totalSeg) {
-    const minutos = Math.round(totalSeg / 60);
-    return new Promise((resolve) => {
-      const overlay = document.createElement("div");
-      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center";
-
-      const modal = document.createElement("div");
-      modal.style.cssText = "background:#fff;border-radius:18px;padding:24px;max-width:380px;width:92%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.3)";
-
-      const titulo = document.createElement("p");
-      titulo.style.cssText = "font-size:16px;font-weight:700;margin:0 0 8px;color:#b91c1c";
-      titulo.textContent = `Se ha detectado una discrepancia de ${minutos} minutos`;
-      modal.appendChild(titulo);
-
-      const sub = document.createElement("p");
-      sub.style.cssText = "font-size:14px;color:#555;margin:0 0 16px";
-      sub.textContent = "Por favor describa lo sucedido:";
-      modal.appendChild(sub);
-
-      const textarea = document.createElement("textarea");
-      textarea.style.cssText = "width:100%;min-height:80px;border:2px solid #d1d5db;border-radius:12px;padding:12px;font-size:14px;resize:vertical;font-family:inherit";
-      textarea.placeholder = "Ej: Se trabo la maquina, estaba esperando material...";
-      modal.appendChild(textarea);
-
-      const btnEnv = document.createElement("button");
-      btnEnv.textContent = "Enviar";
-      btnEnv.style.cssText = "display:block;width:100%;padding:14px;margin-top:14px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;background:#1e40af;color:#fff";
-      btnEnv.onclick = () => {
-        const desc = textarea.value.trim();
-        if (!desc) { textarea.style.borderColor = "#ef4444"; return; }
-        overlay.remove();
-        resolve(desc);
-      };
-      modal.appendChild(btnEnv);
-
-      overlay.appendChild(modal);
-      document.body.appendChild(overlay);
-      textarea.focus();
-    });
-  }
-
-  // Persistir DEM pendiente en localStorage (por si cierra el navegador)
-  function savePendingDEM(legajo, demResult) {
-    localStorage.setItem(LS_DEM_PENDING, JSON.stringify({ legajo, demResult, savedAt: isoNow(), day: dayKeyAR() }));
-  }
-  function clearPendingDEM() { localStorage.removeItem(LS_DEM_PENDING); }
-  function loadPendingDEM() {
-    try {
-      const raw = localStorage.getItem(LS_DEM_PENDING);
-      if (!raw) return null;
-      const pending = JSON.parse(raw);
-      // Descartar si es de otro dia
-      if (pending.day && pending.day !== dayKeyAR()) { clearPendingDEM(); return null; }
-      return pending;
-    } catch { clearPendingDEM(); return null; }
-  }
-
-  async function procesarDEM(legajo, demResult, descripcion) {
-    const emp = empleadosMap.get(String(legajo).trim());
-    const nombreEmpleado = emp?.Empleado || "Legajo " + legajo;
-
-    // Insertar un DEM por cada hueco (con deduplicacion por ID_Ejecucion)
-    for (const gap of demResult.gaps) {
-      const idEjec = hashId(gap.id);
-      // Deduplicacion: verificar si ya existe
-      try {
-        const { data: existe } = await sb.from("db_n8n_espejo")
-          .select("ID_Ejecucion").eq("ID_Ejecucion", idEjec).limit(1);
-        if (existe && existe.length > 0) continue; // ya insertado
-      } catch { /* continuar con insert */ }
-
-      const dateInfo = dateFromISO(gap.hasta);
-      const row = {
-        Fecha: gap.hasta,
-        Legajo: legajo,
-        Nombre_Matriz: descripcion, // Bug 1 fix: descripcion del operario
-        Matriz: "DEM",
-        Uni: 0,
-        Premio: 0,
-        Tiempo_Toma: 0,
-        Tiempo_Historico: 0,
-        Nombre_Empleado: nombreEmpleado,
-        Hora_Inicio: timeFromISO(gap.desde),
-        Hora_Fin: timeFromISO(gap.hasta),
-        Anular_Tiempo: false,
-        Segundos_Historico: 0,
-        Segundos_Trabajados: gap.segundos,
-        Segundos_Tiempo_Muerto: gap.segundos,
-        Dia: dateInfo.dia,
-        Mes: dateInfo.mes,
-        Quincena: dateInfo.dia > 15 ? 2 : 1,
-        ID_Ejecucion: idEjec
-      };
-
-      // Bug 2 fix: encolar para reintento offline
-      const demQueueKey = `${LS_DEM_PENDING}_queue`;
-      const insertOK = await (async () => {
-        try {
-          const { error } = await sb.from("db_n8n_espejo").insert(row);
-          return !error;
-        } catch { return false; }
-      })();
-
-      if (!insertOK) {
-        // Guardar en cola local para reintento
-        try {
-          const demQ = JSON.parse(localStorage.getItem(demQueueKey) || "[]");
-          demQ.push(row);
-          localStorage.setItem(demQueueKey, JSON.stringify(demQ));
-        } catch { console.error("Error guardando DEM en cola local"); }
-      }
-    }
-
-    // Bug 2 fix: reintentar cola DEM pendiente
-    await flushDEMQueue();
-
-    // Enviar alerta WhatsApp solo a un destinatario
-    const DEM_WA_DEST = "5491162521635";
-    const totalMin = Math.round(demResult.totalSeg / 60);
-    const horaAhora = new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" });
-    try {
-      await fetch(EDGE_FN_URL, {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer " + SUPABASE_KEY,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          parametros: [nombreEmpleado, totalMin + " Min", descripcion, horaAhora],
-          plantilla: "demora_envio_mensaje",
-          idioma: "es_AR",
-          destinatario: DEM_WA_DEST
-        })
-      });
-    } catch (err) { console.error("Error enviando alerta DEM:", err); }
-
-    clearPendingDEM();
-  }
-
-  // Cola offline para DEMs fallidos
-  const DEM_MAX_RETRIES = 10;
-  let isFlushingDEM = false;
-  async function flushDEMQueue() {
-    if (!navigator.onLine || isFlushingDEM) return;
-    isFlushingDEM = true;
-    const demQueueKey = `${LS_DEM_PENDING}_queue`;
-    try {
-      const demQ = JSON.parse(localStorage.getItem(demQueueKey) || "[]");
-      if (!demQ.length) return;
-      const remaining = [];
-      for (const item of demQ) {
-        item.__demTries = (item.__demTries || 0) + 1;
-        if (item.__demTries > DEM_MAX_RETRIES) { console.warn("DEM descartado por max reintentos:", item.ID_Ejecucion); continue; }
-        try {
-          const { data: existe } = await sb.from("db_n8n_espejo")
-            .select("ID_Ejecucion").eq("ID_Ejecucion", item.ID_Ejecucion).limit(1);
-          if (existe && existe.length > 0) continue;
-          // Separar __demTries del row antes de insertar
-          const { __demTries, ...row } = item;
-          const { error } = await sb.from("db_n8n_espejo").insert(row);
-          if (error) remaining.push(item);
-        } catch { remaining.push(item); }
-      }
-      localStorage.setItem(demQueueKey, JSON.stringify(remaining));
-    } catch { /* silencioso */ }
-    finally { isFlushingDEM = false; }
   }
 
   /* ================= LLEGADA TARDE ================= */
@@ -1560,45 +1859,31 @@ document.addEventListener("DOMContentLoaded", () => {
     let texto = String(textInput.value || "").trim();
     const stateBefore = readState(legajo);
 
-    // Validacion input
     if (selected.input.show) {
       let ok;
       if (selected.code === "C" && isMatrix501(stateBefore)) {
         ok = /^\d+(?:[.,]\d+)?$/.test(texto);
-      } else if (selected.code === "CM") {
-        ok = /^[0-9]+[A-Za-z]?$/.test(texto);
       } else {
         ok = /^[0-9]+$/.test(texto);
       }
       if (!ok) {
         errorEl.style.color = "red";
-        if (selected.code === "C" && isMatrix501(stateBefore)) errorEl.innerText = "Para matriz 501: usar coma o punto (ej: 12,5)";
-        else if (selected.code === "CM") errorEl.innerText = "Matriz destino invalida (ej: 110 o 12B)";
-        else errorEl.innerText = "Solo se permiten numeros enteros";
+        errorEl.innerText = (selected.code === "C" && isMatrix501(stateBefore))
+          ? "Para matriz 501: usar coma o punto (ej: 12,5)" : "Solo se permiten numeros enteros";
         return;
       }
     }
 
-    // Validacion matriz destino para CM (debe existir en Matrices)
-    if (selected.code === "CM") {
-      if (!matricesMap.has(texto)) {
-        alert(`La matriz ${texto} no existe. Verifica el numero.`);
-        return;
-      }
-    }
-
-    // Validacion matriz para E
     if (selected.code === "E") {
       if (stateBefore.matrixNeedsC) {
         alert("Antes de iniciar una nueva matriz (E), envia al menos 1 Cajon (C).");
         return;
       }
-      // Validar que la matriz exista
       if (!matricesMap.has(texto)) {
         alert(`La matriz ${texto} no existe. Verifica el numero.`);
         return;
       }
-      // Matrices con variante: preguntar sub-tipo
+      // matrices con variante: al iniciar E se elige el tipo (cambia el codigo de matriz)
       const MATRICES_CON_VARIANTE = {
         "12": {
           pregunta: "Doblado Mango Plano - Selecciona el tipo:",
@@ -1615,18 +1900,20 @@ document.addEventListener("DOMContentLoaded", () => {
             { label: "Varilla c/ Cuchilla Curva",   matriz: "10B", nombre: "Varilla c/ Cuchilla Curva (HF15)" },
           ],
         },
+        // Matriz 28 (Corte Cuerpo Uña): el cuerpo va a Cromar (JF5) o a Pintar (JF2).
+        // El operario escribe 28 y elige; Cromar registra el codigo interno 28B.
+        "28": {
+          pregunta: "Corte Cuerpo Uña - ¿Para Cromar o Pintar?",
+          opciones: [
+            { label: "Pintar (JF2)", matriz: "28",  nombre: "Corte Cuerpo Uña p/Pintar (JF2)" },
+            { label: "Cromar (JF5)", matriz: "28B", nombre: "Corte Cuerpo Uña p/Cromar (JF5)" },
+          ],
+        },
         "39": {
           pregunta: "Matriz 39 - Selecciona el tipo:",
           opciones: [
             { label: "Cpo Sacacorcho CON Marca", matriz: "39", nombre: "Cerrado Cuerpo Sacacorcho (Con Marca)" },
             { label: "Cpo Sacacorcho SIN Marca", matriz: "39B", nombre: "Cerrado Cuerpo Sacacorcho (Sin Marca)" },
-          ],
-        },
-        "21": {
-          pregunta: "Matriz 21 - Selecciona el tipo:",
-          opciones: [
-            { label: "Loeke",     matriz: "21", nombre: "Destapacorona Loeke" },
-            { label: "Sin Marca", matriz: "21B", nombre: "Destapacorona Sin Marca" },
           ],
         },
         "79": {
@@ -1661,7 +1948,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (MATRICES_CON_VARIANTE[texto] && !_varianteYaElegida) {
         const cfg = MATRICES_CON_VARIANTE[texto];
         const varianteElegida = await mostrarSelectorVariante(cfg.pregunta, cfg.opciones);
-        if (!varianteElegida) return; // canceló
+        if (!varianteElegida) return;
         texto = varianteElegida.matriz;
         textInput.value = texto;
         _varianteYaElegida = true;
@@ -1669,7 +1956,12 @@ document.addEventListener("DOMContentLoaded", () => {
           _nombreMatrizOverride = varianteElegida.nombre;
         }
       }
-      // Alertar por WhatsApp si la matriz tiene Tiempo Promedio = 0
+      if (!matricesMap.has(texto)) {
+        alert(`La matriz ${texto} no existe. Verifica el numero.`);
+        _varianteYaElegida = false;
+        _nombreMatrizOverride = null;
+        return;
+      }
       const matCheck = matricesMap.get(texto);
       if (matCheck && (Number(matCheck.Tiempo_Historico) === 0 || matCheck.Tiempo_Historico === null)) {
         const emp = empleadosMap.get(String(legajo).trim());
@@ -1683,8 +1975,12 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       }
     }
-
-    // Validacion matriz en uso para C, RM, PM, RD
+    if (selected.code === "CM") {
+      if (!matricesMap.has(texto)) {
+        alert(`La matriz ${texto} no existe. Verifica el numero.`);
+        return;
+      }
+    }
     if (["C", "RM", "PM", "RD"].includes(selected.code)) {
       if (!stateBefore.lastMatrix?.texto) {
         alert('Primero envia "E (Empece Matriz)" para registrar una matriz.');
@@ -1692,7 +1988,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // Validacion TM pendiente
     if (stateBefore.lastDowntime && !sameDowntime(stateBefore.lastDowntime, { opcion: selected.code, texto })) {
       alert(`Hay un Tiempo Muerto pendiente (${stateBefore.lastDowntime.opcion}). Envia el MISMO para cerrarlo.`);
       return;
@@ -1708,7 +2003,7 @@ document.addEventListener("DOMContentLoaded", () => {
       hs_inicio: "", matriz: ""
     };
 
-    // Guardar override de nombre de matriz (variantes como Mat 10 recta/curva)
+    // nombreOverride para variantes
     if (selected.code === "E" && _nombreMatrizOverride) {
       payload.nombreOverride = _nombreMatrizOverride;
       _nombreMatrizOverride = null;
@@ -1722,20 +2017,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (payload.opcion === "C") {
       payload.hs_inicio = computeHsInicio(stateBefore);
-      // Si no hay hs_inicio, usar el último evento del historial
       if (!payload.hs_inicio && stateBefore.last2.length > 0) {
         payload.hs_inicio = stateBefore.last2[0].ts || "";
+      }
+      // CONTINUACION CROSS-DIA: si hay cajonContinuado activo, propagar al procesador
+      if (stateBefore.cajonContinuado) {
+        payload.cajon_continuado = {
+          matriz: stateBefore.cajonContinuado.matriz,
+          fechaAyer: stateBefore.cajonContinuado.fechaAyer,
+          // (v1.8.32) tsInicioCajon = ts del E (o lastCajon) de ayer = Hora_Inicio en BD
+          tsInicioCajon: stateBefore.cajonContinuado.tsInicioCajon,
+          segPostAyer: stateBefore.cajonContinuado.segPostAyer,
+          tsActivacion: stateBefore.cajonContinuado.tsActivacion
+        };
       }
     }
     if (["RM", "PM", "RD"].includes(payload.opcion)) {
       payload.hs_inicio = tsEvent;
     }
-    // Segundo TM igual = cierre
     if (stateBefore.lastDowntime && sameDowntime(stateBefore.lastDowntime, payload)) {
       payload.hs_inicio = stateBefore.lastDowntime.ts || "";
     }
 
-    // Alertar por WhatsApp si es RM o PM
     if (payload.opcion === "RM" || payload.opcion === "PM") {
       const emp = empleadosMap.get(String(legajo).trim());
       const nombre = emp?.Empleado || "Legajo " + legajo;
@@ -1752,8 +2055,6 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-    const selectedCode = selected.code;
-
     btnEnviar.disabled = true;
     btnEnviar.innerText = "Enviando...";
 
@@ -1761,7 +2062,15 @@ document.addEventListener("DOMContentLoaded", () => {
     enqueue(payload);
     renderSummary();
 
-    // Reset UI
+    // (v1.8.40) Registrar las unidades del cajon en el stock compartido (si aplica).
+    // Idempotente por payload.id; si falla queda encolado para reintento.
+    if (payload.opcion === "C" && stockActivo(payload.matriz)) {
+      const completar = !!(document.getElementById("cajonCompletoChk")?.checked);
+      registrarUnidadesStock(payload.matriz, Number(texto), completar, legajo, payload.id);
+    }
+    const chkReset = document.getElementById("cajonCompletoChk");
+    if (chkReset) chkReset.checked = false;
+
     selected = null;
     selectedArea.classList.add("hidden");
     optionsScreen.classList.add("hidden");
@@ -1770,29 +2079,8 @@ document.addEventListener("DOMContentLoaded", () => {
     errorEl.innerText = "";
     document.querySelectorAll(".box.selected").forEach(x => x.classList.remove("selected"));
 
-    try {
-      await flushQueue();
-      // Si quedaron items en cola, reintentar agresivamente
-      if (readQueue().length > 0 && navigator.onLine) {
-        console.log("Reintentando envío agresivo (item aún en cola)");
-        await new Promise(r => setTimeout(r, 100));
-        await flushQueue();
-      }
-    } finally {
-      btnEnviar.disabled = false;
-      btnEnviar.innerText = "Enviar";
-    }
-
-    // DEM: detectar huecos despues de enviar E
-    if (selectedCode === "E") {
-      const demResult = detectarHuecosDEM(legajo);
-      if (demResult) {
-        // Bug 3 fix: persistir antes del modal por si cierra el navegador
-        savePendingDEM(legajo, demResult);
-        const descripcion = await mostrarModalDEM(demResult.totalSeg);
-        await procesarDEM(legajo, demResult, descripcion);
-      }
-    }
+    try { await flushQueue(); await flushStockQueue(); }
+    finally { btnEnviar.disabled = false; btnEnviar.innerText = "Enviar"; }
   }
 
   /* ================= HISTORIAL DIAS ANTERIORES ================= */
@@ -1862,11 +2150,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const renderList = (items) => {
         listContainer.innerHTML = "";
         items.forEach(it => {
-          const statusColor = it.status === "sent" ? "#0b6b2c" : it.status === "failed" ? "#9b1c1c" : it.status === "deleting" ? "#92400e" : "#8a5a00";
-          const statusText = it.status === "sent" ? "ENVIADO" : it.status === "failed" ? "ERROR" : it.status === "deleting" ? "ELIMINANDO" : "PENDIENTE";
+          const statusColor = it.status === "sent" ? "#0b6b2c" : it.status === "failed" ? "#9b1c1c" : "#8a5a00";
+          const statusText = it.status === "sent" ? "ENVIADO" : it.status === "failed" ? "ERROR" : "PENDIENTE";
+          const isFJ = it.opcion === "FJ";
+          const showTexto = !isFJ && it.texto;
           const row = document.createElement("div");
           row.style.cssText = "padding:10px 0;border-bottom:1px solid #f3f4f6;font-size:18px";
-          row.innerHTML = `<span style="font-weight:700">${it.opcion}${it.texto ? ": " + it.texto : ""}</span> <span style="color:${statusColor};font-size:13px;font-weight:800">${statusText}</span> <span style="color:#888;font-size:14px">${safeTime(it.ts)}</span>`;
+          row.innerHTML = `<span style="font-weight:700">${it.opcion}${showTexto ? ": " + it.texto : ""}</span> <span style="color:${statusColor};font-size:13px;font-weight:800">${statusText}</span> <span style="color:#888;font-size:14px">${safeTime(it.ts)}</span>`;
           listContainer.appendChild(row);
         });
       };
@@ -1899,22 +2189,551 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(overlay);
   });
 
-  /* ================= VOLVER (solo si existe index principal) ================= */
-  const btnVolver = $("btnVolver");
-  fetch("../../Inicio/index.html", { method: "HEAD" })
-    .then(r => { if (r.ok) btnVolver.classList.remove("hidden"); })
-    .catch(() => {});
-  btnVolver.addEventListener("click", async () => {
-    const clave = prompt("Ingresa la clave para volver:");
-    if (clave === null) return;
-    if (!clave.trim()) { alert("Ingresa una clave"); return; }
+  /* ================= TERMINAR DIA ================= */
+  const btnTerminarDia = $("btnTerminarDia");
+  const terminarDiaModal = $("terminarDiaModal");
+  const terminarDiaContent = $("terminarDiaContent");
+  const btnCancelTD = $("btnCancelTD");
+  const btnConfirmTD = $("btnConfirmTD");
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function getTodaySummaryForLegajo(legajo) {
+    const state = readState(legajo);
+    const counts = {};
+    let total = 0;
+    for (const it of state.last2) {
+      if (it.opcion === "FJ") continue;
+      counts[it.opcion] = (counts[it.opcion] || 0) + 1;
+      total++;
+    }
+    return { total, counts };
+  }
+
+  async function bulkSendDayReplay(legajoStr, snapshot) {
+    const payloads = (snapshot || [])
+      .filter(it => it && it.id && it.opcion !== "FJ")
+      .map(it => ({
+        id: it.id,
+        legajo: legajoStr,
+        opcion: it.opcion,
+        descripcion: it.descripcion || (OPTIONS.find(o => o.code === it.opcion)?.desc) || "",
+        texto: it.texto || "",
+        ts_event: it.ts,
+        hs_inicio: it.hsInicio || "",
+        matriz: it.matriz || ""
+      }));
+    if (!payloads.length) return { ok: true, count: 0 };
     try {
-      // Usar RPC check_app_password (SECURITY DEFINER) — bypasea RLS de app_login
-      const { data, error } = await sb.rpc("check_app_password", { p_password: clave.trim() });
-      if (error || !data) { alert("Clave incorrecta"); }
-      else { window.location.href = "../../Inicio/index.html"; }
-    } catch { alert("Error de conexion. Intenta de nuevo."); }
-  });
+      const { error } = await sb.from(TABLA_REGISTROS).upsert(payloads, { onConflict: "id", ignoreDuplicates: true });
+      if (error) throw error;
+      return { ok: true, count: payloads.length };
+    } catch (err) {
+      console.warn("[bulkReplay] error:", err.message || err);
+      return { ok: false, count: payloads.length, error: err.message || String(err) };
+    }
+  }
+
+  function terminarDia() {
+    const legajoStr = legajoKey();
+    if (!legajoStr) { alert("Falta el numero de legajo"); return; }
+
+    const state = readState(legajoStr);
+    const summary = getTodaySummaryForLegajo(legajoStr);
+    const lastDowntime = state.lastDowntime;
+    const lastMatrix = state.lastMatrix;
+    const prevFJ = state.last2.find(it => it.opcion === "FJ");
+
+    let html = "";
+
+    if (prevFJ) {
+      html += '<div class="td-fj-warn"><b>⚠ Ya cerraste el día hoy.</b><br>Si confirmás, se reemplaza el reporte anterior.</div>';
+    }
+
+    html += '<div class="td-section">';
+    html += `<div><b>Legajo:</b> ${escapeHtml(legajoStr)}</div>`;
+    html += `<div><b>Eventos hoy:</b> ${summary.total}</div>`;
+    const opciones = Object.keys(summary.counts).sort();
+    if (opciones.length) {
+      html += "<ul>";
+      for (const op of opciones) {
+        const desc = OPTIONS.find(o => o.code === op)?.desc || "";
+        html += `<li><b>${escapeHtml(op)}</b>${desc ? " — " + escapeHtml(desc) : ""}: ${summary.counts[op]}</li>`;
+      }
+      html += "</ul>";
+    } else {
+      html += '<div style="color:#777;">Sin reportes hoy.</div>';
+    }
+    html += '</div>';
+
+    if (lastDowntime) {
+      const tmDesc = OPTIONS.find(o => o.code === lastDowntime.opcion)?.desc || "";
+      html += '<div class="td-warn-tm">';
+      html += '<div class="td-warn-tm-title">⛔ Tiempo Muerto abierto</div>';
+      html += `<div>Se cierra automáticamente: <b>${escapeHtml(lastDowntime.opcion)}</b>${tmDesc ? " — " + escapeHtml(tmDesc) : ""}${lastDowntime.texto ? ` (a ${escapeHtml(lastDowntime.texto)})` : ""}</div>`;
+      html += '</div>';
+    }
+
+    // (eliminado v1.8.20) Cajon extra: se quito la pregunta "Hiciste otro cajon
+    // sin enviar?". Si el operario no apreto C antes de TD, ese cajon no se carga.
+    // Asumimos que el operario siempre cierra con C antes de terminar el dia.
+
+    // (v1.8.25) Si hay matriz abierta sin cerrar, preguntar "vas a seguir manana?"
+    // SI -> termina dia normal con flag terminoConContinuacion=true (banner aparece manana)
+    // NO -> form para completar (cantidad uni o TM) antes de terminar
+    // (v1.8.38) Si ya cargo previamente (apreto Cargar y cancelo TD), NO mostrar form
+    //          de nuevo (evitar duplicados). Mostrar mensaje "Ya cargaste X".
+    // (v1.8.40) Matrices CON control de cajon (stock): pregunta "¿hiciste un ultimo cajon?".
+    //   SI -> unidades (+ cajon completo) => se carga como C del dia y suma a uni_actual.
+    //   NO -> que estuvo haciendo => Tiempo Muerto con inicio = fin del ultimo cajon.
+    // Reemplaza, para esas matrices, al viejo "¿seguis manana?" + "Continuar Cajon".
+    // Las matrices SIN control (501, sin Uni_X_Cajon) mantienen el flujo viejo.
+    const matrizTD = lastMatrix?.texto || "";
+    const usarUltimoCajon = !!(matrizTD && stockActivo(matrizTD));
+    const yaCargoTD = !!(state.tdCargaPreviaListo && state.tdCargaPreviaInfo);
+
+    if (usarUltimoCajon) {
+      const matDesc = lastMatrix.nombreOverride || (matricesMap.get(matrizTD)?.Matriz || "");
+      if (yaCargoTD) {
+        html += '<div class="td-cont-pregunta">';
+        html += '<div class="td-cont-title">&#10003; Ya cargaste el cierre</div>';
+        html += `<div style="font-weight:700;color:#15803d;margin:8px 0;">${escapeHtml(state.tdCargaPreviaInfo.texto || '')}</div>`;
+        html += '<button type="button" id="btnUltFinalizar" class="td-confirm-btn" style="width:100%;margin-top:8px;">Finalizar d&iacute;a</button>';
+        html += '</div>';
+      } else {
+        const falta = faltanteCajon(matrizTD);
+        const act = Number(stockRow(matrizTD)?.Uni_Actual) || 0;
+        html += '<div class="td-cont-pregunta" id="tdUltBox">';
+        html += '<div class="td-cont-title">&iquest;Hiciste un &uacute;ltimo caj&oacute;n?</div>';
+        html += `<div class="td-cont-mat">Matriz <b>${escapeHtml(matrizTD)}</b>${matDesc ? " &mdash; " + escapeHtml(matDesc) : ""}<br><small>Faltan ${falta} para completar el caj&oacute;n${act > 0 ? ` (ya hay ${act})` : ""}</small></div>`;
+        html += '<div class="td-cont-btns">';
+        html += '<button type="button" id="btnUltSi" class="td-cont-btn-si">S&iacute;</button>';
+        html += '<button type="button" id="btnUltNo" class="td-cont-btn-no">No</button>';
+        html += '</div>';
+        html += '<div class="td-cont-feedback" id="tdUltFeedback"></div>';
+        // Form SI: unidades + cajon completo
+        html += '<div class="td-cont-no-form hidden" id="tdUltSiForm">';
+        html += `<div class="td-cont-no-row"><label>&iquest;Cu&aacute;ntas unidades hiciste en ese &uacute;ltimo caj&oacute;n? (Matriz ${escapeHtml(matrizTD)}):</label>`;
+        html += '<input type="text" id="tdUltUni" inputmode="numeric" placeholder="Cantidad de unidades"></div>';
+        html += '<div class="td-cont-no-row" style="margin-top:6px;"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;color:#9a3412;"><input type="checkbox" id="tdUltCompleto" style="width:18px;height:18px;"> Caj&oacute;n completo (no hay m&aacute;s material &mdash; deja el stock en 0)</label></div>';
+        html += '<button type="button" id="btnUltSiCargar" class="td-cont-no-cargar">Cargar y finalizar d&iacute;a</button>';
+        html += '</div>';
+        // Form NO: que estuvo haciendo
+        html += '<div class="td-cont-no-form hidden" id="tdUltNoForm">';
+        html += '<div class="td-cont-no-title">&iquest;Qu&eacute; estuviste haciendo en ese tiempo?</div>';
+        html += '<div class="td-cont-no-row"><select id="tdUltNoTM"><option value="">-- eleg&iacute; --</option>';
+        OPTIONS.filter(o => isDowntime(o.code) && !["E","C","CM"].includes(o.code))
+          .forEach(o => { html += `<option value="${escapeHtml(o.code)}">${escapeHtml(o.code)} &mdash; ${escapeHtml(o.desc)}</option>`; });
+        html += '</select></div>';
+        html += '<button type="button" id="btnUltNoCargar" class="td-cont-no-cargar">Cargar y finalizar d&iacute;a</button>';
+        html += '</div>';
+        html += '<div class="td-cont-no-feedback" id="tdUltFb2"></div>';
+        html += '</div>';
+      }
+    } else if (lastMatrix && lastMatrix.texto && state.matrixNeedsC) {
+      const matDesc = lastMatrix.nombreOverride || (matricesMap.get(lastMatrix.texto)?.Matriz || "");
+      if (state.tdCargaPreviaListo && state.tdCargaPreviaInfo) {
+        // Ya cargo antes y cancelo TD. Mostrar mensaje en lugar de form.
+        html += '<div class="td-cont-pregunta">';
+        html += '<div class="td-cont-title">&#10003; Ya cargaste lo que faltaba</div>';
+        html += `<div style="font-weight:700;color:#15803d;margin:8px 0;">${escapeHtml(state.tdCargaPreviaInfo.texto || '')}</div>`;
+        html += '<div style="font-size:13px;color:#1f2937;">Apret&aacute; <b>Terminar D&iacute;a</b> para finalizar.</div>';
+        html += '</div>';
+      } else {
+        html += '<div class="td-cont-pregunta" id="tdContPregunta">';
+        html += '<div class="td-cont-title">&iquest;Vas a seguir ma&ntilde;ana con esta matriz?</div>';
+        html += `<div class="td-cont-mat">Matriz <b>${escapeHtml(lastMatrix.texto)}</b>${matDesc ? " &mdash; " + escapeHtml(matDesc) : ""}</div>`;
+        html += '<div class="td-cont-btns">';
+        html += '<button type="button" id="btnContSi" class="td-cont-btn-si">S&iacute;, sigo ma&ntilde;ana</button>';
+        html += '<button type="button" id="btnContNo" class="td-cont-btn-no">No</button>';
+        html += '</div>';
+        html += '<div class="td-cont-feedback" id="tdContFeedback"></div>';
+        html += '</div>';
+
+        // Form caso NO (oculto inicialmente)
+        html += '<div class="td-cont-no-form hidden" id="tdContNoForm">';
+        html += '<div class="td-cont-no-title">Antes de terminar, complet&aacute; lo que falta:</div>';
+        html += `<div class="td-cont-no-row"><label>Cantidad de unidades del caj&oacute;n (Matriz ${escapeHtml(lastMatrix.texto)}):</label>`;
+        html += '<input type="text" id="tdContNoUni" inputmode="numeric" placeholder="Cantidad o vac&iacute;o si fue TM"></div>';
+        html += '<div class="td-cont-no-row"><label>O cargar Tiempo Muerto:</label>';
+        html += '<select id="tdContNoTM"><option value="">-- ninguno --</option>';
+        OPTIONS.filter(o => isDowntime(o.code) && !["E","C","CM"].includes(o.code))
+          .forEach(o => { html += `<option value="${escapeHtml(o.code)}">${escapeHtml(o.code)} &mdash; ${escapeHtml(o.desc)}</option>`; });
+        html += '</select></div>';
+        html += '<button type="button" id="btnContNoCargar" class="td-cont-no-cargar">Cargar y habilitar Terminar D&iacute;a</button>';
+        html += '<div class="td-cont-no-feedback" id="tdContNoFeedback"></div>';
+        html += '</div>';
+      }
+    }
+
+    terminarDiaContent.innerHTML = html;
+    terminarDiaModal.classList.remove("hidden");
+    // Wireup handlers (los elementos recien se crearon en el DOM)
+    if (usarUltimoCajon) {
+      wireUpTDUltimoCajon(legajoStr);
+    } else if (lastMatrix && lastMatrix.texto && state.matrixNeedsC) {
+      wireUpTDContinuacion(legajoStr);
+    }
+    // (v1.8.44) El flujo de "ultimo cajon" usa su propio boton unico (cargar+finalizar),
+    // asi que ocultamos el boton de pie "Si, terminar dia" en ese caso.
+    if (btnConfirmTD) {
+      if (usarUltimoCajon) {
+        btnConfirmTD.style.display = "none";
+      } else {
+        btnConfirmTD.style.display = "";
+        const requiereEleccion = !!(lastMatrix && lastMatrix.texto && state.matrixNeedsC);
+        const yaEligio = !!state.terminoConContinuacion || !!state.tdCargaPreviaListo;
+        btnConfirmTD.disabled = requiereEleccion && !yaEligio;
+      }
+    }
+  }
+
+  // Cablea los handlers del form de continuacion dentro del modal TD.
+  function wireUpTDContinuacion(legajoStr) {
+    const btnSi = document.getElementById("btnContSi");
+    const btnNo = document.getElementById("btnContNo");
+    const formNo = document.getElementById("tdContNoForm");
+    const fb = document.getElementById("tdContFeedback");
+    if (btnSi) btnSi.addEventListener("click", () => {
+      const s = readState(legajoStr);
+      s.terminoConContinuacion = true;
+      writeState(legajoStr, s);
+      if (fb) {
+        fb.style.color = "#15803d";
+        fb.innerText = "OK. Mañana al entrar va a aparecer el botón 'Continuar Cajón'.";
+      }
+      if (btnSi) btnSi.disabled = true;
+      if (btnNo) btnNo.disabled = true;
+      if (formNo) formNo.classList.add("hidden");
+      if (btnConfirmTD) btnConfirmTD.disabled = false;
+    });
+    if (btnNo) btnNo.addEventListener("click", () => {
+      const s = readState(legajoStr);
+      s.terminoConContinuacion = false;
+      writeState(legajoStr, s);
+      if (fb) {
+        fb.style.color = "#b91c1c";
+        fb.innerText = "Cargá abajo lo que faltaba antes de terminar.";
+      }
+      if (btnSi) btnSi.disabled = true;
+      if (btnNo) btnNo.disabled = true;
+      if (formNo) formNo.classList.remove("hidden");
+      // TerminarDia queda deshabilitado hasta cargar uni o TM
+    });
+    const btnCargar = document.getElementById("btnContNoCargar");
+    if (btnCargar) btnCargar.addEventListener("click", async () => {
+      await handleTDContNoCargar(legajoStr);
+    });
+  }
+
+  // Encola un C con la cantidad ingresada o un TM con el codigo seleccionado.
+  // hs_inicio = max(lastCajon.ts, lastMatrix.ts).
+  async function handleTDContNoCargar(legajoStr) {
+    const inpUni = document.getElementById("tdContNoUni");
+    const selTM = document.getElementById("tdContNoTM");
+    const fbNo = document.getElementById("tdContNoFeedback");
+    const uniVal = (inpUni?.value || "").trim();
+    const tmVal  = (selTM?.value || "").trim();
+    // (v1.8.38) Anti-duplicado: si ya cargo previamente, no permitir cargar otra vez
+    const sPre = readState(legajoStr);
+    if (sPre.tdCargaPreviaListo) {
+      if (fbNo) { fbNo.style.color = "#b91c1c"; fbNo.innerText = "Ya cargaste un evento. Apretá Terminar Día o Cancelá."; }
+      return;
+    }
+    if (!uniVal && !tmVal) {
+      if (fbNo) { fbNo.style.color = "#b91c1c"; fbNo.innerText = "Cargá cantidad o seleccioná un TM (uno solo)."; }
+      return;
+    }
+    // (v1.8.37) Validacion: solo se permite UNO (no ambos)
+    if (uniVal && tmVal) {
+      if (fbNo) { fbNo.style.color = "#b91c1c"; fbNo.innerText = "Cargá UNA sola opción: cantidad O TM, no las dos."; }
+      return;
+    }
+    const s = readState(legajoStr);
+    const lm = s.lastMatrix;
+    if (!lm || !lm.texto) {
+      if (fbNo) { fbNo.style.color = "#b91c1c"; fbNo.innerText = "Estado inválido: no hay matriz."; }
+      return;
+    }
+    const tsLM = lm.ts || "";
+    const tsLC = s.lastCajon?.ts || "";
+    const hsInicio = (tsLC && tsLC > tsLM) ? tsLC : tsLM;
+    const ahora = isoNow();
+
+    if (uniVal) {
+      // Validar formato
+      const isPiedra = String(lm.texto).trim() === "501";
+      const re = isPiedra ? /^\d+(?:[.,]\d+)?$/ : /^[0-9]+$/;
+      if (!re.test(uniVal)) {
+        if (fbNo) { fbNo.style.color = "#b91c1c"; fbNo.innerText = isPiedra ? "Piedra (501): coma o punto" : "Solo enteros"; }
+        return;
+      }
+      const cantNorm = isPiedra ? uniVal.replace(/\./g, ",") : uniVal;
+      const cajPayload = {
+        id: uuidv4(),
+        legajo: legajoStr,
+        opcion: "C",
+        descripcion: "Cajon",
+        texto: cantNorm,
+        ts_event: ahora,
+        hs_inicio: hsInicio,
+        matriz: lm.texto
+      };
+      if (lm.nombreOverride) cajPayload.nombreOverride = lm.nombreOverride;
+      updateStateAfterSend(legajoStr, cajPayload);
+      enqueue(cajPayload);
+    }
+    if (tmVal) {
+      const optTM = OPTIONS.find(o => o.code === tmVal);
+      const tmPayload = {
+        id: uuidv4(),
+        legajo: legajoStr,
+        opcion: tmVal,
+        descripcion: optTM?.desc || tmVal,
+        texto: "",
+        ts_event: ahora,
+        hs_inicio: hsInicio,
+        matriz: lm.texto || ""
+      };
+      updateStateAfterSend(legajoStr, tmPayload);
+      enqueue(tmPayload);
+    }
+    // (v1.8.38) Marcar carga lista + guardar info para mostrar si reabre TD despues
+    const s2 = readState(legajoStr);
+    s2.tdCargaPreviaListo = true;
+    s2.tdCargaPreviaInfo = uniVal
+      ? { tipo: "C", texto: `Cajón cerrado con ${uniVal} unidades (Matriz ${s2.lastMatrix?.texto || ""})` }
+      : { tipo: tmVal, texto: `Tiempo Muerto: ${(OPTIONS.find(o => o.code === tmVal)?.desc) || tmVal}` };
+    writeState(legajoStr, s2);
+    if (fbNo) { fbNo.style.color = "#15803d"; fbNo.innerText = "OK. Ya podés apretar Terminar Día."; }
+    const btnCargar = document.getElementById("btnContNoCargar");
+    if (btnCargar) btnCargar.disabled = true;
+    if (btnConfirmTD) btnConfirmTD.disabled = false;
+  }
+
+  // (v1.8.40) Handlers de "¿hiciste un último cajón?" (matrices con control de stock).
+  function wireUpTDUltimoCajon(legajoStr) {
+    const btnSi = document.getElementById("btnUltSi");
+    const btnNo = document.getElementById("btnUltNo");
+    const siForm = document.getElementById("tdUltSiForm");
+    const noForm = document.getElementById("tdUltNoForm");
+    const fb = document.getElementById("tdUltFeedback");
+    if (btnSi) btnSi.addEventListener("click", () => {
+      if (siForm) siForm.classList.remove("hidden");
+      if (noForm) noForm.classList.add("hidden");
+      if (fb) fb.innerText = "";
+    });
+    if (btnNo) btnNo.addEventListener("click", () => {
+      if (noForm) noForm.classList.remove("hidden");
+      if (siForm) siForm.classList.add("hidden");
+      if (fb) fb.innerText = "";
+    });
+    const btnSiCargar = document.getElementById("btnUltSiCargar");
+    if (btnSiCargar) btnSiCargar.addEventListener("click", () => handleTDUltimoCajon(legajoStr, true));
+    const btnNoCargar = document.getElementById("btnUltNoCargar");
+    if (btnNoCargar) btnNoCargar.addEventListener("click", () => handleTDUltimoCajon(legajoStr, false));
+    // (v1.8.44) caso "ya cargado" (reabrio TD): boton unico para finalizar
+    const btnFin = document.getElementById("btnUltFinalizar");
+    if (btnFin) btnFin.addEventListener("click", () => confirmarTerminarDia());
+  }
+
+  // (v1.8.44) Carga el cierre del ultimo cajon (si todavia no se cargo) y finaliza
+  // el dia en UN solo paso (boton "Cargar y finalizar dia").
+  //   esSi=true  -> C con unidades (+ cajon completo) y suma al stock compartido.
+  //   esSi=false -> TM elegido, con inicio = fin del ultimo cajon (lastCajon.ts).
+  async function handleTDUltimoCajon(legajoStr, esSi) {
+    const fb = document.getElementById("tdUltFb2");
+    let s = readState(legajoStr);
+
+    if (!s.tdCargaPreviaListo) {
+      const lm = s.lastMatrix;
+      if (!lm || !lm.texto) {
+        if (fb) { fb.style.color = "#b91c1c"; fb.innerText = "Estado inválido: no hay matriz."; }
+        return;
+      }
+      const tsLM = lm.ts || "";
+      const tsLC = s.lastCajon?.ts || "";
+      const hsInicio = (tsLC && tsLC > tsLM) ? tsLC : tsLM;   // inicio = fin del ultimo cajon
+      const ahora = isoNow();
+
+      if (esSi) {
+        const uniVal = (document.getElementById("tdUltUni")?.value || "").trim();
+        const completo = !!document.getElementById("tdUltCompleto")?.checked;
+        if (!/^[0-9]+$/.test(uniVal)) {
+          if (fb) { fb.style.color = "#b91c1c"; fb.innerText = "Cargá la cantidad de unidades (solo enteros)."; }
+          return;
+        }
+        const cajPayload = {
+          id: uuidv4(), legajo: legajoStr, opcion: "C", descripcion: "Cajon",
+          texto: uniVal, ts_event: ahora, hs_inicio: hsInicio, matriz: lm.texto
+        };
+        if (lm.nombreOverride) cajPayload.nombreOverride = lm.nombreOverride;
+        updateStateAfterSend(legajoStr, cajPayload);
+        enqueue(cajPayload);
+        if (stockActivo(lm.texto)) {
+          registrarUnidadesStock(lm.texto, Number(uniVal), completo, legajoStr, cajPayload.id);
+        }
+        s = readState(legajoStr);
+        s.tdCargaPreviaListo = true;
+        s.tdCargaPreviaInfo = { tipo: "C", texto: `Último cajón: ${uniVal} unidades (Matriz ${lm.texto})${completo ? " — completo" : ""}` };
+        writeState(legajoStr, s);
+      } else {
+        const tmVal = (document.getElementById("tdUltNoTM")?.value || "").trim();
+        if (!tmVal) {
+          if (fb) { fb.style.color = "#b91c1c"; fb.innerText = "Elegí qué estuviste haciendo."; }
+          return;
+        }
+        const optTM = OPTIONS.find(o => o.code === tmVal);
+        const tmPayload = {
+          id: uuidv4(), legajo: legajoStr, opcion: tmVal, descripcion: optTM?.desc || tmVal,
+          texto: "", ts_event: ahora, hs_inicio: hsInicio, matriz: lm.texto || ""
+        };
+        updateStateAfterSend(legajoStr, tmPayload);
+        enqueue(tmPayload);
+        s = readState(legajoStr);
+        s.tdCargaPreviaListo = true;
+        s.tdCargaPreviaInfo = { tipo: tmVal, texto: `Tiempo Muerto: ${optTM?.desc || tmVal}` };
+        writeState(legajoStr, s);
+      }
+    }
+
+    // Cargado (ahora o antes) -> finalizar el dia directamente.
+    if (fb) { fb.style.color = "#15803d"; fb.innerText = "Finalizando día..."; }
+    await confirmarTerminarDia();
+  }
+
+  function closeTerminarDia() {
+    terminarDiaModal.classList.add("hidden");
+  }
+
+  async function confirmarTerminarDia() {
+    const legajoStr = legajoKey();
+    if (!legajoStr) { closeTerminarDia(); return; }
+
+    if (btnConfirmTD) { btnConfirmTD.disabled = true; btnConfirmTD.textContent = "Procesando..."; }
+
+    try {
+      const stateBefore = readState(legajoStr);
+
+      // (eliminado v1.8.20) Validacion y procesamiento de "cajon extra".
+      // Si el operario no apreto C antes de TD, ese cajon NO se carga.
+
+      // 1) Bulk replay snapshot del día (best-effort, idempotente)
+      const replayRes = await bulkSendDayReplay(legajoStr, stateBefore.last2);
+
+      // 2) Cerrar TM abierto si lo hay
+      if (stateBefore.lastDowntime) {
+        const ld = stateBefore.lastDowntime;
+        const closePayload = {
+          id: uuidv4(),
+          legajo: legajoStr,
+          opcion: ld.opcion,
+          descripcion: OPTIONS.find(o => o.code === ld.opcion)?.desc || "",
+          texto: ld.texto || "",
+          ts_event: isoNow(),
+          hs_inicio: ld.ts || "",
+          matriz: ""
+        };
+        updateStateAfterSend(legajoStr, closePayload);
+        enqueue(closePayload);
+      }
+
+      // 3) (eliminado v1.8.20) Cajon extra ya no se procesa.
+
+      // 4) FJ con id deterministico (upsert merge para overwrite si ya existe)
+      //    texto del FJ = snapshot completo del dia para auditoria:
+      //    { counts: {opcion: n, ...}, events: [{id, opcion, texto, ts, ...}, ...] }
+      //    Permite detectar mensajes perdidos: si un evento esta en events[] pero
+      //    no aparece en la tabla de Registros / db_n8n_espejo => se perdio en el envio.
+      //    InformesVirgilio/calculo.js ya soporta este formato (lineas 271-281).
+      const summaryFinal = getTodaySummaryForLegajo(legajoStr);
+      const stateForSnapshot = readState(legajoStr);
+      const eventsSnapshot = (stateForSnapshot.last2 || [])
+        .filter(it => it && it.opcion !== "FJ")
+        .map(it => ({
+          id: it.id,
+          opcion: it.opcion,
+          descripcion: it.descripcion || "",
+          texto: it.texto || "",
+          ts: it.ts,
+          hsInicio: it.hsInicio || "",
+          matriz: it.matriz || "",
+          nombreOverride: it.nombreOverride || null,
+          status: it.status || "",
+          sentAt: it.sentAt || "",
+          tries: it.tries || 0
+        }));
+      const fjId = `fj_${legajoStr}_${dayKeyAR()}`;
+      const fjTs = isoNow();
+      const fjPayload = {
+        id: fjId,
+        legajo: legajoStr,
+        opcion: "FJ",
+        descripcion: "Fin de Jornada",
+        texto: JSON.stringify({
+          counts: summaryFinal.counts,
+          events: eventsSnapshot
+        }),
+        ts_event: fjTs,
+        hs_inicio: "",
+        matriz: ""
+      };
+
+      try {
+        const { error } = await sb.from(TABLA_REGISTROS).upsert(fjPayload, { onConflict: "id" });
+        if (error) {
+          alert("Error al enviar el cierre del día: " + error.message);
+          if (btnConfirmTD) { btnConfirmTD.disabled = false; btnConfirmTD.textContent = "Sí, terminar día"; }
+          return;
+        }
+      } catch (err) {
+        alert("Error de red al enviar el cierre del día. Intentá de nuevo.");
+        if (btnConfirmTD) { btnConfirmTD.disabled = false; btnConfirmTD.textContent = "Sí, terminar día"; }
+        return;
+      }
+
+      // Reflejar FJ en el historial local (reemplaza FJ anterior si había)
+      const sFinal = readState(legajoStr);
+      sFinal.last2 = sFinal.last2.filter(it => it.opcion !== "FJ");
+      sFinal.last2.unshift({
+        id: fjId, legajo: legajoStr, opcion: "FJ", descripcion: "Fin de Jornada",
+        texto: fjPayload.texto, ts: fjTs, hsInicio: "", matriz: "",
+        status: "sent", sentAt: fjTs
+      });
+      // (v1.8.20) tdCajonPending ya no se usa, se elimino la pregunta de cajon extra.
+      // (v1.8.38) Limpiar flags de carga previa al cerrar dia exitosamente.
+      sFinal.tdCargaPreviaListo = false;
+      sFinal.tdCargaPreviaInfo = null;
+      writeState(legajoStr, sFinal);
+
+      // 5) Forzar flush de la cola (TM cerrado / cajon extra) con deadline 10s.
+      //    Si tarda mas, completamos TD igual; los eventos quedan en IDB y
+      //    siguen reintentando solos via background sync / flush automatico.
+      await Promise.race([
+        flushQueue(),
+        new Promise(resolve => setTimeout(resolve, 10000))
+      ]);
+
+      // 6) Avisar al operario si quedo algo pendiente (red intermitente)
+      const pendingAfter = readQueue().length;
+      const partes = [];
+      if (pendingAfter > 0) partes.push(`${pendingAfter} evento${pendingAfter > 1 ? "s" : ""} en cola`);
+      if (!replayRes.ok && replayRes.count > 0) partes.push("re-envio del dia incompleto");
+      if (partes.length) {
+        alert(`Tu cierre del dia se grabo OK, pero ${partes.join(" y ")}. Se reintentara automaticamente cuando haya red.`);
+      }
+
+      // 7) Cerrar modal y volver a pantalla de legajo
+      closeTerminarDia();
+      backToLegajo();
+    } finally {
+      if (btnConfirmTD) { btnConfirmTD.disabled = false; btnConfirmTD.textContent = "Sí, terminar día"; }
+    }
+  }
 
   /* ================= EVENTOS ================= */
   btnContinuar.addEventListener("click", goToOptions);
@@ -1922,6 +2741,38 @@ document.addEventListener("DOMContentLoaded", () => {
   btnBackLabel.addEventListener("click", backToLegajo);
   btnResetSelection.addEventListener("click", resetSelection);
   btnEnviar.addEventListener("click", sendFast);
+  if (btnTerminarDia) btnTerminarDia.addEventListener("click", terminarDia);
+  if (btnCancelTD) btnCancelTD.addEventListener("click", closeTerminarDia);
+  if (btnConfirmTD) btnConfirmTD.addEventListener("click", confirmarTerminarDia);
+  if (terminarDiaModal) terminarDiaModal.addEventListener("click", (e) => {
+    if (e.target === terminarDiaModal) closeTerminarDia();
+  });
+
+  // (v1.8.26) Boton "Continuar Cajon" se inyecta dinamicamente en row1 desde renderOptions().
+  // El handler se cablea ahi mismo. No hay event listener global.
+
+  // (v1.8.39) Botones de TEST eliminados — solo necesarios en desarrollo inicial.
+
+  const syncBadgeEl = document.getElementById("syncBadge");
+  if (syncBadgeEl) {
+    syncBadgeEl.addEventListener("click", async () => {
+      syncBadgeEl.style.transform = "scale(0.92)";
+      setTimeout(() => { syncBadgeEl.style.transform = ""; }, 120);
+      flushQueue();
+      if ("serviceWorker" in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) {
+            await reg.update().catch(() => {});
+            // Si hay SW esperando, decirle que tome el control ya
+            if (reg.waiting) {
+              reg.waiting.postMessage({ type: "SKIP_WAITING" });
+            }
+          }
+        } catch {}
+      }
+    });
+  }
   legajoInput.addEventListener("keydown", e => { if (e.key === "Enter") goToOptions(); });
 
   let legajoTimer = null;
@@ -1930,100 +2781,189 @@ document.addEventListener("DOMContentLoaded", () => {
     legajoTimer = setTimeout(renderSummary, 120);
   });
 
-  // Detectar cuando la app va a background
-  let backgroundTimeout = null;
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      clearTimeout(backgroundTimeout);
-      flushQueue();
-      flushDEMQueue();
-    } else {
-      // App va a background
-      clearTimeout(backgroundTimeout);
-      requestBackgroundSync();
-      // Hacer un último flush antes de ir a background
-      backgroundTimeout = setTimeout(async () => {
-        await flushQueue();
-      }, 500);
-    }
+    if (document.visibilityState === "visible") { flushQueue(); flushStockQueue(); }
   });
-
-  window.addEventListener("focus", () => {
-    clearTimeout(backgroundTimeout);
-    flushQueue();
-    flushDEMQueue();
-  });
-
-  window.addEventListener("blur", () => {
-    // Ventana pierde foco, solicitar sync
-    requestBackgroundSync();
-  });
-
+  window.addEventListener("focus", () => { flushQueue(); flushStockQueue(); });
   window.addEventListener("online", async () => {
-    console.log("Conexión internet restaurada");
-    const end = Date.now() + 5000;
-    while (Date.now() < end && readQueue().length) {
-      await flushQueue();
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    await flushDEMQueue();
-    requestBackgroundSync();
+    const end = Date.now() + 3000;
+    while (Date.now() < end && readQueue().length) await flushQueue();
+    flushStockQueue();
+  });
+  setInterval(() => { flushQueue(); flushStockQueue(); }, 3000);
+
+  /* ================= LOG SW (debug visible en celu) ================= */
+  const SW_LOG_KEY = "sw_log_v1";
+  function swLog(msg) {
+    const ts = new Date().toLocaleTimeString("es-AR", {
+      timeZone: "America/Argentina/Buenos_Aires",
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
+    const line = `[${ts}] ${msg}`;
+    console.log("[SW LOG]", line);
+    try {
+      const arr = JSON.parse(localStorage.getItem(SW_LOG_KEY) || "[]");
+      arr.push(line);
+      localStorage.setItem(SW_LOG_KEY, JSON.stringify(arr.slice(-100)));
+    } catch {}
+    renderSwLog();
+  }
+  function renderSwLog() {
+    const el = document.getElementById("swLog");
+    if (!el) return;
+    try {
+      const arr = JSON.parse(localStorage.getItem(SW_LOG_KEY) || "[]");
+      if (!arr.length) { el.innerHTML = '<div style="color:#9ca3af;">(sin eventos)</div>'; return; }
+      const esc = (s) => String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+      el.innerHTML = arr.slice(-40).reverse().map(l => `<div>${esc(l)}</div>`).join("");
+    } catch {}
+  }
+  const btnClearSwLog = document.getElementById("btnClearSwLog");
+  if (btnClearSwLog) btnClearSwLog.addEventListener("click", () => {
+    try { localStorage.removeItem(SW_LOG_KEY); } catch {}
+    renderSwLog();
+  });
+  renderSwLog();
+
+  // Capturar errores globales en el log
+  window.addEventListener("error", (e) => {
+    try { swLog(`JS error: ${e.message || "?"} @ ${e.filename || "?"}:${e.lineno || "?"}`); } catch {}
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    try {
+      const reason = e.reason;
+      const msg = (reason && reason.message) || String(reason || "?");
+      swLog(`Promise rejection: ${msg}`);
+    } catch {}
   });
 
-  // Intervalo principal de sync
-  const syncInterval = setInterval(() => {
-    protectQueue(); // Asegurar que la cola no se pierda
-    if (readQueue().length > 0 && navigator.onLine) {
-      flushQueue();
-    }
-    flushDEMQueue();
-  }, 5000);
+  swLog(`Pagina cargada (${LOCAL_VERSION})`);
 
-  // Escuchar mensajes del Service Worker
+  /* ================= SERVICE WORKER ================= */
+  let __swReloading = false;
+
+  // Brave Android ignora updateViaCache:"none" y devuelve sw.js cacheado
+  // en cada reg.update(), asi que nunca dispara updatefound. Fix:
+  // fetch manual con cache-buster + comparar CACHE_VERSION + reload si cambio.
+  // El reload triggerea un registro fresh de SW que SI funciona.
+  //
+  // Anti-loop: el CDN puede tener sw.js nuevo pero app.js viejo cacheado.
+  // Si recargamos por update hace <COOLDOWN y todavia vemos mismatch, NO recargar.
+  // (v1.8.28) En TESTEO usamos 15s para iterar rapido. En PROD queda 60s.
+  const UPDATE_RELOAD_KEY = "__lastUpdateReload";
+  const IS_TESTEO = /TESTEO/i.test(window.location.href);
+  const RELOAD_COOLDOWN_MS = IS_TESTEO ? 15000 : 60000;
+  async function checkForUpdateManual() {
+    try {
+      const res = await fetch(`sw.js?_t=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) { swLog(`check manual HTTP ${res.status}`); return; }
+      const txt = await res.text();
+      const m = txt.match(/CACHE_VERSION\s*=\s*["']([^"']+)["']/);
+      if (!m) { swLog("check manual: no se encontro CACHE_VERSION"); return; }
+      const remote = m[1];
+      swLog(`check manual: local=${LOCAL_VERSION} remote=${remote}`);
+      if (remote === LOCAL_VERSION || __swReloading) return;
+
+      const lastReload = parseInt(sessionStorage.getItem(UPDATE_RELOAD_KEY) || "0", 10);
+      const sinceMs = Date.now() - lastReload;
+      if (lastReload > 0 && sinceMs < RELOAD_COOLDOWN_MS) {
+        swLog(`Update ${LOCAL_VERSION}->${remote} pero ya recargamos hace ${Math.round(sinceMs/1000)}s (CDN a mitad de deploy), espero`);
+        return;
+      }
+      __swReloading = true;
+      sessionStorage.setItem(UPDATE_RELOAD_KEY, String(Date.now()));
+      swLog(`Update detectado ${LOCAL_VERSION} -> ${remote}, reload`);
+      setTimeout(() => window.location.reload(), 300);
+    } catch (e) {
+      swLog(`check manual error: ${(e && e.message) || e}`);
+    }
+  }
+
   if ("serviceWorker" in navigator) {
+    swLog("serviceWorker disponible - iniciando registro");
+
+    // Si la pagina cargo SIN controller (primer registro de SW en este origin),
+    // el controllerchange que viene cuando el SW toma control por primera vez
+    // NO es un update real - es solo "ahora hay SW". Skipear el reload en ese
+    // caso evita 2-3 reloads consecutivos al primer load del operario.
+    const __hadInitialController = !!navigator.serviceWorker.controller;
+
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      swLog(`controllerchange (ctrl=${navigator.serviceWorker.controller ? "si" : "no"})`);
+      if (!__hadInitialController) {
+        swLog("primer registro de SW - no recargar");
+        return;
+      }
+      if (__swReloading) return;
+      __swReloading = true;
+      swLog("Reload por controllerchange");
+      setTimeout(() => window.location.reload(), 300);
+    });
+
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" })
+      .then((reg) => {
+        swLog(`SW register OK scope=${reg.scope}`);
+        if (reg.installing) swLog("Al cargar: hay SW instalando");
+        if (reg.waiting)    swLog("Al cargar: hay SW waiting - envio SKIP_WAITING");
+        if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+        if (reg.active)     swLog(`Al cargar: SW activo (state=${reg.active.state})`);
+
+        reg.addEventListener("updatefound", () => {
+          const nw = reg.installing;
+          swLog(`updatefound (installing=${nw ? nw.state : "null"})`);
+          if (!nw) return;
+          nw.addEventListener("statechange", () => {
+            swLog(`SW nuevo state=${nw.state}`);
+            if (nw.state === "installed" && navigator.serviceWorker.controller) {
+              swLog("Envio SKIP_WAITING al SW nuevo");
+              nw.postMessage({ type: "SKIP_WAITING" });
+            }
+          });
+        });
+      })
+      .catch((err) => {
+        swLog(`Error registrando SW: ${(err && err.message) || err}`);
+        console.warn("SW no se pudo registrar:", err);
+      });
+
     navigator.serviceWorker.addEventListener("message", (event) => {
-      if (event.data.type === "SYNC_RESULTS") {
-        console.log("Resultados de sync desde Service Worker:", event.data.resultados);
-        renderSummary();
-        renderPending();
+      const d = event.data || {};
+      if (d.type === "SW_UPDATED") {
+        swLog(`SW_UPDATED recibido v=${d.version} - reload`);
+        if (__swReloading) return;
+        __swReloading = true;
+        setTimeout(() => window.location.reload(), 300);
       }
     });
+
+    setInterval(checkForUpdateManual, 60000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") checkForUpdateManual();
+    });
+    checkForUpdateManual();
+  } else {
+    swLog("serviceWorker NO disponible en este browser");
   }
 
   /* ================= INIT ================= */
-  cargarCatalogos().then(async () => {
-    // Proteger la cola desde el inicio
-    protectQueue();
-
-    // Auto-login con legajo guardado en localStorage
-    const legajoGuardado = localStorage.getItem("gp_legajo_record");
-
+  updateSyncBadge();
+  // reconcilia primero (saca de LS los que el SW ya envio en background) y despues migra
+  reconcileQueueWithIDB().then(() => {
+    migrateQueueToIDB();
+    updateSyncBadge();
+  });
+  if (readQueue().length > 0) registerBackgroundSync();
+  cargarCatalogos().then(() => {
     renderOptions();
     renderSummary();
     renderPending();
-    console.log("app.js OK - Supabase directo v2 + Service Worker + Background Sync");
-
-    // Auto-login si hay legajo guardado
-    if (legajoGuardado && empleadosMap.has(legajoGuardado)) {
-      legajoInput.value = legajoGuardado;
-      setTimeout(() => goToOptions(), 300); // Pequeño delay para que UI se renderice primero
-    }
-
-    // Recuperar DEM pendiente si cerro el navegador (mismo dia)
-    const pendingDEM = loadPendingDEM();
-    if (pendingDEM && pendingDEM.legajo && pendingDEM.demResult) {
-      // Pre-cargar el legajo del DEM pendiente para que el modal aparezca al entrar
-      legajoInput.value = pendingDEM.legajo;
-      const descripcion = await mostrarModalDEM(pendingDEM.demResult.totalSeg);
-      await procesarDEM(pendingDEM.legajo, pendingDEM.demResult, descripcion);
-    }
-
-    // Bug 2 fix: reintentar DEMs offline
-    await flushDEMQueue();
+    updateSyncBadge();
+    console.log(`app.js OK - ${LOCAL_VERSION}`);
   }).catch(err => {
     console.error("Error cargando catalogos:", err);
     renderOptions();
     renderSummary();
     renderPending();
+    updateSyncBadge();
   });
 });

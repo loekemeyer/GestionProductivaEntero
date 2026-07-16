@@ -17,6 +17,7 @@ let sectoresCache = null;
 let stockTalleristaCache = null;
 let entregasCache = null;
 let enviosCache = null;
+let devolucionesCache = null;
 let sectoresPorTalleristaCache = null;
 let articulosCajasCache = null;
 let cajasCache = null;
@@ -53,6 +54,11 @@ rebuildComponenteAGrjs();
 //   - Fila SP (M10/M9): cuenta solo entregas Cod=SP (las que vienen de la transformacion).
 let TRANSFORMACION_SCS = new Set();
 let TRANSFORMACION_SP_TO_SC = {};
+// Envíos remap: M6→M5, M8→M7 (cromado via PS Pedernera).
+// Envíos cargados con sector M6/M8 se muestran en la fila M5/M7.
+const TRANSFORMACION_ENVIOS_ORIGEN = { M5: ['M6'], M7: ['M8'] };
+// SC ocultos: entregas absorbidas por su SP (M6→M10, M8→M9). Filas M6/M8 no se renderizan.
+const TRANSFORMACION_SC_OCULTAR = new Set(['M6', 'M8']);
 function rebuildTransformaciones(){
   TRANSFORMACION_SP_TO_SC = {};
   TRANSFORMACION_SCS.forEach(sc => {
@@ -279,6 +285,20 @@ function sortKeyFechaDDMM(value){
   return (p.mm * 100) + p.dd;
 }
 
+// Sort cronologico real (con año) — acepta ISO YYYY-MM-DD, DD/MM/YYYY y DD/MM (asume año actual).
+// Usado en popup Saldo para intercalar envios (DD/MM) con entregas (ISO o DD/MM) por fecha real.
+function sortKeyFechaCron(value){
+  const s = String(value || "").trim();
+  if (!s) return 99999999;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return Number(iso[1]) * 10000 + Number(iso[2]) * 100 + Number(iso[3]);
+  const ddmmyyyy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ddmmyyyy) return Number(ddmmyyyy[3]) * 10000 + Number(ddmmyyyy[2]) * 100 + Number(ddmmyyyy[1]);
+  const ddmm = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (ddmm) return new Date().getFullYear() * 10000 + Number(ddmm[2]) * 100 + Number(ddmm[1]);
+  return 99999999;
+}
+
 function elegirConsumo(ch, lk){
   const a = Number(ch || 0);
   const b = Number(lk || 0);
@@ -424,7 +444,7 @@ function renderTodosFiltrados(){
     });
   }
 
-  setStatus(`${filtrados.length} piezas en ${porTall.size} talleristas`);
+  setStatus(`${filtrados.length} partes en ${porTall.size} talleristas`);
 
   resultEl.innerHTML = `
     <div class="articulo">
@@ -575,14 +595,31 @@ async function cargarConsumos(){
   return finalMap;
 }
 
+// Helper: paginar para evitar cap 1000 de Supabase + safety net contra loops infinitos
+async function fetchAllPaginated(table, selectCols = "*"){
+  const out = [];
+  const PAGE = 1000;
+  const MAX_PAGES = 100; // 100k filas max — safety net contra runaway loops
+  let from = 0;
+  for (let page = 0; page < MAX_PAGES; page++){
+    const { data, error } = await supabaseClient.from(table).select(selectCols).range(from, from + PAGE - 1);
+    if (error){ console.error(error); throw new Error(`${table}: ${error.message}`); }
+    if (!data || !data.length) return out;
+    out.push(...data);
+    if (data.length < PAGE) return out;
+    from += PAGE;
+    if (page === MAX_PAGES - 1) {
+      console.warn(`[fetchAllPaginated] ${table}: alcanzo MAX_PAGES=${MAX_PAGES}, posible cap excedido. Filas: ${out.length}`);
+    }
+  }
+  return out;
+}
+
 async function cargarSectores(){
   if (sectoresCache) return sectoresCache;
 
-  const { data, error } = await supabaseClient
-    .from("Despiece x Articulo")
-    .select("*")
-    .limit(20000);
-
+  const data = await fetchAllPaginated("Despiece x Articulo");
+  const error = null;
   if (error){
     console.error(error);
     throw new Error("Error al leer Despiece x Articulo");
@@ -745,8 +782,8 @@ async function cargarProporciones(){
   if (proporcionCache) return proporcionCache;
   const sectoresData = await cargarSectores();
   const [respProp, respVxT] = await Promise.all([
-    supabaseClient.from("Proporcion_Articulo_Tallerista").select("*").limit(20000),
-    supabaseClient.from("Articulos Virgilio X Tallerista").select("Tallerista,Cod_Art").limit(20000)
+    fetchAllPaginated("Proporcion_Articulo_Tallerista").then(d => ({ data: d, error: null })),
+    fetchAllPaginated("Articulos Virgilio X Tallerista", "Tallerista,Cod_Art").then(d => ({ data: d, error: null }))
   ]);
   if (respProp.error) throw new Error("Proporcion_Articulo_Tallerista: " + respProp.error.message);
   if (respVxT.error) throw new Error("Articulos VxT (proporciones): " + respVxT.error.message);
@@ -800,11 +837,8 @@ async function cargarProporciones(){
 async function cargarStockTallerista(){
   if (stockTalleristaCache) return stockTalleristaCache;
 
-  const { data, error } = await supabaseClient
-    .from("Articulos Virgilio X Tallerista")
-    .select("*")
-    .limit(20000);
-
+  const data = await fetchAllPaginated("Articulos Virgilio X Tallerista");
+  const error = null;
   if (error){
     console.error(error);
     throw new Error("Error al leer Articulos Virgilio X Tallerista");
@@ -830,10 +864,12 @@ async function cargarStockTallerista(){
 async function cargarEntregas(){
   if (entregasCache) return entregasCache;
 
-  const [respEntregas, respPartes] = await Promise.all([
-    supabaseClient.from("Entregas Tallerista Virgilio").select("*").limit(20000),
-    supabaseClient.from("Partes x Tallerista").select("*").limit(20000)
+  const [entregasData, partesData] = await Promise.all([
+    fetchAllPaginated("Entregas_Tall_Todas"),
+    fetchAllPaginated("Partes x Tallerista")
   ]);
+  const respEntregas = { data: entregasData, error: null };
+  const respPartes = { data: partesData, error: null };
 
   if (respEntregas.error){
     console.error(respEntregas.error);
@@ -906,6 +942,7 @@ async function cargarEntregas(){
   sectoresPorTalleristaCache = _sectoresPorTall;
 
   const detalleByNombreTallAndCod = new Map();
+  const detalleByNombreTallAndCodGrj = new Map(); // index paralelo por Cod_GRJ (para transformaciones 1:1 — fila SC muestra entregas)
   const totalByNombreTallAndCod = new Map();
 
   (respEntregas.data || []).forEach(r => {
@@ -931,15 +968,18 @@ async function cargarEntregas(){
     if (!nombreTall || !cod || !cajas) return;
 
     const key = `${nombreTall}__${cod}`;
+    const item = { fecha, cajas, cod, codGrj, kgGrj };
 
     if (!detalleByNombreTallAndCod.has(key)) detalleByNombreTallAndCod.set(key, []);
-    detalleByNombreTallAndCod.get(key).push({
-      fecha,
-      cajas,
-      cod,
-      codGrj,
-      kgGrj
-    });
+    detalleByNombreTallAndCod.get(key).push(item);
+
+    // Para transformaciones 1:1, indexar tambien por Cod_GRJ
+    // (ej. Cod=M10, Cod_GRJ=M6 → entrega visible en fila M6 que es lo que Poly devuelve realmente)
+    if (codGrj) {
+      const keyGrj = `${nombreTall}__${normalizeCode(codGrj)}`;
+      if (!detalleByNombreTallAndCodGrj.has(keyGrj)) detalleByNombreTallAndCodGrj.set(keyGrj, []);
+      detalleByNombreTallAndCodGrj.get(keyGrj).push(item);
+    }
   });
 
   // ===== Talleristas via facturas: derivar entregas desde Entregas PS =====
@@ -1024,6 +1064,7 @@ async function cargarEntregas(){
 
   entregasCache = {
     detalleByNombreTallAndCod,
+    detalleByNombreTallAndCodGrj,
     uniXCajaByNombreTallAndCod,
     uniXCajaBySector,
     sectorByTallAndCod,
@@ -1036,11 +1077,10 @@ async function cargarEntregas(){
 async function cargarEnvios(){
   if (enviosCache) return enviosCache;
 
-  const { data, error } = await supabaseClient
-    .from("Envios a Talleristas")
-    .select("*")
-    .limit(20000);
-
+  // Paginar: Supabase tiene cap default de 1000 filas por query, .limit() no lo eleva
+  // Safety net: MAX_PAGES=100 (100k filas max) para evitar runaway loops
+  const data = await fetchAllPaginated("Envios a Talleristas");
+  const error = null;
   if (error){
     console.error(error);
     throw new Error("Error al leer Envios a Talleristas");
@@ -1050,6 +1090,10 @@ async function cargarEnvios(){
   const totalKgMap = new Map();
   const totalUnidadesMap = new Map();
   const totalUniMap = new Map();
+  // Index por sector (para remap M6→M5, M8→M7)
+  const sectorDetalleMap = new Map();
+  const sectorTotalKgMap = new Map();
+  const sectorTotalUnidadesMap = new Map();
 
   (data || []).forEach(r => {
     const tallerista = normalizeText(pick(r, ["Tallerista", "tallerista", "TALLERISTA"]));
@@ -1075,6 +1119,15 @@ async function cargarEnvios(){
 
     totalKgMap.set(key, (totalKgMap.get(key) || 0) + kg);
     totalUnidadesMap.set(key, (totalUnidadesMap.get(key) || 0) + unidades);
+
+    // Index por sector
+    if (sector) {
+      const secKey = `${tallerista}__${sector}`;
+      if (!sectorDetalleMap.has(secKey)) sectorDetalleMap.set(secKey, []);
+      sectorDetalleMap.get(secKey).push({ fecha, kg, cajones, unidades });
+      sectorTotalKgMap.set(secKey, (sectorTotalKgMap.get(secKey) || 0) + kg);
+      sectorTotalUnidadesMap.set(secKey, (sectorTotalUnidadesMap.get(secKey) || 0) + unidades);
+    }
   });
 
   for (const [key, arr] of detalleMap.entries()){
@@ -1086,10 +1139,47 @@ async function cargarEnvios(){
     detalleMap,
     totalKgMap,
     totalUnidadesMap,
-    totalUniMap
+    totalUniMap,
+    sectorDetalleMap,
+    sectorTotalKgMap,
+    sectorTotalUnidadesMap
   };
 
   return enviosCache;
+}
+
+async function cargarDevoluciones(){
+  if (devolucionesCache) return devolucionesCache;
+
+  const data = await fetchAllPaginated("Devoluciones Tallerista Cervantes");
+
+  const detalleMap = new Map();
+  const totalKgMap = new Map();
+
+  (data || []).forEach(r => {
+    const tall = normalizeText(r.Nombre_Tall || "");
+    const sector = normalizeText(r.Sector || "");
+    const desc = String(r.Descripcion || "").trim();
+    const fecha = String(r.Fecha || "").trim();
+    const kg = parseDecimal(r.Kg);
+    const destino = String(r.destino || "").trim();
+
+    if (!tall || !sector || !kg) return;
+
+    const key = `${tall}__${sector}`;
+
+    if (!detalleMap.has(key)) detalleMap.set(key, []);
+    detalleMap.get(key).push({ fecha, kg, destino, desc });
+
+    totalKgMap.set(key, (totalKgMap.get(key) || 0) + kg);
+  });
+
+  for (const [key, arr] of detalleMap.entries()){
+    arr.sort((a, b) => sortKeyFechaCron(a.fecha) - sortKeyFechaCron(b.fecha));
+  }
+
+  devolucionesCache = { detalleMap, totalKgMap };
+  return devolucionesCache;
 }
 
 async function cargarArticulosCajas(){
@@ -1254,16 +1344,45 @@ function obtenerEntregasTallerista(nombreTallerista, codigos, entregasData, sect
   }
 
   // Resolver codigos efectivos por tipo de fila:
-  //   - SP de transformacion (M10/M9): solo el SP — Recepcion guarda Cod=SP.
-  //   - SC de transformacion (M6/M8): excluir el SC mismo (no hay entregas con Cod=SC,
-  //     y NO debe expandirse via GRJ_COMPONENTES al SP — eso doble-contaba la entrega).
+  //   - SC de transformacion (M6/M8): mostrar entregas via lookup por Cod_GRJ
+  //     (Cod=M10/Cod_GRJ=M6 entonces fila M6 muestra el aporte real del tallerista).
+  //     Early return — no usar lookup por Cod.
+  //   - SP de transformacion (M10/M9): NO mostrar entregas con codGrj seteado
+  //     (esas son transformaciones, no entregas reales del tallerista).
   //   - resto: codigos original (con expansion GRJ normal).
   const sec = String(sectorProce || "").trim();
+
+  // CASO ESPECIAL: TRANSFORMACION_SCS (M6/M8/F7) — fila SC muestra entregas por Cod_GRJ
+  if (TRANSFORMACION_SCS.has(sec) && entregasData.detalleByNombreTallAndCodGrj) {
+    const keyGrj = `${nombreTallNorm}__${sec}`;
+    const arr = entregasData.detalleByNombreTallAndCodGrj.get(keyGrj) || [];
+    arr.forEach(x => {
+      const esGrj = !!x.codGrj;
+      const sectorKey = `${nombreTallNorm}__${x.cod}__${sectorNorm}`;
+      let uniXCaja = esGrj ? 1 : Number(
+        entregasData.uniXCajaBySector.get(sectorKey) ||
+        entregasData.uniXCajaByNombreTallAndCod.get(`${nombreTallNorm}__${x.cod}`) || 0
+      );
+      if (!esGrj && uniXCaja === 0 && defaultUniXCaja > 0) uniXCaja = defaultUniXCaja;
+      const unidades = esGrj ? x.cajas : x.cajas * uniXCaja;
+      totalUnidades += unidades;
+      detalle.push({
+        fecha: x.fecha,
+        unidades,
+        cajas: x.cajas,
+        uniXCaja,
+        cod: x.cod,
+        codGrj: x.codGrj,
+        kgGrj: x.kgGrj
+      });
+    });
+    detalle.sort((a, b) => sortKeyFechaCron(a.fecha) - sortKeyFechaCron(b.fecha));
+    return { totalUnidades, detalle };
+  }
+
   let efectivos;
   if (TRANSFORMACION_SP_TO_SC[sec]) {
     efectivos = [sec];
-  } else if (TRANSFORMACION_SCS.has(sec)) {
-    efectivos = codigos.filter(c => c !== sec);
   } else {
     efectivos = codigos;
   }
@@ -1280,11 +1399,19 @@ function obtenerEntregasTallerista(nombreTallerista, codigos, entregasData, sect
     }
   }
 
+  const esFilaSP_Transformacion = !!TRANSFORMACION_SP_TO_SC[sec];
+
   for (const cod of codigosExpandidos){
     const key = `${nombreTallNorm}__${cod}`;
 
     const arr = entregasData.detalleByNombreTallAndCod.get(key) || [];
     arr.forEach(x => {
+      // Excluir transformaciones de fila SP — salvo si el SC destino está oculto
+      // (M6/M8 ocultos → sus entregas se absorben en M10/M9).
+      if (esFilaSP_Transformacion && x.codGrj) {
+        const scMapeado = TRANSFORMACION_SP_TO_SC[sec];
+        if (!TRANSFORMACION_SC_OCULTAR.has(scMapeado)) return;
+      }
       const esGrj = !!x.codGrj;
       const sectorKey = `${nombreTallNorm}__${cod}__${sectorNorm}`;
       let uniXCaja = esGrj ? 1 : Number(
@@ -1307,7 +1434,7 @@ function obtenerEntregasTallerista(nombreTallerista, codigos, entregasData, sect
     });
   }
 
-  detalle.sort((a, b) => sortKeyFechaDDMM(a.fecha) - sortKeyFechaDDMM(b.fecha));
+  detalle.sort((a, b) => sortKeyFechaCron(a.fecha) - sortKeyFechaCron(b.fecha));
 
   return {
     totalUnidades,
@@ -1323,6 +1450,7 @@ function obtenerEnviosTallerista(nombre, sector, descripcion, enviosData, kgXUni
   const totalUnidadesEnvio = Number((enviosData.totalUnidadesMap || new Map()).get(key) || 0);
   const totalUni = kgXUni > 0 ? Math.round(totalKg / kgXUni) : totalUnidadesEnvio;
   const detalleBase = enviosData.detalleMap.get(key) || [];
+
 
   const detalle = detalleBase.map(x => {
     const unidades = kgXUni > 0
@@ -1386,10 +1514,10 @@ async function buscar(nombreParam){
     return;
   }
 
-  let consumoMap, sectoresData, stockMap, entregasData, enviosData, articulosCajas, cajasData, cajasExcluidasMap, proporcionData;
+  let consumoMap, sectoresData, stockMap, entregasData, enviosData, articulosCajas, cajasData, cajasExcluidasMap, proporcionData, devolucionesData;
 
   try{
-    [consumoMap, sectoresData, stockMap, entregasData, enviosData, articulosCajas, cajasData, cajasExcluidasMap, , proporcionData] = await Promise.all([
+    [consumoMap, sectoresData, stockMap, entregasData, enviosData, articulosCajas, cajasData, cajasExcluidasMap, , proporcionData, devolucionesData] = await Promise.all([
       cargarConsumos(),
       cargarSectores(),
       cargarStockTallerista(),
@@ -1399,7 +1527,8 @@ async function buscar(nombreParam){
       cargarCajas(),
       cargarCajasExcluidas(),
       cargarGRJDesdeBD(), // sin destructure — solo asegurar que GRJ_COMPONENTES esta poblado
-      cargarProporciones()
+      cargarProporciones(),
+      cargarDevoluciones()
     ]);
   }catch (err){
     console.error(err);
@@ -1420,7 +1549,7 @@ async function buscar(nombreParam){
       return cods.some(c => factSet.has(c));
     });
     if (!filasTallerista.length) {
-      setStatus("No hay piezas via facturas para este tallerista");
+      setStatus("No hay partes via facturas para este tallerista");
       return;
     }
   }
@@ -1467,6 +1596,9 @@ async function buscar(nombreParam){
         if (fb) { sectorProce = fb; break; }
       }
     }
+
+    // SC ocultos (M6/M8): entregas absorbidas por su SP (M10/M9), no renderizar fila
+    if (TRANSFORMACION_SC_OCULTAR.has(sectorProce)) return;
 
     const kgXCajon = obtenerKgXCajon(descripcion, codigos, sectoresData);
     const kgXUni = obtenerKgXUni(descripcion, codigos, sectoresData);
@@ -1548,7 +1680,7 @@ async function buscar(nombreParam){
       ? (consumoTotal > 0 ? consumoTotal / 1000 : 0)
       : calcularCajones(consumoTotal, kgXUni, partesXUni, kgXCajon);
 
-    let stockInicialKg = parseDecimal(
+    let stockInicialUni = parseDecimal(
       pick(r, [
         "Stock Inicial",
         "stock_inicial",
@@ -1556,25 +1688,54 @@ async function buscar(nombreParam){
         "Stock_Inicial"
       ])
     );
-    if (!stockInicialKg && sectorProce && entregasData.stockInicialByTallAndSectorAndDesc) {
+    if (!stockInicialUni && sectorProce && entregasData.stockInicialByTallAndSectorAndDesc) {
       const siKey = `${normalizeText(nombre)}__${sectorProce}__${normalizeText(descripcion)}`;
-      stockInicialKg = entregasData.stockInicialByTallAndSectorAndDesc.get(siKey) || 0;
+      stockInicialUni = entregasData.stockInicialByTallAndSectorAndDesc.get(siKey) || 0;
     }
 
-    const enviosInfo = obtenerEnviosTallerista(nombre, sectorProce, descripcion, enviosData, kgXUni);
+    // TRANSFORMACION_SCS (M6/M8/F7): el tallerista solo ENTREGA estos sectores, no recibe envíos
+    let enviosInfo;
+    if (TRANSFORMACION_SCS.has(sectorProce)) {
+      enviosInfo = { totalKg: 0, totalUni: 0, detalle: [] };
+    } else {
+      enviosInfo = obtenerEnviosTallerista(nombre, sectorProce, descripcion, enviosData, kgXUni);
+      // Merge envíos de sectores origen (M6→M5, M8→M7)
+      const origenes = TRANSFORMACION_ENVIOS_ORIGEN[sectorProce];
+      if (origenes) {
+        for (const origenSc of origenes) {
+          const secKey = `${normalizeText(nombre)}__${normalizeText(origenSc)}`;
+          const oKg = enviosData.sectorTotalKgMap.get(secKey) || 0;
+          const oUniEnv = (enviosData.sectorTotalUnidadesMap || new Map()).get(secKey) || 0;
+          const oUni = kgXUni > 0 ? Math.round(oKg / kgXUni) : oUniEnv;
+          const oDet = (enviosData.sectorDetalleMap.get(secKey) || []).map(x => ({
+            fecha: x.fecha, kg: x.kg, cajones: x.cajones,
+            unidades: kgXUni > 0 ? Math.round(Number(x.kg || 0) / kgXUni) : Number(x.unidades || 0)
+          }));
+          enviosInfo.totalKg += oKg;
+          enviosInfo.totalUni += oUni;
+          enviosInfo.detalle.push(...oDet);
+        }
+        enviosInfo.detalle.sort((a, b) => sortKeyFechaDDMM(a.fecha) - sortKeyFechaDDMM(b.fecha));
+      }
+    }
     const totalEnviosUni = enviosInfo.totalUni;
 
     const entregasInfo = obtenerEntregasTallerista(nombre, codigos, entregasData, sectorProce, esCarton ? 1 : undefined);
     const totalEntregasUni = entregasInfo.totalUnidades;
 
+    // Devoluciones: Kg devueltos por tallerista+sector, convertidos a unidades
+    const devKey = `${normalizeText(nombre)}__${normalizeText(sectorProce)}`;
+    const devTotalKg = devolucionesData ? (devolucionesData.totalKgMap.get(devKey) || 0) : 0;
+    const devDetalles = devolucionesData ? (devolucionesData.detalleMap.get(devKey) || []) : [];
+    const totalDevolucionesUni = kgXUni > 0 ? Math.round(devTotalKg / kgXUni) : 0;
+
     let onlineUni, onlineKg, onlineCaj;
     if (esCarton) {
-      // Cartones se cuentan en unidades (no tienen kgXUni ni kgXCajon)
       onlineUni = totalEnviosUni - totalEntregasUni;
       onlineKg = 0;
       onlineCaj = onlineUni;
     } else if (kgXUni > 0) {
-      onlineUni = (stockInicialKg / kgXUni) + totalEnviosUni - totalEntregasUni;
+      onlineUni = stockInicialUni + totalEnviosUni - totalEntregasUni - totalDevolucionesUni;
       onlineKg = onlineUni * kgXUni;
       onlineCaj = kgXCajon > 0 ? (onlineKg / kgXCajon) : 0;
     } else {
@@ -1598,6 +1759,52 @@ async function buscar(nombreParam){
             : `${formatFechaDDMMAAAA(x.fecha)} - Cod ${x.cod} - ${formatNumber(x.unidades)} uni`
         ).join("|")
       : "Sin entregas";
+
+    const saldoMovs = [
+      ...enviosInfo.detalle.map(x => ({
+        concepto: "Envío",
+        fecha: x.fecha,
+        uniMedida: Number(x.kg || 0) > 0 ? "Kg" : "Uni",
+        cant: Number(x.kg || 0) > 0 ? Number(x.kg) : Number(x.unidades || 0),
+        unidades: Number(x.unidades || 0),
+        cod: ""
+      })),
+      ...entregasInfo.detalle.map(x => {
+        return {
+          concepto: "Entrega",
+          fecha: x.fecha,
+          uniMedida: x.codGrj ? "Cajón" : "Caja",
+          cant: Number(x.cajas || 0),
+          unidades: -Number(x.unidades || 0),
+          cod: x.codGrj || x.cod || ""
+        };
+      }),
+      ...devDetalles.map(x => {
+        const devKg = Number(x.kg || 0);
+        const devUni = kgXUni > 0 ? Math.round(devKg / kgXUni) : 0;
+        return {
+          concepto: "Devolución",
+          fecha: x.fecha,
+          uniMedida: "Kg",
+          cant: devKg,
+          unidades: -devUni,
+          cod: x.destino === "ANALIZAR" ? `Analizar (${sectorProce})` : `${x.destino}(${sectorProce})`
+        };
+      })
+    ].sort((a, b) => sortKeyFechaCron(a.fecha) - sortKeyFechaCron(b.fecha));
+    let runSaldoSec = stockInicialUni;
+    let popupSaldoNegativo = false;
+    for (const m of saldoMovs) {
+      runSaldoSec += Number(m.unidades || 0);
+      if (runSaldoSec < 0) { popupSaldoNegativo = true; break; }
+    }
+    const popupSaldoEncoded = encodeURIComponent(JSON.stringify({
+      stockInicial: stockInicialUni,
+      movs: saldoMovs,
+      negativo: popupSaldoNegativo,
+      consumoTotal,
+      kgXUni
+    }));
 
     let codsDisplay = TALLERISTAS_MOSTRAR_GRJ.has(nombre)
       ? convertirCodsAGrj(sectorProce, codsRaw, sectoresData, talleristaGrjs)
@@ -1633,8 +1840,8 @@ async function buscar(nombreParam){
       sectorProce, descripcion, codsRaw: codsDisplay, rubro,
       onlineKg, onlineCaj, onlineUni, cajonesEnviar,
       totalEnviosUni, totalEntregasUni,
-      popupEnviosItems, popupEntregasItems, popupConsumoItems,
-      stockInicialKg, kgXUni, kgXCajon, consumoTotal, maxCajones
+      popupEnviosItems, popupEntregasItems, popupSaldoEncoded, popupSaldoNegativo, popupConsumoItems,
+      stockInicialUni, kgXUni, kgXCajon, consumoTotal, maxCajones
     });
   });
 
@@ -1663,6 +1870,32 @@ async function buscar(nombreParam){
         ).join("|")
       : "Sin entregas";
 
+    const saldoMovsCaja = [
+      ...enviosInfo.detalle.map(x => ({
+        concepto: "Envío",
+        fecha: x.fecha,
+        uniMedida: Number(x.kg || 0) > 0 ? "Kg" : "Uni",
+        cant: Number(x.kg || 0) > 0 ? Number(x.kg) : Number(x.unidades || 0),
+        unidades: Number(x.unidades || 0),
+        cod: ""
+      })),
+      ...entregasInfo.detalle.map(x => {
+        return {
+          concepto: "Entrega",
+          fecha: x.fecha,
+          uniMedida: x.codGrj ? "Cajón" : "Caja",
+          cant: Number(x.cajas || 0),
+          unidades: -Number(x.unidades || 0),
+          cod: x.codGrj || x.cod || ""
+        };
+      })
+    ].sort((a, b) => sortKeyFechaCron(a.fecha) - sortKeyFechaCron(b.fecha));
+    let runSaldoCaja = Number(c.stockVirg || 0);
+    let popupSaldoNegativo = false;
+    for (const m of saldoMovsCaja) {
+      runSaldoCaja += Number(m.unidades || 0);
+      if (runSaldoCaja < 0) { popupSaldoNegativo = true; break; }
+    }
     // Desglose Cons x Parte: suma del consumo de cada articulo que usa esta caja
     const cajaBreakdown = [];
     let cajaConsumoTotal = 0;
@@ -1677,6 +1910,14 @@ async function buscar(nombreParam){
         cajaConsumoTotal += cc;
       }
     });
+
+    const popupSaldoEncoded = encodeURIComponent(JSON.stringify({
+      stockInicial: Number(c.stockVirg || 0),
+      movs: saldoMovsCaja,
+      negativo: popupSaldoNegativo,
+      consumoTotal: cajaConsumoTotal || c.maxUni,
+      kgXUni: 0
+    }));
     const popupConsumoItemsCaja = cajaBreakdown.length
       ? [
           ...cajaBreakdown
@@ -1700,8 +1941,10 @@ async function buscar(nombreParam){
         ? enviosInfo.detalle.map(x => `${formatFechaDDMMAAAA(x.fecha)} - ${formatNumber(x.unidades)} uni`).join("|")
         : "Sin envíos",
       popupEntregasItems,
+      popupSaldoEncoded,
+      popupSaldoNegativo,
       popupConsumoItems: popupConsumoItemsCaja,
-      stockInicialKg: 0,
+      stockInicialUni: 0,
       kgXUni: 0,
       kgXCajon: 0,
       consumoTotal: cajaConsumoTotal || c.maxUni,
@@ -1712,6 +1955,112 @@ async function buscar(nombreParam){
   renderFilasFiltradas(nombre);
 
   renderResultado(nombre, datosParaFiltro);
+
+  // Panel de advertencia: envios/entregas del tall que no matchearon ninguna pieza renderizada
+  renderPanelSinMatch(nombre, enviosData, entregasData);
+}
+
+// =====================================================
+// Panel "Sin match": envios/entregas cuyo desc/cod no aparece en las piezas del tall
+// =====================================================
+function renderPanelSinMatch(nombre, enviosData, entregasData){
+  const tallNorm = normalizeText(nombre);
+  // Descripciones de las piezas que SE renderizaron (matcheo de envios por descripcion)
+  const descsRenderizadas = new Set(
+    (datosParaFiltro || []).map(d => normalizeText(d.descripcion)).filter(Boolean)
+  );
+  // Cods de las piezas (para entregas — entregas matchean por Cod o Cod_GRJ)
+  const codsRenderizados = new Set();
+  (datosParaFiltro || []).forEach(d => {
+    splitCodes(d.codsRaw || "").forEach(c => codsRenderizados.add(c));
+    if (d.codGrj) codsRenderizados.add(normalizeCode(d.codGrj));
+  });
+
+  // Envios sin match: claves del enviosData.totalKgMap que empiecen con tallNorm
+  // y cuya desc no este en descsRenderizadas
+  const sinMatchEnvios = [];
+  const prefijo = `${tallNorm}__`;
+  for (const [key, kg] of enviosData.totalKgMap.entries()){
+    if (!key.startsWith(prefijo)) continue;
+    const desc = key.slice(prefijo.length);
+    if (descsRenderizadas.has(desc)) continue;
+    const uni = enviosData.totalUnidadesMap.get(key) || 0;
+    const detalle = enviosData.detalleMap.get(key) || [];
+    const fechas = detalle.map(d => d.fecha).filter(Boolean);
+    sinMatchEnvios.push({
+      desc,
+      kg,
+      uni,
+      cant: detalle.length,
+      primera: fechas[0] || "",
+      ultima: fechas[fechas.length - 1] || ""
+    });
+  }
+
+  // Entregas sin match: por Cod del tall
+  const sinMatchEntregas = [];
+  if (entregasData && entregasData.detalleByNombreTallAndCod){
+    for (const [key, arr] of entregasData.detalleByNombreTallAndCod.entries()){
+      if (!key.startsWith(prefijo)) continue;
+      const cod = key.slice(prefijo.length);
+      if (codsRenderizados.has(cod)) continue;
+      if (!arr || !arr.length) continue;
+      const totalCajas = arr.reduce((acc, x) => acc + (Number(x.cajas) || 0), 0);
+      if (totalCajas <= 0) continue;
+      sinMatchEntregas.push({ cod, total: totalCajas });
+    }
+  }
+
+  // Si no hay sin-match, ocultar / quitar panel
+  let panel = document.getElementById("panelSinMatch");
+  if (!sinMatchEnvios.length && !sinMatchEntregas.length){
+    if (panel) panel.remove();
+    return;
+  }
+  if (!panel){
+    panel = document.createElement("div");
+    panel.id = "panelSinMatch";
+    panel.style.cssText = "margin:14px 0;padding:12px 14px;border:2px solid #f59e0b;background:#fffbeb;border-radius:10px;font-size:14px";
+    // Insertar antes de #result o al inicio del cuerpo
+    const result = document.getElementById("result");
+    if (result && result.parentNode) result.parentNode.insertBefore(panel, result);
+    else document.body.appendChild(panel);
+  }
+
+  sinMatchEnvios.sort((a,b) => b.kg - a.kg);
+  sinMatchEntregas.sort((a,b) => b.total - a.total);
+
+  const enviosHtml = sinMatchEnvios.length
+    ? `<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px">
+        <thead><tr style="background:#fde68a"><th style="padding:4px 8px;border:1px solid #d97706;text-align:left">Descripción</th><th style="padding:4px 8px;border:1px solid #d97706">Σ Kg</th><th style="padding:4px 8px;border:1px solid #d97706">Σ Uni</th><th style="padding:4px 8px;border:1px solid #d97706">Reg</th><th style="padding:4px 8px;border:1px solid #d97706">Fechas</th></tr></thead>
+        <tbody>${sinMatchEnvios.map(x => `<tr>
+          <td style="padding:3px 8px;border:1px solid #d97706"><b>${escapeHtml(x.desc)}</b></td>
+          <td style="padding:3px 8px;border:1px solid #d97706;text-align:right">${Number(x.kg).toLocaleString('es-AR',{maximumFractionDigits:2})}</td>
+          <td style="padding:3px 8px;border:1px solid #d97706;text-align:right">${Number(x.uni).toLocaleString('es-AR')}</td>
+          <td style="padding:3px 8px;border:1px solid #d97706;text-align:center">${x.cant}</td>
+          <td style="padding:3px 8px;border:1px solid #d97706;text-align:center">${escapeHtml(x.primera)} → ${escapeHtml(x.ultima)}</td>
+        </tr>`).join("")}</tbody>
+      </table>`
+    : "";
+
+  const entregasHtml = sinMatchEntregas.length
+    ? `<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px">
+        <thead><tr style="background:#fde68a"><th style="padding:4px 8px;border:1px solid #d97706;text-align:left">Cod</th><th style="padding:4px 8px;border:1px solid #d97706">Σ Cajas</th></tr></thead>
+        <tbody>${sinMatchEntregas.map(x => `<tr>
+          <td style="padding:3px 8px;border:1px solid #d97706"><b>${escapeHtml(x.cod)}</b></td>
+          <td style="padding:3px 8px;border:1px solid #d97706;text-align:right">${Number(x.total).toLocaleString('es-AR')}</td>
+        </tr>`).join("")}</tbody>
+      </table>`
+    : "";
+
+  panel.innerHTML = `
+    <div style="font-weight:800;color:#92400e;font-size:15px;margin-bottom:6px">
+      ⚠ Envíos/Entregas sin match con piezas del tallerista (${sinMatchEnvios.length + sinMatchEntregas.length})
+    </div>
+    <div style="color:#78350f;margin-bottom:8px">Estas operaciones existen en DB pero su descripción/cod no aparece en Partes x Tallerista — revisar carga o agregar pieza.</div>
+    ${sinMatchEnvios.length ? '<div style="font-weight:700;color:#92400e;margin-top:8px">📤 Envíos sin match:</div>' + enviosHtml : ''}
+    ${sinMatchEntregas.length ? '<div style="font-weight:700;color:#92400e;margin-top:10px">📥 Entregas sin match:</div>' + entregasHtml : ''}
+  `;
 }
 
 function renderFilasFiltradas(nombre){
@@ -1771,6 +2120,19 @@ function renderFilaControl(d){
 
         <td class="center">
           <div class="cell-combo">
+            <span class="cell-total"></span>
+            <button
+              type="button"
+              class="mini-popup-btn mini-saldo-btn${d.popupSaldoNegativo ? " mini-saldo-btn--alerta" : ""}"
+              data-popup-title="${escapeHtml(`Saldo - ${d.descripcion}`)}"
+              data-popup-saldo="${d.popupSaldoEncoded || ""}"
+              ${d.popupSaldoNegativo ? `title="Saldo negativo en algún momento — revisar movimientos"` : ""}
+            >+</button>
+          </div>
+        </td>
+
+        <td class="center">
+          <div class="cell-combo">
             <span class="cell-total">${escapeHtml(formatNumber(d.totalEntregasUni))}</span>
             <button
               type="button"
@@ -1781,7 +2143,7 @@ function renderFilaControl(d){
           </div>
         </td>
 
-        <td class="center"><b>${escapeHtml(formatNumber(d.kgXUni > 0 ? d.stockInicialKg / d.kgXUni : 0))}</b></td>
+        <td class="center"><b>${escapeHtml(formatNumber(d.stockInicialUni))}</b></td>
         <td class="center"><b>${escapeHtml(formatKgUni(d.kgXUni))}</b></td>
         <td class="center"><b>${escapeHtml(formatEntero(d.kgXCajon))}</b></td>
         <td class="center">
@@ -1946,9 +2308,20 @@ function renderResultado(nombre, datos){
     items.forEach(d => { rows += renderFilaControl(d); });
   });
 
-  setStatus(`Encontradas ${datos.length} piezas`);
+  setStatus(`Encontradas ${datos.length} partes`);
+
+  const printRows = datos.map(d => `
+      <tr>
+        <td>${d.sectorProce ? escapeHtml(d.sectorProce) : '-'}</td>
+        <td class="pa-desc">${escapeHtml(d.descripcion)}</td>
+        <td class="pa-num">${escapeHtml(formatKg(d.onlineKg))}</td>
+        <td class="pa-num">${escapeHtml(formatCajones(d.onlineCaj))}</td>
+      </tr>`).join("");
 
   resultEl.innerHTML = `
+    <div class="row-tools no-print">
+      <button id="btnImprimir" type="button" class="btn-imprimir">🖨 Imprimir</button>
+    </div>
     <div class="articulo">
       <div class="articulo-header">${escapeHtml(nombre)}</div>
       <table class="table">
@@ -1960,7 +2333,7 @@ function renderResultado(nombre, datos){
             <th colspan="2">Base</th>
             <th colspan="3">Online</th>
             <th colspan="1">Enviar</th>
-            <th colspan="2">Movimientos (Uni)</th>
+            <th colspan="3">Movimientos (Uni)</th>
             <th colspan="6">Info</th>
           </tr>
           <tr>
@@ -1974,6 +2347,7 @@ function renderResultado(nombre, datos){
             <th>Cjn<br>a Env</th>
 
             <th>Envíos</th>
+            <th>Saldo</th>
             <th>Entregas</th>
 
             <th>Stock<br>Inicial</th>
@@ -1987,6 +2361,24 @@ function renderResultado(nombre, datos){
         <tbody>
           ${rows}
         </tbody>
+      </table>
+    </div>
+
+    <!-- VISTA IMPRESION: Sector / Descripción / Online Kg / Online Cajones -->
+    <div id="printArea" class="print-only">
+      <div class="print-head">
+        <h2>Control Partes Tallerista — ${escapeHtml(nombre)}</h2>
+      </div>
+      <table class="print-table">
+        <thead>
+          <tr>
+            <th>Sector</th>
+            <th>Descripción</th>
+            <th>Online Kg</th>
+            <th>Online Cajones</th>
+          </tr>
+        </thead>
+        <tbody>${printRows}</tbody>
       </table>
     </div>
 
@@ -2023,7 +2415,13 @@ function renderResultado(nombre, datos){
   const historialBody = document.getElementById("historialBody");
   const historialClose = document.getElementById("historialClose");
 
+  const popupBox = popupOverlay.querySelector(".popup-box");
+
+  const btnImprimir = document.getElementById("btnImprimir");
+  if (btnImprimir) btnImprimir.addEventListener("click", () => window.print());
+
   resultEl.querySelectorAll(".mini-popup-btn").forEach(btn => {
+    if (btn.classList.contains("mini-saldo-btn")) return; // saldo usa su propio handler
     btn.addEventListener("click", () => {
       const title = btn.dataset.popupTitle || "";
       const allItems = String(btn.dataset.popupItems || "").split("|").filter(x => x.trim());
@@ -2064,13 +2462,179 @@ function renderResultado(nombre, datos){
     historialOverlay.classList.remove("hidden");
   }
 
+  // Handler dedicado para Saldo — renderiza tabla con saldo corriendo
+  resultEl.querySelectorAll(".mini-saldo-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const title = btn.dataset.popupTitle || "";
+      let data;
+      try {
+        data = JSON.parse(decodeURIComponent(btn.dataset.popupSaldo || ""));
+      } catch (e) {
+        data = { stockInicial: 0, movs: [] };
+      }
+      const stockInicial = Number(data.stockInicial || 0);
+      const consumoTotal = Number(data.consumoTotal || 0);
+      const kgXUni = Number(data.kgXUni || 0);
+      const puedeKg = kgXUni > 0;
+      let modoSaldo = "uni"; // 'uni' | 'kg' — solo afecta la columna Saldo (6ta)
+
+      // Convierte saldo (siempre calculado en unidades) al modo elegido para mostrar.
+      function fmtSaldo(uni){
+        if (modoSaldo === "kg" && puedeKg) return formatKg(uni * kgXUni) + " kg";
+        return formatNumber(uni);
+      }
+
+      function buildSaldoHtml(incluirControles = true){
+        let saldo = stockInicial;
+        let html = "";
+        if (data.negativo){
+          html += `
+            <div class="saldo-motivos">
+              <div class="saldo-motivos-title">⚠ Saldo negativo detectado — Motivos posibles:</div>
+              <ol class="saldo-motivos-list">
+                <li>Falta carga de Envíos</li>
+                <li>Error peso parte → genera diferencia de unidades enviadas</li>
+                <li>Error carga de Entregas</li>
+                <li>Error Stock Inicial</li>
+              </ol>
+            </div>
+          `;
+        }
+        if (consumoTotal > 0) {
+          html += `
+            <div class="saldo-leyenda-azul">
+              ℹ <strong>Celdas azules:</strong> saldo superior al consumo por parte (${formatNumber(Math.round(consumoTotal))} uni)
+            </div>
+          `;
+        }
+        if (incluirControles){
+          html += `
+            <div class="saldo-toggle">
+              <span class="saldo-toggle-label">Ver saldo en:</span>
+              <button type="button" class="saldo-toggle-btn${modoSaldo === "uni" ? " active" : ""}" data-modo="uni">Uni</button>
+              <button type="button" class="saldo-toggle-btn${modoSaldo === "kg" ? " active" : ""}" data-modo="kg"${puedeKg ? "" : " disabled title='Sin peso x unidad (cartones/cajas)'"}>Kg</button>
+              <button type="button" id="btnImprimirSaldo" class="btn-imprimir-saldo">🖨 Imprimir</button>
+            </div>
+          `;
+        }
+        html += `
+          <table class="saldo-table">
+            <thead>
+              <tr>
+                <th>Concepto</th>
+                <th>Fecha</th>
+                <th>Uni<br>Medida</th>
+                <th>Cant</th>
+                <th>Unidad</th>
+                <th>Saldo<br>(${modoSaldo === "kg" ? "Kg" : "Uni"})</th>
+                <th>Cod</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="saldo-inicio">
+                <td>Inicio</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>${escapeHtml(fmtSaldo(stockInicial))}</td>
+                <td>${escapeHtml(fmtSaldo(stockInicial))}</td>
+                <td></td>
+              </tr>
+        `;
+
+        (data.movs || []).forEach(m => {
+          const unidades = Number(m.unidades || 0);
+          saldo += unidades;
+          let cls = m.concepto === "Envío" ? "saldo-envio" : (m.concepto === "Devolución" ? "saldo-devolucion" : "saldo-entrega");
+          if (saldo < 0) cls += " saldo-neg-row";
+          const unidadStr = (unidades >= 0 ? "+" : "-") + formatNumber(Math.abs(unidades));
+          const cantNum = Number(m.cant || 0);
+          const cantStr = Number.isInteger(cantNum) ? formatNumber(cantNum) : formatDecimal(cantNum);
+          const saldoStr = fmtSaldo(saldo);
+          // Coloreado siempre sobre el saldo en unidades (independiente del modo de visualización)
+          const saldoCls = saldo < 0 ? "saldo-neg-cell" : (consumoTotal > 0 && saldo > consumoTotal ? "saldo-sobra-cell" : "");
+          const saldoCell = saldoCls ? `<td class="${saldoCls}">${escapeHtml(saldoStr)}</td>` : `<td>${escapeHtml(saldoStr)}</td>`;
+          html += `
+            <tr class="${cls}">
+              <td>${escapeHtml(m.concepto || "")}</td>
+              <td>${escapeHtml(formatFechaDDMMAAAA(m.fecha || ""))}</td>
+              <td>${escapeHtml(m.uniMedida || "")}</td>
+              <td>${escapeHtml(cantStr)}</td>
+              <td>${escapeHtml(unidadStr)}</td>
+              ${saldoCell}
+              <td>${escapeHtml(m.cod || "")}</td>
+            </tr>
+          `;
+        });
+
+        html += `</tbody></table>`;
+        return html;
+      }
+
+      // Imprime el módulo Saldo entero en ventana aparte (tabla en el modo actual).
+      function printSaldo(){
+        const cuerpo = buildSaldoHtml(false); // sin botones de control
+        const win = window.open("", "_blank", "width=900,height=700");
+        if (!win) { alert("El navegador bloqueó la ventana de impresión. Permití pop-ups para imprimir."); return; }
+        win.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8">
+          <title>${escapeHtml(title)}</title>
+          <style>
+            *{box-sizing:border-box}
+            body{font-family:Arial,sans-serif;padding:18px;color:#111}
+            h2{font-size:18px;margin:0 0 12px}
+            table{width:100%;border-collapse:collapse}
+            th,td{border:1px solid #111;padding:6px 8px;font-size:12px;text-align:center;font-variant-numeric:tabular-nums}
+            thead th{background:#eee;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            tr.saldo-inicio{font-weight:700;background:#fafbfc}
+            tr.saldo-devolucion td{background:#fef3c7;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            td.saldo-neg-cell{background:#fee2e2;color:#991b1b;font-weight:800}
+            td.saldo-sobra-cell{background:#2563eb;color:#fff;font-weight:800}
+            .saldo-motivos{border:1px solid #dc2626;background:#fef2f2;color:#7f1d1d;padding:8px 12px;margin-bottom:10px;font-size:12px}
+            .saldo-motivos-title{font-weight:800;margin-bottom:4px}
+            .saldo-leyenda-azul{border:1px solid #2563eb;background:#eff6ff;color:#1e3a8a;padding:8px 12px;margin-bottom:10px;font-size:12px}
+            tr{page-break-inside:avoid}
+            thead{display:table-header-group}
+            @page{margin:14mm}
+          </style></head><body>
+          <h2>${escapeHtml(title)} — Saldo en ${modoSaldo === "kg" ? "Kg" : "Unidades"}</h2>
+          ${cuerpo}
+          </body></html>`);
+        win.document.close();
+        win.focus();
+        win.onload = () => { win.print(); };
+        // Fallback si onload no dispara (documento ya cargado)
+        setTimeout(() => { try { win.print(); } catch(e){} }, 300);
+      }
+
+      function renderSaldo(){
+        popupBody.innerHTML = buildSaldoHtml(true);
+        popupBody.querySelectorAll(".saldo-toggle-btn").forEach(b => {
+          b.addEventListener("click", () => {
+            if (b.disabled) return;
+            modoSaldo = b.dataset.modo;
+            renderSaldo();
+          });
+        });
+        const btnImp = popupBody.querySelector("#btnImprimirSaldo");
+        if (btnImp) btnImp.addEventListener("click", printSaldo);
+      }
+
+      popupTitle.textContent = title;
+      renderSaldo();
+      popupBox.classList.add("popup-box-saldo");
+      popupOverlay.classList.remove("hidden");
+    });
+  });
+
   popupClose.addEventListener("click", () => {
     popupOverlay.classList.add("hidden");
+    popupBox.classList.remove("popup-box-saldo");
   });
 
   popupOverlay.addEventListener("click", e => {
     if (e.target === popupOverlay){
       popupOverlay.classList.add("hidden");
+      popupBox.classList.remove("popup-box-saldo");
     }
   });
 

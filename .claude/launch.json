@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gp-static",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", ".", "-p", "5509", "-a", "127.0.0.1", "-c-1"],
+      "port": 5509
+    }
+  ]
+}

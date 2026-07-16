@@ -390,6 +390,33 @@
     }
     .btn-procedimientos svg { width: 22px; height: 22px; flex-shrink: 0; }
 
+    .btn-logout {
+      position: fixed;
+      top: 28px;
+      right: 28px;
+      height: 56px;
+      padding: 0 22px;
+      border-radius: 28px;
+      background: rgba(254, 226, 226, 0.97);
+      border: 2px solid rgba(220, 38, 38, 0.4);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #991b1b;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+      z-index: 100;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    }
+    .btn-logout:hover {
+      transform: scale(1.04);
+      background: #fecaca;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    }
+
     .proc-overlay {
       position: fixed; inset: 0;
       background: rgba(0,0,0,.55);
@@ -528,6 +555,10 @@
 </head>
 
 <body>
+
+  <button class="btn-logout" id="btnLogout" title="Cerrar sesión" onclick="(function(){sessionStorage.clear();window.location.href='../login.html?logout=1';})()">
+    ⎋ Cerrar sesión
+  </button>
 
   <button class="btn-procedimientos" id="btnProc" title="Procedimientos por sector">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
@@ -1105,6 +1136,8 @@
 
         <button class="btn-opcion" data-link="../Talleristas/Recepcion/Recepcion Cervantes.html">Entrega Cervantes</button>
 
+        <button class="btn-opcion" data-link="../Talleristas/Recepcion/Devolucion Cervantes.html">Devolución Cervantes</button>
+
         <button class="btn-opcion" data-link="../Talleristas/Recepcion/Entrega Cervantes Fotos.html">Entrega Cervantes Fotos</button>
 
         <button class="btn-opcion" data-link="../Talleristas/Recepcion/Recepcion Virgilio.html">Entrega Virgilio</button>
@@ -1112,6 +1145,8 @@
         <button class="btn-opcion" data-link="../Talleristas/ABM Articulos/ABMArticulosTall.html">ABM Articulos</button>
 
         <button class="btn-opcion" data-link="../Talleristas/Proporciones/index.html">Proporciones</button>
+
+        <button class="btn-opcion" data-link="../Talleristas/Faltante Partes Tallerista/index.html">Faltante Partes</button>
       </div>
     </div>
 
@@ -1138,6 +1173,17 @@
         <button class="btn-opcion" data-link="../Prov Art Terminado/Envios/EnviosAT.html">Envío Cartón/Cajas</button>
 
         <button class="btn-opcion" data-link="../Prov Art Terminado/Entregas/EntregasAT.html">Entrega Art. Terminado</button>
+      </div>
+    </div>
+
+    <!-- CONTROL ENVIOS Y ENTREGAS -->
+    <div class="card">
+      <h2><svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v4H3z"/><path d="M3 7v14h18V7"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>Control Envíos y Entregas</h2>
+
+      <div class="botones">
+        <button class="btn-opcion" data-link="../Control Envios y Entregas/index.html">Abrir</button>
+        <button class="btn-opcion" data-link="../Control Envios y Entregas/stock.html">Stock Online</button>
+        <button class="btn-opcion" data-link="../Control Envios y Entregas/exportar.html">Exportar datos</button>
       </div>
     </div>
 
@@ -1175,6 +1221,7 @@
         <button class="btn-opcion" data-link="../Produccion/monitor.html">Monitor en Vivo</button>
         <button class="btn-opcion" data-link="../Produccion/monitor2.html">Monitor en Vivo 2.0</button>
         <button class="btn-opcion" data-link="../Produccion/tiempos.html">Tiempos Matrices</button>
+        <button class="btn-opcion" data-link="../Produccion/ProblemasMatrices/index.html">Problemas con Matrices</button>
         <button class="btn-opcion" data-link="../Produccion/entrevistas.html">Entrevistas</button>
       </div>
     </div>
@@ -1250,6 +1297,9 @@
   </div>
   </div>
 
+  <div id="appVersion" style="position:fixed;right:12px;bottom:10px;color:#94a3b8;font-size:12px;font-weight:600;letter-spacing:.5px;z-index:50;pointer-events:none"></div>
+
+  <script src="../version.js?v=20260617b"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     // ===== PROCEDIMIENTOS POPUP =====

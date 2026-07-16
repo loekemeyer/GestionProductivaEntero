@@ -492,11 +492,27 @@ async function cargarMovimientos() {
   consumoRealMap.clear();
   movDetalleMap.clear();
 
+  // Helper: paginar + safety net (max 100 paginas = 100k filas)
+  async function fetchAllPagComp(table, sel) {
+    const out=[];const P=1000;const MAX=100;let f=0;
+    for(let page=0;page<MAX;page++){
+      const{data,error}=await sb.from(table).select(sel).range(f,f+P-1);
+      if(error){console.error(`${table}:`,error);return out;}
+      if(!data||!data.length)return out;
+      out.push(...data);
+      if(data.length<P)return out;
+      f+=P;
+      if(page===MAX-1)console.warn(`[fetchAllPagComp] ${table}: MAX_PAGES alcanzado, filas: ${out.length}`);
+    }
+    return out;
+  }
   try {
-    const [resEnvios, resEntregas] = await Promise.all([
-      sb.from("Envios a Talleristas").select("Descripcion, Unidades"),
-      sb.from("Entregas Tallerista Virgilio").select("Cod_Tall, Nombre_Tall, Cod, Cajas")
+    const [envD, entD] = await Promise.all([
+      fetchAllPagComp("Envios a Talleristas", "Descripcion, Unidades"),
+      fetchAllPagComp("Entregas_Tall_Todas", "Cod_Tall, Nombre_Tall, Cod, Cajas")
     ]);
+    const resEnvios = { data: envD, error: null };
+    const resEntregas = { data: entD, error: null };
 
     function addMov(nCaja, cod, desc, cajas, fuente) {
       consumoRealMap.set(nCaja, (consumoRealMap.get(nCaja) || 0) + cajas);
@@ -1058,7 +1074,7 @@ function generarPDFStock() {
     '<th style="text-align:right;padding:6px 8px">Pedido</th><th style="text-align:right;padding:6px 8px">Paquetes</th>' +
     '<th style="text-align:right;padding:6px 8px">Meses</th></tr></thead><tbody>' + tbody +
     '<tr class="total"><td colspan="2">TOTAL</td><td style="text-align:right">' + fmt(totalUni) + '</td>' +
-    '<td style="text-align:right">' + totalPaq + ' paq</td><td></td></tr></tbody></table></body></html>';
+    '<td style="text-align:right">' + totalPaq + ' paq</td><td></td></tr></tbody></table><\/body><\/html>';
 
   const win = window.open("", "_blank");
   win.document.write(htmlPDF);

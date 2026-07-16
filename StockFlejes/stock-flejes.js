@@ -39,10 +39,9 @@ async function init() {
   statusEl.textContent = "Cargando datos...";
 
   try {
-    const [resFlejes, resCausa, resProd, resSC, resPS, resDesp, resLK, resCH, resCompras] = await Promise.all([
+    const [resFlejes, resCausa, resSC, resPS, resDesp, resLK, resCH, resCompras] = await Promise.all([
       sb.from("Flejes").select("*"),
       sb.from("Causa-Efecto").select("*"),
-      sb.from("db_n8n_espejo").select("*"),
       sb.from("SC Kg").select("*"),
       sb.from("Partes x PS").select("*"),
       sb.from("Despiece x Articulo").select("*"),
@@ -50,6 +49,23 @@ async function init() {
       sb.from("E. Madre CH").select("*"),
       sb.from("Recepcion_Insumos").select("*").eq("rubro","Flejes")
     ]);
+
+    // Cargar db_n8n_espejo con paginacion (Supabase cap 1000 rows/request)
+    const allProd = [];
+    const PAGE = 1000;
+    let from = 0;
+    while (true) {
+      const { data, error } = await sb
+        .from("db_n8n_espejo")
+        .select("*")
+        .neq("Legajo", "1")  // excluir registros de Pruebas (Legajo 1)
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      if (!data || !data.length) break;
+      allProd.push(...data);
+      if (data.length < PAGE) break;
+      from += PAGE;
+    }
 
     // Procesar compras Flejes (rubro=Flejes, codigo=N Fleje)
     comprasFlejesMap.clear();
@@ -67,7 +83,6 @@ async function init() {
 
     if (resFlejes.error) throw resFlejes.error;
     if (resCausa.error) throw resCausa.error;
-    if (resProd.error) throw resProd.error;
     if (resSC.error) throw resSC.error;
     if (resPS.error) throw resPS.error;
     if (resDesp.error) throw resDesp.error;
@@ -76,7 +91,7 @@ async function init() {
 
     flejesData = resFlejes.data || [];
     causaEfectoData = resCausa.data || [];
-    produccionData = (resProd.data || []).filter(r => String(r.Legajo || "").trim() !== "1");
+    produccionData = allProd; /* paginado completo */
     scKgData = resSC.data || [];
     partesXPSData = resPS.data || [];
     despieceData = resDesp.data || [];
@@ -185,23 +200,51 @@ function calcularConsumoMensual(nFleje) {
   return { total: Math.round(total * 100) / 100, detalle };
 }
 
-/* ================= FABRICACIÓN ================= */
+/* ================= FABRICACIÓN =================
+   Calcula los KG de fleje consumidos por la fabricación.
+   1. Encuentra las matrices cuyas filas en Causa-Efecto descuentan este fleje (y qué sector aumentan).
+   2. Para cada matriz, suma uni producidas en db_n8n_espejo.
+   3. Multiplica uni × Kg X Uni del sector aumenta para obtener kg consumidos.
+========================================================= */
 function calcularFabricacion(nFleje) {
-  const matricesQueDescuentan = causaEfectoData
-    .filter(ce => String(ce.Descuenta || "").trim() === String(nFleje).trim())
-    .map(ce => String(ce.Matriz || "").trim());
-
-  if (matricesQueDescuentan.length === 0) return 0;
-
-  let totalUni = 0;
-  produccionData.forEach(reg => {
-    const matriz = String(reg.Matriz || "").trim();
-    if (matricesQueDescuentan.includes(matriz)) {
-      totalUni += n(reg.Uni);
+  // Mapa Matriz → [sector_aumenta, ...] (una matriz puede producir varios sectores desde el mismo fleje)
+  const matrizAumentaMap = new Map();
+  const flejeLbl = "Fleje " + String(nFleje).trim(); // CE guarda "Fleje 20", no "20"
+  causaEfectoData.forEach(ce => {
+    if (String(ce.Descuenta || "").trim() === flejeLbl) {
+      const m = String(ce.Matriz || "").trim();
+      const a = String(ce.Aumenta || "").trim().toUpperCase();
+      if (m && a) {
+        if (!matrizAumentaMap.has(m)) matrizAumentaMap.set(m, []);
+        matrizAumentaMap.get(m).push(a);
+      }
     }
   });
 
-  return totalUni;
+  if (matrizAumentaMap.size === 0) return 0;
+
+  // Construir mapa sector → kgXuni (desde SC Kg para conversiones)
+  const kgXUniBySC = new Map();
+  scKgData.forEach(r => {
+    const sc = String(r["SC"] || "").trim().toUpperCase();
+    const kg = n(r["Kg X Uni"]);
+    if (sc && kg > 0) kgXUniBySC.set(sc, kg);
+  });
+
+  let totalKg = 0;
+  produccionData.forEach(reg => {
+    const matriz = String(reg.Matriz || "").trim();
+    if (!matrizAumentaMap.has(matriz)) return;
+    const uni = n(reg.Uni);
+    if (!uni) return;
+    const sectores = matrizAumentaMap.get(matriz);
+    for (const sectorAumenta of sectores) {
+      const kgPorUni = kgXUniBySC.get(sectorAumenta) || 0;
+      totalKg += uni * kgPorUni;
+    }
+  });
+
+  return Math.round(totalKg * 100) / 100;
 }
 
 /* ================= PROCESAR Y ORDENAR ================= */

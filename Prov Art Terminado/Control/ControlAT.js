@@ -339,8 +339,20 @@ async function cargarDesdeTallerista(tallerista){
     sb.from("Articulos Virgilio X Tallerista").select("*").eq("Tallerista", tallerista).limit(5000),
     sb.from("Articulos_Cajas").select("*").limit(5000),
     sb.from("Cajas").select("*").limit(500),
-    sb.from("Envios a Talleristas").select("*").eq("Tallerista", tallerista).limit(20000),
-    sb.from("Entregas Tallerista Virgilio").select("*").eq("Nombre_Tall", tallerista).limit(20000)
+    (async () => {
+      const out = []; const PAGE = 1000; const MAX = 100; let from = 0;
+      for (let p=0; p<MAX; p++){ const {data,error}=await sb.from("Envios a Talleristas").select("*").eq("Tallerista",tallerista).range(from,from+PAGE-1);
+        if(error||!data||!data.length) break; out.push(...data); if(data.length<PAGE) break; from+=PAGE;
+        if(p===MAX-1) console.warn("[ControlAT] Envios a Tall MAX_PAGES"); }
+      return { data: out, error: null };
+    })(),
+    (async () => {
+      const out = []; const PAGE = 1000; const MAX = 100; let from = 0;
+      for (let p=0; p<MAX; p++){ const {data,error}=await sb.from("Entregas_Tall_Todas").select("*").eq("Nombre_Tall",tallerista).range(from,from+PAGE-1);
+        if(error||!data||!data.length) break; out.push(...data); if(data.length<PAGE) break; from+=PAGE;
+        if(p===MAX-1) console.warn("[ControlAT] Entregas Tall MAX_PAGES"); }
+      return { data: out, error: null };
+    })()
   ]);
 
   if (partesResp.error) throw partesResp.error;

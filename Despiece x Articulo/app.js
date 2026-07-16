@@ -56,7 +56,8 @@ let CACHE = {
   prov_remachessp: new Map(),
   prov_remachessc: new Map(),
   prov_bomb: new Map(),
-  prov_cepillos: new Map()
+  prov_cepillos: new Map(),
+  matrices_nombres: new Map()
 };
 
 // Resolver proveedor de un sector, en orden: plásticos → SP → SC → remaches SP → remaches SC → BOMB → Cepillos
@@ -73,7 +74,7 @@ function getProveedor(sector) {
 
 async function cargarInicio() {
   setStatus("Cargando datos maestros…");
-  const [arts, ce, pxps, pxtall, ac, cajas, grj, flejes, spkg, sckg, plast, remSP, remSC, bomb, cep] = await Promise.all([
+  const [arts, ce, pxps, pxtall, ac, cajas, grj, flejes, spkg, sckg, plast, remSP, remSC, bomb, cep, mat] = await Promise.all([
     sb.from("Despiece x Articulo").select('"COD","ARTICULO"').then(r => r.data || []),
     sb.from("Causa-Efecto").select('"Matriz","Descripcion Matriz","Descuenta","Aumenta"').then(r => r.data || []),
     sb.from("Partes x PS").select('"PS","Proceso","SC","SP","Parte"').then(r => r.data || []),
@@ -85,10 +86,11 @@ async function cargarInicio() {
     sb.from("SP Kg").select('"Sp","Parte","Proveedor"').then(r => r.data || []),
     sb.from("SC Kg").select('"SC","Descripcion","Proveedor"').then(r => r.data || []),
     sb.from("SectorPlasticos").select('"Sector","Proveedor"').then(r => r.data || []),
-    sb.from("Remaches SP").select('"Sector","Proveedor"').then(r => r.data || []),
-    sb.from("Remaches SC").select('"Sector","Proveedor"').then(r => r.data || []),
+    sb.from("Remaches SP").select('"SP","Proveedor"').then(r => r.data || []),
+    sb.from("Remaches SC").select('"SC","Proveedor"').then(r => r.data || []),
     sb.from("BOMB").select('"Sector","Proveedor"').then(r => r.data || []),
-    sb.from("Cepillos").select('"Sector","Proveedor"').then(r => r.data || [])
+    sb.from("Cepillos").select('"Sector","Proveedor"').then(r => r.data || []),
+    sb.from("Matrices").select('"N_Matriz","Matriz"').then(r => r.data || [])
   ]);
   CACHE.ce = ce;
   CACHE.pxps = pxps;
@@ -103,10 +105,11 @@ async function cargarInicio() {
   CACHE.prov_sectorplasticos = new Map(plast.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
   CACHE.prov_spkg = new Map(spkg.filter(r => r.Sp).map(r => [r.Sp, r.Proveedor || ""]));
   CACHE.prov_sckg = new Map(sckg.filter(r => r.SC).map(r => [r.SC, r.Proveedor || ""]));
-  CACHE.prov_remachessp = new Map(remSP.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
-  CACHE.prov_remachessc = new Map(remSC.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
+  CACHE.prov_remachessp = new Map(remSP.filter(r => r.SP).map(r => [r.SP, r.Proveedor || ""]));
+  CACHE.prov_remachessc = new Map(remSC.filter(r => r.SC).map(r => [r.SC, r.Proveedor || ""]));
   CACHE.prov_bomb = new Map(bomb.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
   CACHE.prov_cepillos = new Map(cep.filter(r => r.Sector).map(r => [r.Sector, r.Proveedor || ""]));
+  CACHE.matrices_nombres = new Map(mat.filter(r => r.N_Matriz != null).map(r => [String(r.N_Matriz), String(r.Matriz || '').trim()]));
 
   // Armar lista única de artículos desde Despiece
   const seen = new Map();
@@ -131,6 +134,7 @@ async function cargarInicio() {
 // Cada paso: { tipo: 'matriz'|'ps'|'fleje'|'compra', label, sector_prev, matriz, ps, proceso }
 function trazarSector(sector, visitados = new Set(), profundidad = 0) {
   if (!sector || profundidad > 15) return [];
+  if (sector.startsWith("CC")) return []; // Cartón comprado — no tiene ruta productiva
   if (visitados.has(sector)) return [{ tipo: 'loop', label: `(loop: ${sector})` }];
   visitados = new Set([...visitados, sector]);
 
@@ -142,12 +146,20 @@ function trazarSector(sector, visitados = new Set(), profundidad = 0) {
   const grjComp = CACHE.grj_componentes.filter(g => g.cod_grj === sector);
   if (grjComp.length > 0) {
     const compTexto = grjComp.sort((a,b)=>a.orden-b.orden).map(g => g.componente).join(' + ');
+    // Buscar tallerista en Causa-Efecto (Matriz = nombre cuando no es número)
+    const ceGrj = CACHE.ce.filter(r => r.Aumenta === sector);
+    let tallGrj = '';
+    for (const r of ceGrj) {
+      const m = String(r.Matriz || '').trim();
+      if (m && isNaN(Number(m)) && m !== 'Fabr') { tallGrj = m; break; }
+    }
     const ramasGRJ = [];
     for (const g of grjComp.sort((a,b)=>a.orden-b.orden)) {
       const prev = trazarSector(g.componente, visitados, profundidad + 1);
-      ramasGRJ.push({ tipo: 'grj_comp', label: `Componente ${g.componente}`, sector_prev: g.componente, ramas: prev });
+      ramasGRJ.push({ tipo: 'grj_comp', label: g.componente, ramas: prev });
     }
-    return [{ tipo: 'grj', label: `${sector} = ${compTexto} (armado por tallerista)`, ramas: ramasGRJ }];
+    const tallLabel = tallGrj || 'Tallerista';
+    return [{ tipo: 'grj', label: `${sector} ← ${tallLabel} ← ${compTexto}`, ramas: ramasGRJ }];
   }
 
   // Buscar producción por Causa-Efecto (matriz interna) y agrupar por (Descuenta, DescripcionMatriz)
@@ -167,9 +179,13 @@ function trazarSector(sector, visitados = new Set(), profundidad = 0) {
   for (const [, grupo] of ceGrouped) {
     const r0 = grupo[0];
     const descuenta = r0.Descuenta;
-    const matrices = grupo.map(x => `Mat ${x.Matriz}`).join(' / ');
-    const descMat = r0["Descripcion Matriz"] ? ' ' + r0["Descripcion Matriz"] : '';
-    const label = matrices + descMat;
+    const matrices = grupo.map(x => {
+      const n = String(x.Matriz).trim();
+      const nombre = CACHE.matrices_nombres.get(n) || '';
+      const isRedundant = !nombre || /^Matriz\s/i.test(nombre);
+      return isRedundant ? `Mat ${n}` : `Mat ${n} (${nombre})`;
+    }).join(' / ');
+    const label = matrices;
     if (!descuenta || descuenta === 'Fabr') {
       pasos.push({ tipo: 'fabr', label, sector_prev: 'Fabricación interna' });
       continue;
@@ -193,7 +209,7 @@ function trazarSector(sector, visitados = new Set(), profundidad = 0) {
     const r0 = grupo[0];
     const sc = r0.SC;
     const parte = r0.Parte;
-    const psList = grupo.map(x => x.PS);
+    const psList = [...new Set(grupo.map(x => (x.PS || '').trim()).filter(Boolean))];
     const procTxt = r0.Proceso ? ' (' + r0.Proceso + ')' : '';
     const label = psList.join(' / ') + procTxt;
     if (!sc) { pasos.push({ tipo: 'ps', label }); continue; }
@@ -215,7 +231,7 @@ function trazarSector(sector, visitados = new Set(), profundidad = 0) {
       const ramasST = [];
       for (const [, g] of stGrouped) {
         const p0 = g[0];
-        const psListST = g.map(x => x.PS);
+        const psListST = [...new Set(g.map(x => (x.PS || '').trim()).filter(Boolean))];
         const labelST = psListST.join(' / ') + (p0.Proceso ? ' (' + p0.Proceso + ')' : '');
         const prevST = trazarSector(p0.SC, visitados, profundidad + 1);
         if (prevST.length === 1 && (prevST[0].tipo === 'fleje' || prevST[0].tipo === 'compra')) {
@@ -255,7 +271,12 @@ function trazarSector(sector, visitados = new Set(), profundidad = 0) {
     }
 
     const prov = getProveedor(sector) || "sin proveedor";
-    pasos.push({ tipo: 'compra', label: `${sector} (${prov})` });
+    const isRemache = CACHE.prov_remachessp.has(sector) || CACHE.prov_remachessc.has(sector);
+    if (isRemache) {
+      pasos.push({ tipo: 'compra_remache', label: `📦 Comprado (Remaches) — ${prov}` });
+    } else {
+      pasos.push({ tipo: 'compra', label: `${sector} (${prov})` });
+    }
   }
 
   return pasos;
@@ -294,6 +315,19 @@ function resolverCaja(cod) {
   };
 }
 
+// Guarda el último resultado renderizado (trace o resumen) para exportarlo a CSV
+// desde los datos, no raspando el DOM.
+let ULTIMO = null;
+
+// Convierte un paso de la cadena a texto limpio para el CSV: saca el emoji 📦,
+// normaliza espacios y agrega el sector de entrada como "proceso ⟵ sector_prev".
+function pasoATexto(c) {
+  if (typeof c === "string") return c;
+  let s = String(c.label || "").replace(/📦/g, "").replace(/\s+/g, " ").trim();
+  if (c.sector_prev) s += " ⟵ " + c.sector_prev;
+  return s;
+}
+
 function renderTrace(cod) {
   const articulo = CACHE.articulos.find(([c]) => c === cod)?.[1] || "";
   const partesDespiece = [];
@@ -311,6 +345,8 @@ function renderTrace(cod) {
         : talleristas.some(t => INTERNO.has(t))
           ? "Fabricación interna"
           : "Tallerista";
+
+      const traceItems = [];
 
       let html = `<div class="resumen">
         <b>Artículo ${esc(cod)}</b>: ${esc(articulo)}<br>
@@ -336,6 +372,7 @@ function renderTrace(cod) {
 
         if (!sector) {
           // Cartón o sin sector
+          traceItems.push({ item: n, desc, sector: "—", pxu, ramas: [["Compra (" + (rubro || "packaging") + ")"]] });
           html += `<tr>
             <td class="item-num">${n++}</td>
             <td>${esc(desc)}</td>
@@ -347,10 +384,26 @@ function renderTrace(cod) {
           continue;
         }
 
+        if (sector.startsWith("CC")) {
+          // Cartón con prefijo CC → comprado, sin ruta productiva
+          const sectorDisplay = sector.slice(2); // quitar prefijo CC para mostrar
+          traceItems.push({ item: n, desc, sector: sectorDisplay, pxu, ramas: [["Comprado (" + (rubro || "Cartones") + ")"]] });
+          html += `<tr>
+            <td class="item-num">${n++}</td>
+            <td>${esc(desc)}</td>
+            <td class="cod">${esc(sectorDisplay)}</td>
+            <td>${esc(pxu)}</td>
+            <td class="tall">${esc(talTxt)}</td>
+            <td class="origen">📦 Comprado (${esc(rubro || "Cartones")})</td>
+          </tr>`;
+          continue;
+        }
+
         const pasos = trazarSector(sector);
         const ramas = aplanar(pasos);
 
         if (ramas.length === 0) {
+          traceItems.push({ item: n, desc, sector, pxu, ramas: [["Sin trazado"]] });
           html += `<tr>
             <td class="item-num">${n++}</td>
             <td>${esc(desc)}</td>
@@ -364,6 +417,7 @@ function renderTrace(cod) {
 
         // Una fila por rama, con la cadena concatenada en última columna.
         // Dentro de cada paso, los PS/matrices multiples se apilan con <br> (ej "Rec Color / Jade / Daniel" -> vertical).
+        traceItems.push({ item: n, desc, sector, pxu, ramas: ramas.map(cadena => cadena.map(pasoATexto)) });
         for (let i = 0; i < ramas.length; i++) {
           const cadena = ramas[i];
           const cadenaHtml = cadena.map(c => {
@@ -384,6 +438,7 @@ function renderTrace(cod) {
       }
 
       if (caja) {
+        traceItems.push({ item: n, desc: "Caja Nº" + caja.n_caja, sector: caja.sector || "—", pxu: "1/" + caja.uni_x_caja, ramas: [["Compra (Caja " + (caja.medidas || "") + ")"]] });
         html += `<tr>
           <td class="item-num">${n++}</td>
           <td>Caja Nº${esc(caja.n_caja)}</td>
@@ -396,23 +451,73 @@ function renderTrace(cod) {
 
       html += `</tbody></table>`;
       $("tablaWrap").innerHTML = html;
+      ULTIMO = {
+        tipo: "trace",
+        cod, articulo, destino: talTxt, destinoTipo,
+        caja: caja ? { n_caja: caja.n_caja, sector: caja.sector, medidas: caja.medidas, uni_x_caja: caja.uni_x_caja } : null,
+        items: traceItems
+      };
       setStatus(`Trazado de ${cod} listo (${n - 1} items).`, "ok");
       $("btnExport").disabled = false;
     });
 }
 
 function exportarCSV() {
+  if (!ULTIMO) { setStatus("Primero gener\u00e1 un trazado o el resumen.", "err"); return; }
+
+  const SEP = ";"; // Excel es-AR abre con ; en columnas al hacer doble clic
+  const hoy = new Date().toISOString().slice(0, 10);
+  const q = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+  const linea = (arr) => arr.map(q).join(SEP);
   const filas = [];
-  document.querySelectorAll("table.trace tr").forEach(tr => {
-    const cells = Array.from(tr.children).map(td => '"' + td.innerText.replace(/"/g, '""') + '"');
-    filas.push(cells.join(","));
-  });
-  const csv = "\ufeff" + filas.join("\n");
+  let nombreArch;
+
+  if (ULTIMO.tipo === "resumen") {
+    filas.push(linea(["Despiece x Art\u00edculo \u2014 Resumen de cobertura"]));
+    filas.push(linea(["Generado", hoy]));
+    filas.push("");
+    filas.push(linea(["Cod", "Art\u00edculo", "Partes", "\u2192 Fleje", "\u2192 Compra", "Sin trazado", "Cobertura %"]));
+    for (const r of ULTIMO.rows) {
+      filas.push(linea([r.cod, r.desc, r.total, r.llegaFleje, r.llegaCompra, r.sinTrazado, r.cov + "%"]));
+    }
+    nombreArch = `despiece_resumen_${hoy}.csv`;
+  } else {
+    // Cabecera con metadatos (espejo del bloque que se ve arriba de la tabla)
+    filas.push(linea(["Despiece x Art\u00edculo"]));
+    filas.push(linea(["Art\u00edculo", ULTIMO.cod, ULTIMO.articulo]));
+    filas.push(linea(["Destino", ULTIMO.destino, ULTIMO.destinoTipo]));
+    if (ULTIMO.caja) {
+      filas.push(linea(["Caja", "N\u00ba" + ULTIMO.caja.n_caja, "sector " + (ULTIMO.caja.sector || "?"),
+        ULTIMO.caja.medidas || "?", (ULTIMO.caja.uni_x_caja || "?") + " uni/caja"]));
+    }
+    filas.push(linea(["Generado", hoy]));
+    filas.push("");
+
+    // M\u00e1ximo de pasos entre todas las ramas \u2192 una columna "Paso N" por cada uno
+    let maxPasos = 1;
+    for (const it of ULTIMO.items) for (const rama of it.ramas) if (rama.length > maxPasos) maxPasos = rama.length;
+
+    const header = ["Item", "Descripci\u00f3n parte", "Sector", "Partes/uni", "Tallerista", "Rama"];
+    for (let i = 1; i <= maxPasos; i++) header.push("Paso " + i);
+    filas.push(linea(header));
+
+    for (const it of ULTIMO.items) {
+      const multi = it.ramas.length > 1;
+      it.ramas.forEach((rama, ri) => {
+        const row = [it.item, it.desc, it.sector, it.pxu, ULTIMO.destino, multi ? (ri + 1) : ""];
+        for (let i = 0; i < maxPasos; i++) row.push(rama[i] || "");
+        filas.push(linea(row));
+      });
+    }
+    nombreArch = `despiece_${ULTIMO.cod || "articulo"}_${hoy}.csv`;
+  }
+
+  const csv = "\ufeff" + filas.join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `despiece_${$("selArt").value || "articulo"}.csv`;
+  a.download = nombreArch;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -426,6 +531,7 @@ function analizarProducto(cod){
   for (const p of despPartes){
     const sector = p["Sector Proce"];
     if (!sector) { llegaCompra++; total++; continue; }
+    if (sector.startsWith("CC")) { llegaCompra++; total++; continue; } // Cartón comprado
     const pasos = trazarSector(sector);
     const ramas = aplanar(pasos);
     if (!ramas.length) { sinTrazado++; total++; continue; }
@@ -433,7 +539,7 @@ function analizarProducto(cod){
     for (const cadena of ramas){
       const ult = cadena[cadena.length - 1];
       if (ult.tipo === 'fleje') hayFleje = true;
-      else if (ult.tipo === 'compra' || ult.tipo === 'ps' || ult.tipo === 'matriz') hayCompra = true;
+      else if (ult.tipo === 'compra' || ult.tipo === 'compra_remache' || ult.tipo === 'ps' || ult.tipo === 'matriz') hayCompra = true;
     }
     if (hayFleje) llegaFleje++;
     else if (hayCompra) llegaCompra++;
@@ -480,6 +586,7 @@ async function renderResumen(){
   }
   html += `</tbody></table>`;
   $("tablaWrap").innerHTML = html;
+  ULTIMO = { tipo: "resumen", rows };
   const prom = Math.round(rows.reduce((s, r) => s + r.cov, 0) / Math.max(1, rows.length));
   setStatus(`Cobertura promedio: ${prom}% (${rows.length} productos).`, prom === 100 ? "ok" : "");
   $("btnExport").disabled = false;

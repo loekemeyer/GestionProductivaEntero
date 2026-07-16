@@ -92,10 +92,14 @@ h1{
   font-size:14px;
 }
 
+/* =========================================================
+   BLOQUE: TABLA (formato idéntico a StockSP)
+========================================================= */
 .table{
   width:max-content;
+  min-width:100%;
   border-collapse:collapse;
-  table-layout:auto;
+  table-layout:fixed;
   border:2px solid #111;
 }
 
@@ -105,43 +109,84 @@ h1{
 }
 
 .table th{
-  position:sticky;
-  top:0;
-  z-index:2;
   background:#f3f5f8;
   text-align:center;
-  padding:4px 5px;
-  font-size:11px;
-  line-height:1.2;
-  white-space:normal;
-  word-break:break-word;
-  border-bottom:2px solid #111;
+  padding:6px 8px;
+  font-size:12px;
+  line-height:1.15;
+  white-space:nowrap;
+  border-bottom:1px solid #e3e6eb;
+  position:sticky;
+  z-index:2;
 }
 
-.table th:nth-child(1){
-  min-width:8ch;
-  white-space:nowrap;
+.table thead tr:first-child th{
+  top:0;
+}
+
+.table thead tr:nth-child(2) th{
+  top:27px;
+}
+
+/* Columnas Movimientos (6,7): ancho fijo */
+.table th:nth-child(6),
+.table th:nth-child(7),
+.table td:nth-child(6),
+.table td:nth-child(7){
+  width:100px;
+  max-width:100px;
+  min-width:100px;
+}
+
+.table th:nth-child(6),
+.table th:nth-child(7){
+  white-space:normal;
+  word-break:break-word;
+}
+
+/* Columnas Info (8-12): compactas con header wrap */
+.table thead tr:nth-child(2) th:nth-child(n+8):nth-child(-n+12){
+  white-space:normal;
+  word-break:break-word;
+  width:58px;
+  max-width:58px;
+}
+
+.table td:nth-child(n+8):nth-child(-n+12){
+  width:58px;
+  max-width:58px;
 }
 
 .table td{
-  padding:4px 5px;
+  padding:6px 8px;
   border-top:1px solid #edf1f5;
-  font-size:11px;
+  font-size:12px;
   vertical-align:middle;
   white-space:nowrap;
 }
 
+/* Sector (col 1) */
 .table td:nth-child(1){
-  width:8ch;
-  min-width:8ch;
-  max-width:8ch;
+  width:6ch;
+  max-width:6ch;
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
 }
 
+/* Descripcion (col 2) */
 .table td:nth-child(2){
-  min-width:22ch;
+  width:28ch;
+  max-width:28ch;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+/* Pieza Madre (última col) */
+.table td:nth-last-child(1){
+  min-width:110px;
+  max-width:160px;
   white-space:normal;
   word-break:break-word;
 }
@@ -255,6 +300,49 @@ h1{
   padding:10px 14px;
   border-top:1px solid #111;
   font-size:14px;
+}
+
+.historial-modal {
+  width: min(600px, 90%);
+  height: min(70vh, 600px);
+  background: #fff;
+  border: 2px solid #111;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+
+.historial-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0;
+  background: #fff;
+}
+
+.historial-body .popup-line {
+  padding: 10px 14px;
+  border-top: 1px solid #ddd;
+  font-size: 14px;
+}
+
+.btn-ver-historial {
+  padding: 8px 16px;
+  border: 1px solid #111;
+  border-radius: 6px;
+  background: #f0f4f8;
+  color: #111;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.btn-ver-historial:hover {
+  background: #e0e8f0;
+  border-color: #0066cc;
+  color: #0066cc;
 }
 
 @media (max-width: 768px){

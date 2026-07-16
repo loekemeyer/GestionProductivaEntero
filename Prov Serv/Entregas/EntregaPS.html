@@ -5,27 +5,28 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Envío a Proveedores de Servicios</title>
-  <link rel="stylesheet" href="EntregaPS.css" />
+  <link rel="stylesheet" href="EntregaPS.css?v=20260715e" />
+  <link rel="stylesheet" href="../../tandas-popup.css?v=20260617a" />
 </head>
 <body>
 
   <div class="card">
     <div class="header-bar">
-      
-      <div class="header-left">
-        <button onclick="window.location.href='../../Inicio/index.html'" class="btn-home">
-          ← Inicio
-        </button>
-        <h1>Entrega de Proveedores de Servicios</h1>
-        <button id="btnEnviarCambios" class="btn-enviar hidden" type="button">
-          Enviar
-        </button>
-      </div>
+      <button id="btnVolver" class="btn-volver hidden" type="button">← Atras</button>
+      <button onclick="gpHome()" class="btn-home" type="button">← Inicio</button>
+    </div>
+    <script>
+      function gpHome(){
+        var r = sessionStorage.getItem('gp_role') || 'admin';
+        window.location.href = (r === 'envios') ? '../../envios-only.html' : '../../Inicio/index.html';
+      }
+    </script>
+    <h1 class="page-title">Entrega de Proveedores de Servicios</h1>
 
-      <div class="header-right hidden" id="selectedBar">
-        <button id="btnVolver" class="btn-volver" type="button">← Cambiar proveedor</button>
-        <div id="selectedBadge" class="selected-badge"></div>
-      </div>
+    <div class="action-bar hidden" id="selectedBar">
+      <div id="selectedBadge" class="selected-badge"></div>
+      <button id="btnLimpiar" class="btn-volver" type="button" title="Vaciar todo lo cargado">🗑 Limpiar</button>
+      <button id="btnEnviarCambiosTop" class="btn-enviar" type="button" disabled>Enviar</button>
     </div>
 
     <div id="status" class="status">Cargando proveedores...</div>
@@ -41,15 +42,16 @@
         <table class="table">
           <thead>
             <tr class="table-title-row">
-              <th colspan="6" id="tableTitle">Proveedor</th>
+              <th colspan="7" id="tableTitle">Proveedor</th>
             </tr>
             <tr>
               <th>Parte</th>
               <th>Proceso</th>
               <th>SC</th>
               <th>SP</th>
-              <th>Kg</th>
-              <th>Caj</th>             
+              <th>Caj</th>
+              <th>Kg<br>Neto</th>
+              <th title="Tandas">T</th>
             </tr>
           </thead>
           <tbody id="resultBody"></tbody>
@@ -58,6 +60,10 @@
 
       <div class="bottom-actions">
         <div id="tableMsg" class="status"></div>
+        <!-- btnEnviarCambios oculto: el botón visible es btnEnviarCambiosTop en el header. Se mantiene oculto solo como destino del .click() del mirror. -->
+        <button id="btnEnviarCambios" class="btn-enviar hidden" type="button" style="display:none">
+          Enviar
+        </button>
       </div>
     </div>
 
@@ -75,6 +81,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script src="EntregaPS.js"></script>
+  <script src="../../tandas-popup.js?v=20260604a"></script>
+  <script src="EntregaPS.js?v=20260715d"></script>
 </body>
 </html>

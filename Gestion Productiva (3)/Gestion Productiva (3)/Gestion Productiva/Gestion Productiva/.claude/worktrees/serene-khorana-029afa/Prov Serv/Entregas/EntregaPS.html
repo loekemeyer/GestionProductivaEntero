@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <script src="../../auth-guard.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Envío a Proveedores de Servicios</title>
+  <link rel="stylesheet" href="EntregaPS.css" />
+</head>
+<body>
+
+  <div class="card">
+    <div class="header-bar">
+      
+      <div class="header-left">
+        <button onclick="window.location.href='../../Inicio/index.html'" class="btn-home">
+          ← Inicio
+        </button>
+        <h1>Entrega de Proveedores de Servicios</h1>
+        <button id="btnEnviarCambios" class="btn-enviar hidden" type="button">
+          Enviar
+        </button>
+      </div>
+
+      <div class="header-right hidden" id="selectedBar">
+        <button id="btnVolver" class="btn-volver" type="button">← Cambiar proveedor</button>
+        <div id="selectedBadge" class="selected-badge"></div>
+      </div>
+    </div>
+
+    <div id="status" class="status">Cargando proveedores...</div>
+
+    <!-- Vista inicial -->
+    <div id="psGridWrap" class="selector-wrap hidden">
+      <div id="psGrid" class="ps-grid"></div>
+    </div>
+
+    <!-- Vista detalle -->
+    <div id="detailWrap" class="detail-wrap hidden">
+      <div class="table-shell">
+        <table class="table">
+          <thead>
+            <tr class="table-title-row">
+              <th colspan="6" id="tableTitle">Proveedor</th>
+            </tr>
+            <tr>
+              <th>Parte</th>
+              <th>Proceso</th>
+              <th>SC</th>
+              <th>SP</th>
+              <th>Kg</th>
+              <th>Caj</th>             
+            </tr>
+          </thead>
+          <tbody id="resultBody"></tbody>
+        </table>
+      </div>
+
+      <div class="bottom-actions">
+        <div id="tableMsg" class="status"></div>
+      </div>
+    </div>
+
+    <div id="successBox" class="successBox">
+      <div class="title">Envío registrado</div>
+      <div>Tu código de envío:</div>
+      <div id="successCode" class="successCode">—</div>
+      <button id="okBtn" class="okBtn" type="button">OK</button>
+    </div>
+
+    <iframe name="sheet_iframe" style="display:none"></iframe>
+    <form id="sheetForm" action="TU_WEBAPP_URL_AQUI" method="POST" target="sheet_iframe" class="hidden">
+      <input type="hidden" name="payload" id="payloadField" value="">
+    </form>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="EntregaPS.js"></script>
+</body>
+</html>

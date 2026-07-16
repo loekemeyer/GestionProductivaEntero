@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(///LOEKE-SVR/Documentos Compartidos/AA IT/Gestion Productiva \\(2\\)/**)",
+      "Read(///LOEKE-SVR/Documentos Compartidos/AA IT/Gestion Productiva \\(2\\)/Gestion Productiva/**)",
+      "Read(///LOEKE-SVR/Documentos Compartidos/AA IT/Gestion Productiva \\(2\\)/Gestion Productiva/Gestion Productiva/**)",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "Bash(python3 -c ':*)",
+      "Bash(awk 'NR>=100 && NR<=150' \"C:/Users/Pagos/.claude/projects/--LOEKE-SVR-Documentos-Compartidos-AA-IT-Gestion-Productiva--2--Gestion-Productiva/de2e8343-68e4-4c48-a6df-6b4c485de779.jsonl\")",
+      "Bash(awk 'NR>=145 && NR<=175' \"C:/Users/Pagos/.claude/projects/--LOEKE-SVR-Documentos-Compartidos-AA-IT-Gestion-Productiva--2--Gestion-Productiva/de2e8343-68e4-4c48-a6df-6b4c485de779.jsonl\")",
+      "Bash(awk 'NR==148' \"C:/Users/Pagos/.claude/projects/--LOEKE-SVR-Documentos-Compartidos-AA-IT-Gestion-Productiva--2--Gestion-Productiva/de2e8343-68e4-4c48-a6df-6b4c485de779.jsonl\")",
+      "Bash(awk 'NR==167' \"C:/Users/Pagos/.claude/projects/--LOEKE-SVR-Documentos-Compartidos-AA-IT-Gestion-Productiva--2--Gestion-Productiva/de2e8343-68e4-4c48-a6df-6b4c485de779.jsonl\")",
+      "Bash(awk 'NR==207' \"C:/Users/Pagos/.claude/projects/--LOEKE-SVR-Documentos-Compartidos-AA-IT-Gestion-Productiva--2--Gestion-Productiva/de2e8343-68e4-4c48-a6df-6b4c485de779.jsonl\")",
+      "Read(///LOEKE-SVR/Documentos Compartidos/AA IT/Gestion Productiva \\(2\\)/Gestion Productiva/Gestion Productiva/Inicio/**)",
+      "Read(///LOEKE-SVR/Documentos Compartidos/AA IT/Gestion Productiva \\(2\\)/Gestion Productiva/Gestion Productiva/Facturas/**)"
+    ],
+    "additionalDirectories": [
+      "\\\\LOEKE-SVR\\Documentos Compartidos\\AA IT\\Gestion Productiva (2)\\Gestion Productiva\\Gestion Productiva"
+    ]
+  }
+}

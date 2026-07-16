@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <script src="../auth-guard.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Exportar Datos — Envíos y Entregas</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="styles.css?v=20260603b" />
+  <style>
+    /* ===== Específico del export ===== */
+    .btn-csv{
+      height: 42px;
+      padding: 0 18px;
+      border-radius: 10px;
+      border: 1px solid #0a7d33;
+      background: #0a7d33;
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn-csv:hover{ background: #0c9a3f; }
+    .btn-csv:disabled{ opacity: .4; cursor: not-allowed; }
+
+    /* Header de 2 niveles: fila día (h1) arriba, fila medida (h2) debajo */
+    .pivote.exp2 thead tr.h1 th{ top: 0; z-index: 4; }
+    .pivote.exp2 thead tr.h2 th{ top: 39px; z-index: 3; }
+    /* Separador grueso entre grupos-día y antes del Total */
+    .pivote.exp2 .dia-sep{ border-left: 2.5px solid #111; }
+    .pivote.exp2 td.desc, .pivote.exp2 th.desc{ text-align: left; }
+    .pivote.exp2 tfoot td{ font-weight: 800; background: #f3f3f3; position: sticky; bottom: 0; z-index: 2; }
+
+    /* Un bloque por proveedor/tallerista */
+    .bloque{ margin-bottom: 26px; }
+    .bloque .table-scroll{ max-height: 60vh; }
+    .bloque .report-head{ font-size: 15px; }
+
+    /* Secciones ENVÍOS / ENTREGAS */
+    .seccion{ margin-bottom: 34px; }
+    .seccion-head{
+      font-size: 20px; font-weight: 800; letter-spacing: .5px;
+      margin: 18px 0 14px; padding: 8px 14px;
+      background: #1f2937; color: #fff; border-radius: 8px;
+    }
+    .vacio{ color: #777; font-style: italic; margin: 6px 0 16px; }
+    .pivote.exp2 td.cod, .pivote.exp2 th.cod{ font-weight: 700; font-variant-numeric: tabular-nums; }
+    .hint-both{ margin-left: 14px; color: #555; font-size: 13px; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+
+    <button onclick="gpHome()" class="btn-home" type="button">← Volver al inicio</button>
+    <script>
+      function gpHome(){
+        var r = sessionStorage.getItem('gp_role') || 'admin';
+        window.location.href = (r === 'envios') ? '../envios-only.html' : '../Inicio/index.html';
+      }
+    </script>
+
+    <h1>Exportar Datos — Envíos y Entregas</h1>
+
+    <!-- PASO 1: Origen -->
+    <div class="step">
+      <div class="step-label">1. Origen</div>
+      <div class="btn-group" id="grpOrigen">
+        <button type="button" class="opt" data-val="ps">Prov. Servicios</button>
+        <button type="button" class="opt" data-val="tall">Talleristas</button>
+      </div>
+    </div>
+
+    <!-- PASO 1b: Proveedor / Tallerista -->
+    <div class="step hidden" id="stepNombre">
+      <div class="step-label" id="labelNombre">Proveedor / Tallerista</div>
+      <select id="selNombre" class="sel-nombre">
+        <option value="__todos__">Todos</option>
+      </select>
+    </div>
+
+    <!-- PASO 2: Mes -->
+    <div class="step">
+      <div class="step-label">2. Mes</div>
+      <div class="fbox">
+        <input type="month" id="inMes" />
+      </div>
+    </div>
+
+    <div class="step">
+      <button type="button" id="btnGenerar" class="btn-generar">Generar vista</button>
+      <span class="hint-both">Elegí un tallerista/proveedor (obligatorio). Salen Envíos y Entregas juntos, en secciones separadas.</span>
+    </div>
+
+    <div id="status" class="status"></div>
+    <div id="result"></div>
+
+  </div>
+
+  <script src="exportar.js?v=20260618e"></script>
+</body>
+</html>

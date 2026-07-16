@@ -15,6 +15,19 @@ const subfiltros = document.getElementById("subfiltros");
 const filtroMatrizWrap = document.getElementById("filtroMatrizWrap");
 const filtroMatriz = document.getElementById("filtroMatriz");
 const selMetrica = document.getElementById("selMetrica");
+const selUnidadTiempo = document.getElementById("selUnidadTiempo");
+
+// Convierte segundos a la unidad seleccionada por el operario y devuelve string formateado
+function fmtTiempo(seg) {
+  const u = selUnidadTiempo ? selUnidadTiempo.value : "seg";
+  if (u === "min") return f(seg / 60, 2);
+  if (u === "hs")  return f(seg / 3600, 2);
+  return f(seg, 2); // seg
+}
+function unidadLabelCorto() {
+  const u = selUnidadTiempo ? selUnidadTiempo.value : "seg";
+  return u === "min" ? "Min" : u === "hs" ? "Hs" : "Seg";
+}
 const fieldFechaRango = document.getElementById("fieldFechaRango");
 const tipoGrid = document.getElementById("tipoGrid");
 
@@ -132,6 +145,10 @@ async function init() {
     filtroMatriz.addEventListener("input", () => {
       if (cachedRows.length) aplicarSubfiltros();
     });
+    if (selUnidadTiempo) selUnidadTiempo.addEventListener("change", () => {
+      if (cachedRows.length) aplicarSubfiltros();
+    });
+
     selMetrica.addEventListener("change", () => {
       if (cachedRows.length) aplicarSubfiltros();
     });
@@ -700,10 +717,14 @@ function renderPiedra(rows, empMap) {
    Celda = Seg x Uni de ese empleado en esa matriz
    ================================================================= */
 function renderMatriz(rows, empMap, matMap) {
-  // Solo cajones con matriz numerica, no anulados, EXCLUIR Piedra (501)
+  // Solo cajones con matriz numerica, no anulados.
+  // Piedra (501) se EXCLUYE por default (vista dedicada renderPiedra),
+  // pero se INCLUYE si el chip "P" del filtro Tipo_Matriz está activo.
+  const incluirPiedra = selectedTipos.has("P");
   const cajones = rows.filter(r => {
     const mat = String(r.Matriz || "").trim();
-    return esMatriz(mat) && mat !== "501" && n(r.Uni) > 0 && r.Anular_Tiempo !== true;
+    if (mat === "501" && !incluirPiedra) return false;
+    return esMatriz(mat) && n(r.Uni) > 0 && r.Anular_Tiempo !== true;
   });
 
   // Empleados unicos
@@ -751,7 +772,11 @@ function renderMatriz(rows, empMap, matMap) {
   const pocasCols = empleados.length * subCols <= 3;
 
   // Titulo dinamico
-  const tituloMetrica = metrica === "ambos" ? "Seg x Uni y Puntaje" : metrica === "segxuni" ? "Seg x Uni" : "Puntaje";
+  const uLbl = unidadLabelCorto();
+  // Si SOLO Piedra está seleccionado en chips → la unidad real es Kg (no uni)
+  const soloPiedra = selectedTipos.size === 1 && selectedTipos.has("P");
+  const uniLbl = soloPiedra ? "Kg" : "Uni";
+  const tituloMetrica = metrica === "ambos" ? `${uLbl} x ${uniLbl} y Puntaje` : metrica === "segxuni" ? `${uLbl} x ${uniLbl}` : "Puntaje";
 
   let html = `
   <div class="informe-wrap">
@@ -762,7 +787,7 @@ function renderMatriz(rows, empMap, matMap) {
           <tr>
             <th ${metrica === "ambos" ? 'rowspan="2"' : ''}>N</th>
             <th ${metrica === "ambos" ? 'rowspan="2"' : ''}>Matriz</th>
-            <th ${metrica === "ambos" ? 'rowspan="2"' : ''}>Seg<br>Prom</th>
+            <th ${metrica === "ambos" ? 'rowspan="2"' : ''}>${unidadLabelCorto()}<br>Prom</th>
             ${empleados.map(leg => {
               const full = empMap.get(leg)?.Empleado || leg;
               const parts = String(full).trim().split(/\s+/);
@@ -774,7 +799,7 @@ function renderMatriz(rows, empMap, matMap) {
                 : `<th>${label}</th>`;
             }).join("")}
           </tr>
-          ${metrica === "ambos" ? `<tr>${empleados.map(() => `<th>Seg</th><th>Ptje</th>`).join("")}</tr>` : ""}
+          ${metrica === "ambos" ? `<tr>${empleados.map(() => `<th>${unidadLabelCorto()}</th><th>Ptje</th>`).join("")}</tr>` : ""}
         </thead>
         <tbody>`;
 
@@ -786,7 +811,7 @@ function renderMatriz(rows, empMap, matMap) {
     html += `<tr>
       <td class="c b">${esc(mat)}</td>
       <td>${esc(nombre)}</td>
-      <td class="r b">${tHist > 0 ? f(tHist, 2) : ""}</td>`;
+      <td class="r b">${tHist > 0 ? fmtTiempo(tHist) : ""}</td>`;
 
     empleados.forEach(leg => {
       const g = data.get(`${mat}__${leg}`);
@@ -795,7 +820,7 @@ function renderMatriz(rows, empMap, matMap) {
         const colorSeg = tHist > 0 ? (segXUni <= tHist ? "pos" : "neg") : "";
         const premio = tHist > 0 ? (-(segXUni / tHist - 1)) * 10 : 0;
         const colorPrem = cls(premio);
-        if (showSeg) html += `<td class="r ${colorSeg}">${f(segXUni, 2)}</td>`;
+        if (showSeg) html += `<td class="r ${colorSeg}">${fmtTiempo(segXUni)}</td>`;
         if (showPremio) html += `<td class="c b ${colorPrem}">${f(premio, 1)}</td>`;
       } else {
         if (showSeg) html += `<td></td>`;
@@ -889,16 +914,28 @@ async function mostrarDetalles(matriz, legajo) {
         <td>${fecha}</td>
         <td>${horaInicio}</td>
         <td>${horaFin}</td>
-        <td class="r">${f(uni)}</td>
-        <td class="r">${f(seg)}</td>
-        <td class="r">${f(segXUni, 2)}</td>
+        <td class="r">${f(uni, matriz === "501" ? 2 : 0)}</td>
+        <td class="r">${fmtTiempo(seg)}</td>
+        <td class="r">${fmtTiempo(segXUni)}</td>
       </tr>`;
     }).join("");
 
     const segXUniTotal = totalUni > 0 ? totalSeg / totalUni : 0;
-    totUni.textContent = f(totalUni);
-    totSeg.textContent = f(totalSeg);
-    totSegXUni.textContent = f(segXUniTotal, 2);
+    const esPiedra = matriz === "501";
+    totUni.textContent = f(totalUni, esPiedra ? 2 : 0);
+    totSeg.textContent = fmtTiempo(totalSeg);
+    totSegXUni.textContent = fmtTiempo(segXUniTotal);
+
+    // Actualizar headers de columnas segun unidad de tiempo + si es Piedra (uni=Kg)
+    const uLbl = unidadLabelCorto();
+    const uniLbl = esPiedra ? "Kg" : "Uni";
+    const hdrSeg = document.getElementById("detallesHdrSeg");
+    const hdrSegXUni = document.getElementById("detallesHdrSegXUni");
+    if (hdrSeg) hdrSeg.textContent = uLbl;
+    if (hdrSegXUni) hdrSegXUni.textContent = `${uLbl} x ${uniLbl}`;
+    // Header de Uni → Kg si Piedra
+    const hdrUni = document.querySelector("#detallesModal .tbl-detalles thead tr th:nth-child(5)");
+    if (hdrUni) hdrUni.textContent = uniLbl;
 
     modal.classList.remove("hidden");
   } catch (err) {

@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <script src="../../auth-guard.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Problemas con Matrices</title>
+  <link rel="icon" href="data:," />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', Arial, sans-serif;
+      background: #d9d9de;
+      padding: 16px;
+      color: #222;
+    }
+    .hidden { display: none !important; }
+
+    /* Top bar */
+    .top-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+    .btn-back {
+      background: #f5f5f5; border: 2px solid #ccc; border-radius: 999px;
+      padding: 8px 18px; font-size: 14px; color: #555; cursor: pointer;
+      text-decoration: none; font-weight: 600;
+    }
+    .btn-back:hover { border-color: #888; }
+    .top-bar h1 { font-size: 22px; color: #111; flex: 1; }
+
+    /* Card */
+    .card {
+      background: #fff; border: 1px solid #cfcfcf; border-radius: 14px;
+      overflow: hidden; margin-bottom: 16px; max-width: 1300px;
+    }
+    .card-header {
+      background: #111; color: #fff; padding: 14px 22px;
+      font-size: 15px; font-weight: 700;
+    }
+    .card-body { padding: 18px 22px; }
+
+    /* Filters */
+    .filters-grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 12px; font-weight: 700; color: #555; }
+    .field select, .field input[type="date"], .field input[type="text"] {
+      height: 40px; border: 1px solid #c9d1d9; border-radius: 10px;
+      padding: 0 12px; font-size: 14px; outline: none; background: #fff;
+      min-width: 160px; max-width: 240px;
+    }
+    .field select:focus, .field input:focus { border-color: #4b89ff; }
+    .btn {
+      background: #111; color: #fff; border: none; border-radius: 10px;
+      padding: 10px 24px; font-size: 14px; font-weight: 700; cursor: pointer;
+      height: 40px;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Stats */
+    .stats-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+    .stat {
+      flex: 1; min-width: 160px; background: #fff; border: 1px solid #cfcfcf;
+      border-radius: 14px; padding: 16px 22px;
+    }
+    .stat .stat-label { font-size: 12px; color: #666; font-weight: 700; text-transform: uppercase; }
+    .stat .stat-value { font-size: 32px; font-weight: 900; margin-top: 6px; }
+    .stat.rm { border-left: 6px solid #b42318; }
+    .stat.pm { border-left: 6px solid #d97706; }
+    .stat.total { border-left: 6px solid #111; }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; overflow-y: auto; max-height: 70vh; max-width: 100%; }
+    .row-count { font-size: 13px; color: #666; padding: 10px 0 6px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      background: #f5f5f7; border-bottom: 2px solid #ddd; padding: 10px;
+      text-align: left; font-weight: 700; white-space: nowrap;
+      position: sticky; top: 0; z-index: 2;
+    }
+    tbody td {
+      padding: 8px 10px; border-bottom: 1px solid #eee; white-space: nowrap;
+    }
+    tbody tr:nth-child(even) { background: #fafafa; }
+    tbody tr:hover { background: #eef2ff; }
+
+    .badge {
+      display: inline-block; font-weight: 800; font-size: 12px;
+      padding: 3px 10px; border-radius: 999px; color: #fff;
+    }
+    .badge.rm { background: #b42318; }
+    .badge.pm { background: #d97706; }
+
+    .loading-msg, .empty-msg {
+      text-align: center; padding: 30px; color: #888; font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top-bar">
+    <a href="../../Inicio/" class="btn-back">&#8592; Volver</a>
+    <h1>Problemas con Matrices</h1>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Filtros</div>
+    <div class="card-body">
+      <div class="filters-grid">
+        <div class="field">
+          <label>Fecha desde</label>
+          <input type="date" id="fechaDesde" />
+        </div>
+        <div class="field">
+          <label>Fecha hasta</label>
+          <input type="date" id="fechaHasta" />
+        </div>
+        <div class="field">
+          <label>Tipo</label>
+          <select id="selTipo">
+            <option value="AMBOS">Todos (RM + PM)</option>
+            <option value="RM">Solo RM (Rotura Matriz)</option>
+            <option value="PM">Solo PM (Pare Matriz)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Operario</label>
+          <select id="selOperario"><option value="">Todos</option></select>
+        </div>
+        <div class="field">
+          <label>Matriz N</label>
+          <input type="text" id="txtMatriz" placeholder="Ej: 62" />
+        </div>
+        <div class="field">
+          <label>Orden</label>
+          <select id="selOrden">
+            <option value="desc">Mas nuevo primero</option>
+            <option value="asc">Mas viejo primero</option>
+          </select>
+        </div>
+        <div class="field">
+          <button class="btn" id="btnBuscar">Buscar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat rm">
+      <div class="stat-label">Rompi Matriz (RM)</div>
+      <div class="stat-value" id="statRM">0</div>
+    </div>
+    <div class="stat pm">
+      <div class="stat-label">Pare Matriz (PM)</div>
+      <div class="stat-value" id="statPM">0</div>
+    </div>
+    <div class="stat total">
+      <div class="stat-label">Total</div>
+      <div class="stat-value" id="statTotal">0</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Eventos</div>
+    <div class="card-body">
+      <div id="rowCount" class="row-count"></div>
+      <div id="loadingMsg" class="loading-msg hidden">Cargando...</div>
+      <div id="emptyMsg" class="empty-msg hidden">Sin eventos para los filtros seleccionados.</div>
+      <div class="table-wrap">
+        <table id="tabla">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Hora Inicio</th>
+              <th>Hora Fin</th>
+              <th>Tipo</th>
+              <th>Legajo</th>
+              <th>Empleado</th>
+              <th>Matriz N</th>
+              <th>Nombre Matriz</th>
+              <th>Duracion</th>
+              <th title="Unidades fabricadas entre el error anterior (de esa misma matriz) y este. Si es el primero del rango, cuenta desde fechaDesde.">Uni acum.</th>
+              <th title="Uni X Golpe (de tabla Matrices)">Uni/Golpe</th>
+              <th title="Golpes antes del error = Uni acumulada / Uni X Golpe">Golpes</th>
+            </tr>
+          </thead>
+          <tbody id="tBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  const SUPABASE_URL = "https://hrxfctzncixxqmpfhskv.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const fechaDesde = document.getElementById('fechaDesde');
+  const fechaHasta = document.getElementById('fechaHasta');
+  const selTipo    = document.getElementById('selTipo');
+  const selOperario= document.getElementById('selOperario');
+  const txtMatriz  = document.getElementById('txtMatriz');
+  const selOrden   = document.getElementById('selOrden');
+  const btnBuscar  = document.getElementById('btnBuscar');
+  const tBody      = document.getElementById('tBody');
+  const rowCount   = document.getElementById('rowCount');
+  const loadingMsg = document.getElementById('loadingMsg');
+  const emptyMsg   = document.getElementById('emptyMsg');
+  const statRM     = document.getElementById('statRM');
+  const statPM     = document.getElementById('statPM');
+  const statTotal  = document.getElementById('statTotal');
+
+  const empleadosMap = {};
+  const matricesMap = {}; // N_Matriz -> { Uni_X_Golpe, Matriz }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function defaultDateRange() {
+    const hoy = new Date();
+    const desde = new Date(hoy);
+    desde.setDate(hoy.getDate() - 30);
+    fechaDesde.value = `${desde.getFullYear()}-${pad(desde.getMonth()+1)}-${pad(desde.getDate())}`;
+    fechaHasta.value = `${hoy.getFullYear()}-${pad(hoy.getMonth()+1)}-${pad(hoy.getDate())}`;
+  }
+
+  function fmtFecha(iso) {
+    if (!iso) return '';
+    const s = String(iso);
+    const datePart = s.includes('T') ? s.split('T')[0] : s.substring(0, 10);
+    const [y, m, d] = datePart.split('-');
+    return d && m && y ? `${d}/${m}/${y}` : datePart;
+  }
+
+  function fmtHora(s) {
+    if (!s) return '';
+    const str = String(s);
+    if (str.includes('T')) {
+      const t = str.split('T')[1];
+      return t ? t.substring(0, 8) : '';
+    }
+    return str.substring(0, 8);
+  }
+
+  function calcDuracion(hi, hf) {
+    if (!hi || !hf) return '';
+    const ti = new Date(hi).getTime();
+    const tf = new Date(hf).getTime();
+    if (isNaN(ti) || isNaN(tf) || tf < ti) return '';
+    const seg = Math.round((tf - ti) / 1000);
+    const h = Math.floor(seg / 3600);
+    const m = Math.floor((seg % 3600) / 60);
+    const s = seg % 60;
+    if (h > 0) return `${h}h ${pad(m)}m`;
+    if (m > 0) return `${m}m ${pad(s)}s`;
+    return `${s}s`;
+  }
+
+  function tipoDeNombre(nombre) {
+    const n = String(nombre || '').trim().toUpperCase();
+    if (n.startsWith('RM ') || n === 'RM') return 'RM';
+    if (n.startsWith('PM ') || n === 'PM') return 'PM';
+    return '';
+  }
+
+  async function loadEmpleados() {
+    const { data } = await sb.from('Empleados').select('Legajo, Empleado, Activo').eq('Activo', 'SI');
+    if (!data) return;
+    data.sort((a, b) => parseInt(String(a.Legajo).replace(/\D/g, '')) - parseInt(String(b.Legajo).replace(/\D/g, '')));
+    data.forEach(e => {
+      empleadosMap[e.Legajo] = e.Empleado;
+      const opt = document.createElement('option');
+      opt.value = e.Legajo;
+      opt.textContent = e.Legajo + ' - ' + e.Empleado;
+      selOperario.appendChild(opt);
+    });
+  }
+
+  async function loadMatrices() {
+    const { data } = await sb.from('Matrices').select('N_Matriz, Matriz, Uni_X_Golpe');
+    if (!data) return;
+    data.forEach(m => {
+      const key = String(m.N_Matriz || '').trim();
+      if (!key) return;
+      matricesMap[key] = {
+        Matriz: m.Matriz || '',
+        Uni_X_Golpe: Number(m.Uni_X_Golpe) || 0
+      };
+    });
+  }
+
+  async function buscar() {
+    tBody.innerHTML = '';
+    rowCount.textContent = '';
+    emptyMsg.classList.add('hidden');
+    loadingMsg.classList.remove('hidden');
+    btnBuscar.disabled = true;
+
+    try {
+      const asc = selOrden.value === 'asc';
+      const tipo = selTipo.value;
+
+      let q = sb.from('db_n8n_espejo')
+        .select('Fecha, Hora_Inicio, Hora_Fin, Legajo, Nombre_Empleado, Matriz, Nombre_Matriz, Eliminar')
+        .gte('Fecha', fechaDesde.value + 'T00:00:00')
+        .lte('Fecha', fechaHasta.value + 'T23:59:59')
+        .or('Eliminar.is.null,Eliminar.neq.S')
+        .order('Hora_Inicio', { ascending: asc })
+        .limit(50000);
+
+      if (tipo === 'RM')      q = q.like('Nombre_Matriz', 'RM %');
+      else if (tipo === 'PM') q = q.like('Nombre_Matriz', 'PM %');
+      else                    q = q.or('Nombre_Matriz.like.RM %,Nombre_Matriz.like.PM %');
+
+      if (selOperario.value) q = q.eq('Legajo', selOperario.value);
+
+      const matFilter = String(txtMatriz.value || '').trim();
+      if (matFilter) q = q.eq('Matriz', matFilter);
+
+      const { data, error } = await q;
+      if (error) { alert('Error: ' + error.message); return; }
+
+      const rows = data || [];
+
+      // Calculo de Uni acumulada entre errores por matriz.
+      // Para cada matriz que aparece en rows, traer TODAS las filas de produccion
+      // (Uni > 0) y eventos RM/PM en el rango de fechas, ordenadas por Hora_Inicio.
+      // Walk: acumular Uni de filas productivas; al hit RM/PM, anotar acumulado y resetear.
+      const matricesEnRango = Array.from(new Set(rows.map(r => String(r.Matriz || '').trim()).filter(Boolean)));
+      const uniAcumPorId = {}; // key "matriz|HoraInicio|Legajo" -> uniAcumulada
+
+      if (matricesEnRango.length > 0) {
+        const { data: prodData, error: errProd } = await sb.from('db_n8n_espejo')
+          .select('Matriz, Nombre_Matriz, Hora_Inicio, Legajo, Uni, Eliminar')
+          .gte('Fecha', fechaDesde.value + 'T00:00:00')
+          .lte('Fecha', fechaHasta.value + 'T23:59:59')
+          .in('Matriz', matricesEnRango)
+          .or('Eliminar.is.null,Eliminar.neq.S')
+          .order('Hora_Inicio', { ascending: true })
+          .limit(100000);
+
+        if (!errProd && prodData) {
+          // agrupar por matriz
+          const porMatriz = {};
+          prodData.forEach(r => {
+            const m = String(r.Matriz || '').trim();
+            if (!m) return;
+            (porMatriz[m] = porMatriz[m] || []).push(r);
+          });
+          Object.keys(porMatriz).forEach(m => {
+            // Solo RM resetea el acumulador. PM anota pero NO resetea
+            // (golpes/uni se cuentan entre Roturas reales, no entre Pares).
+            let acum = 0;
+            porMatriz[m].forEach(r => {
+              const t = tipoDeNombre(r.Nombre_Matriz);
+              const k = m + '|' + (r.Hora_Inicio || '') + '|' + (r.Legajo || '');
+              if (t === 'RM') {
+                uniAcumPorId[k] = acum;
+                acum = 0;
+              } else if (t === 'PM') {
+                uniAcumPorId[k] = acum;
+                // no resetea
+              } else {
+                const u = Number(r.Uni) || 0;
+                if (u > 0) acum += u;
+              }
+            });
+          });
+        }
+      }
+
+      let cRM = 0, cPM = 0;
+      const html = rows.map(r => {
+        const t = tipoDeNombre(r.Nombre_Matriz);
+        if (t === 'RM') cRM++;
+        else if (t === 'PM') cPM++;
+        const badge = t ? `<span class="badge ${t.toLowerCase()}">${t}</span>` : '';
+        const dur = calcDuracion(r.Hora_Inicio, r.Hora_Fin);
+
+        const matKey = String(r.Matriz || '').trim();
+        const uxg = matricesMap[matKey] ? matricesMap[matKey].Uni_X_Golpe : 0;
+        const key = matKey + '|' + (r.Hora_Inicio || '') + '|' + (r.Legajo || '');
+        const uniAcum = uniAcumPorId[key];
+        const uniAcumTxt = (uniAcum == null) ? '-' : uniAcum.toLocaleString('es-AR');
+        const uxgTxt = uxg > 0 ? uxg : '-';
+        const golpesTxt = (uniAcum != null && uxg > 0) ? Math.round(uniAcum / uxg).toLocaleString('es-AR') : '-';
+
+        return `<tr>
+          <td>${esc(fmtFecha(r.Fecha))}</td>
+          <td>${esc(fmtHora(r.Hora_Inicio))}</td>
+          <td>${esc(fmtHora(r.Hora_Fin))}</td>
+          <td>${badge}</td>
+          <td>${esc(r.Legajo)}</td>
+          <td>${esc(r.Nombre_Empleado || empleadosMap[r.Legajo] || '')}</td>
+          <td><strong>${esc(r.Matriz)}</strong></td>
+          <td>${esc(r.Nombre_Matriz)}</td>
+          <td>${esc(dur)}</td>
+          <td style="text-align:right">${esc(uniAcumTxt)}</td>
+          <td style="text-align:right">${esc(uxgTxt)}</td>
+          <td style="text-align:right;font-weight:700">${esc(golpesTxt)}</td>
+        </tr>`;
+      }).join('');
+
+      tBody.innerHTML = html;
+      statRM.textContent = cRM;
+      statPM.textContent = cPM;
+      statTotal.textContent = rows.length;
+      rowCount.textContent = `${rows.length} evento(s) encontrado(s)`;
+      if (!rows.length) emptyMsg.classList.remove('hidden');
+    } catch (e) {
+      console.error(e);
+      alert('Error: ' + (e.message || e));
+    } finally {
+      loadingMsg.classList.add('hidden');
+      btnBuscar.disabled = false;
+    }
+  }
+
+  (async function init() {
+    defaultDateRange();
+    await Promise.all([loadEmpleados(), loadMatrices()]);
+    btnBuscar.addEventListener('click', buscar);
+    buscar();
+  })();
+})();
+</script>
+</body>
+</html>

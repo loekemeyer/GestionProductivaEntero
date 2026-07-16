@@ -131,6 +131,7 @@ const SECTOR_SC_POR_PROV = { 'Maspoli': 'D13', 'Pintos': null };
 let PROVEEDORES_POR_RUBRO = {
   Plasticos: [],
   Flejes: [],
+  Remaches: [],
   Cajas: ["Corrugadora"],
   Cartones: ["Grafica Pol"]
 };
@@ -138,6 +139,7 @@ let PROVEEDORES_POR_RUBRO = {
 // Tablas fuente por rubro (para listar productos del proveedor en flujo recepción)
 const TABLAS_POR_RUBRO = {
   Flejes:    { tabla: "Flejes",              colCod: "N Fleje",  colDesc: "Descripción",          colProv: "Proveedor" },
+  Remaches:  { tabla: "Remaches SC",         colCod: "SC",       colDesc: "Descripción",          colProv: "Proveedor" },
   Cajas:     { tabla: "Cajas",               colCod: "N_Caja",   colDesc: "Cod_ISIS_LK",          colProv: null },
   Plasticos: { tabla: "Partes_Plasticas",    colCod: "Cod_ISIS", colDesc: "Descripcion",          colProv: "Proveedor" },
   Cartones:  { tabla: "Despiece x Articulo", colCod: "COD",      colDesc: "Descripcion de partes", colProv: null, filtro: { col: "Rubro", val: "Cartones" } }
@@ -230,6 +232,17 @@ async function cargarProveedoresPorRubro() {
       if (p && p !== '#N/D') set.add(p);
     });
     PROVEEDORES_POR_RUBRO.Flejes = [...set].sort();
+  }
+  // Remaches
+  const { data: remData, error: remErr } = await sb
+    .from('Remaches SC').select('Proveedor');
+  if (!remErr && remData) {
+    const set = new Set();
+    remData.forEach(r => {
+      const p = String(r.Proveedor || '').trim();
+      if (p && p !== '#N/D') set.add(p);
+    });
+    PROVEEDORES_POR_RUBRO.Remaches = [...set].sort();
   }
   // Cajas y Cartones quedan con defaults
 }

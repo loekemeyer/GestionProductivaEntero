@@ -5,6 +5,11 @@ const SUPABASE_URL = "https://hrxfctzncixxqmpfhskv.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+window.__sbClient__ = supabaseClient; // expuesto para cajones-popup.js
+
+function formatNumKgEt(n) {
+  return Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+}
 
 /*************************************************
  * ELEMENTOS DEL DOM
@@ -20,13 +25,17 @@ const BUFFER_KEY = "enviosTall_pendientes";
 
 /* Fases */
 const fase1 = document.getElementById("fase1");
-const fase2 = document.getElementById("fase2");
+// fase2 eliminado del HTML — dummy para no romper mostrarFase()
+const fase2 = { classList: { toggle: () => {}, add: () => {}, remove: () => {} } };
 const fase3 = document.getElementById("fase3");
-const btnSiguiente = document.getElementById("btnSiguiente");
-const btnVolverFase1 = document.getElementById("btnVolverFase1");
+// btnSiguiente y btnVolverFase1 eliminados — Fase 1 y 2 unificadas
+// Mantenemos const dummy para no romper referencias en código legacy
+const btnSiguiente = document.getElementById("btnEnviar"); // alias al Enviar unificado
+const btnVolverFase1 = { addEventListener: () => {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } };
 const btnEnviar = document.getElementById("btnEnviar");
 const btnImprimir = document.getElementById("btnImprimir");
-const fase2TableBody = document.getElementById("fase2TableBody");
+// fase2TableBody eliminado — Fase 1 y 2 unificadas. Dummy para no romper legacy.
+const fase2TableBody = { innerHTML: "", querySelectorAll: () => [], querySelector: () => null };
 const fase3TableBody = document.getElementById("fase3TableBody");
 
 let currentPhase = 1; // 1, 2 o 3
@@ -76,7 +85,9 @@ function actualizarBtnSiguiente(){
     b.tallerista === talleristaActivo &&
     (Number(b.cajones) > 0 || Number(b.unidades) > 0)
   );
-  btnSiguiente.classList.toggle("hidden", !tieneItems);
+  btnSiguiente.disabled = !tieneItems;
+  btnSiguiente.classList.toggle("disabled", !tieneItems);
+  btnSiguiente.classList.remove("hidden");
 }
 /*************************************************
  * CACHES EN MEMORIA
@@ -291,8 +302,17 @@ function renderTalleristas(lista){
 
 function seleccionarTallerista(nombre){
   talleristaActivo = nombre;
-  renderTalleristas([nombre]);
+  // Ocultar grilla de talleristas (no mostramos pill seleccionado)
+  const grid = document.getElementById("talleristasGrid");
+  if (grid) grid.classList.add("hidden");
+  // Cambiar título: "Envios a <Tallerista>"
+  const h1 = document.querySelector(".header-top h1");
+  if (h1) h1.textContent = `Envios a ${nombre}`;
   btnVolver.classList.remove("hidden");
+  const enviarBar = document.getElementById("enviarBar");
+  if (enviarBar) enviarBar.classList.remove("hidden");
+  const btnEnv = document.getElementById("btnEnviar");
+  if (btnEnv) btnEnv.classList.remove("hidden");
   if (txtFiltroArticulo) { txtFiltroArticulo.value = ""; }
   if (filtroArticuloWrap) { filtroArticuloWrap.classList.remove("hidden"); }
   buscar(nombre);
@@ -302,7 +322,17 @@ async function volverALista(){
   talleristaActivo = "";
   resultEl.innerHTML = "";
   btnVolver.classList.add("hidden");
-  btnSiguiente.classList.add("hidden");
+  const enviarBar = document.getElementById("enviarBar");
+  if (enviarBar) enviarBar.classList.add("hidden");
+  const btnEnv = document.getElementById("btnEnviar");
+  if (btnEnv) btnEnv.classList.add("hidden");
+  // Restaurar título
+  const h1 = document.querySelector(".header-top h1");
+  if (h1) h1.textContent = "Envios por Tallerista";
+  // Mostrar grilla de talleristas de nuevo
+  const grid = document.getElementById("talleristasGrid");
+  if (grid) grid.classList.remove("hidden");
+  btnSiguiente.disabled = true; btnSiguiente.classList.add("disabled");
   if (txtFiltroArticulo) { txtFiltroArticulo.value = ""; }
   if (filtroArticuloWrap) { filtroArticuloWrap.classList.add("hidden"); }
   // Asegurar que se vea fase1 (puede venir de fase2 o fase3)
@@ -671,23 +701,34 @@ function obtenerCajasPorTallerista(filasTallerista, articulosCajas, cajasData){
 /*************************************************
  * CARGA ENVIOS Y ENTREGAS (misma lógica que ControlTall)
  *************************************************/
+// Helper: paginar para evitar cap 1000 de Supabase + safety net
+async function fetchAllPaginated(table, selectCols = "*"){
+  const out = [];
+  const PAGE = 1000;
+  const MAX_PAGES = 100;
+  let from = 0;
+  for (let page = 0; page < MAX_PAGES; page++){
+    const { data, error } = await supabaseClient.from(table).select(selectCols).range(from, from + PAGE - 1);
+    if (error){ console.error(error); return out; }
+    if (!data || !data.length) return out;
+    out.push(...data);
+    if (data.length < PAGE) return out;
+    from += PAGE;
+    if (page === MAX_PAGES - 1) console.warn(`[fetchAllPaginated] ${table}: MAX_PAGES alcanzado, filas: ${out.length}`);
+  }
+  return out;
+}
+
 async function cargarEnviosParaCalculo(){
-  const { data, error } = await supabaseClient
-    .from("Envios a Talleristas")
-    .select("*")
-    .limit(20000);
-  if (error){ console.error(error); return []; }
-  return data || [];
+  return await fetchAllPaginated("Envios a Talleristas");
 }
 
 async function cargarEntregasParaCalculo(){
-  const [respEnt, respPartes] = await Promise.all([
-    supabaseClient.from("Entregas Tallerista Virgilio").select("*").limit(20000),
-    supabaseClient.from("Partes x Tallerista").select("*").limit(20000)
+  const [entregas, partes] = await Promise.all([
+    fetchAllPaginated("Entregas_Tall_Todas"),
+    fetchAllPaginated("Partes x Tallerista")
   ]);
-  if (respEnt.error){ console.error(respEnt.error); return { entregas: [], partes: [] }; }
-  if (respPartes.error){ console.error(respPartes.error); return { entregas: [], partes: [] }; }
-  return { entregas: respEnt.data || [], partes: respPartes.data || [] };
+  return { entregas, partes };
 }
 
 function obtenerEnviosUni(nombreTall, descripcion, enviosData, kgXUni){
@@ -753,28 +794,26 @@ function calcularCajones(consumoTotal, kgXUni, partesXUni, kgXCajon){
  *************************************************/
 function actualizarFaltanteRow(row, esInicial = false){
   const esperado = Number(row.dataset.cajonesEsperados || 0);
-
-  const inputCaj = row.querySelector(".input-caj");
   const box = row.querySelector(".faltante-box");
+  const esCarton = row.dataset.esCarton === "1";
+  if (!box) return;
 
-  if (!inputCaj || !box) return;
-
-  const cargadoCaj = parseInputNumber(inputCaj.value);
+  // Para cartones la lógica sigue con input-uni; para resto, lee dataset.cajones (popup-driven)
+  const cargadoCaj = esCarton
+    ? parseInputNumber(row.querySelector('input[name^="uni_"]')?.value)
+    : Number(row.dataset.cajones || 0);
 
   const sinCarga = (cargadoCaj === null || cargadoCaj === 0);
 
-  // 🚫 IMPORTANTE: NO auto-F en carga inicial
   if (!esInicial && sinCarga && esperado <= 0.4){
     box.classList.add("active");
     box.textContent = "F";
-    registrarCambioFila(row);
     return;
   }
 
   if (cargadoCaj === null){
     box.classList.remove("active");
     box.textContent = "";
-    if (!esInicial) registrarCambioFila(row);
     return;
   }
 
@@ -785,22 +824,23 @@ function actualizarFaltanteRow(row, esInicial = false){
     box.classList.remove("active");
     box.textContent = "";
   }
-
-  if (!esInicial) registrarCambioFila(row);
 }
 
 function activarLogicaFaltante(){
   resultEl.querySelectorAll("tbody tr").forEach(row => {
-    const inputCaj = row.querySelector(".input-caj");
+    const inputCaj = row.querySelector('.input-cajones');
     const box = row.querySelector(".faltante-box");
 
     if (inputCaj){
       inputCaj.addEventListener("input", () => {
-        inputCaj.value = inputCaj.value.replace(/[^\d]/g, "");
-        actualizarFaltanteRow(row, true);
-        registrarCambioFila(row);
+        inputCaj.value = inputCaj.value.replace(/\D/g, "");
       });
-      inputCaj.addEventListener("change", () => actualizarFaltanteRow(row));
+      inputCaj.addEventListener("change", () => {
+        const totalCaj = parseInt(inputCaj.value, 10) || 0;
+        row.dataset.cajones = totalCaj;
+        actualizarFaltanteRow(row, true);
+        registrarCambioFila(row, {}, totalCaj, 0);
+      });
     }
 
     const inputUni = row.querySelector(".input-uni");
@@ -810,6 +850,26 @@ function activarLogicaFaltante(){
         registrarCambioFila(row);
       });
       inputUni.addEventListener("change", () => registrarCambioFila(row));
+    }
+
+    // Input Kg Neto (unificado Fase 1) — solo para no-cartones
+    const inputKg = row.querySelector(".input-kg");
+    if (inputKg){
+      inputKg.addEventListener("input", () => {
+        inputKg.value = inputKg.value.replace(/[^0-9,.\-]/g, "");
+      });
+      inputKg.addEventListener("change", () => {
+        registrarKgFilaTall(row, inputKg.value);
+      });
+    }
+
+    // Botón Tandas (T)
+    const tandaBtn = row.querySelector('[data-action="tandas"]');
+    if (tandaBtn){
+      tandaBtn.addEventListener("click", () => {
+        const idx = Number(tandaBtn.dataset.filaIdx);
+        abrirTandasFilaTall(idx);
+      });
     }
 
     if (box){
@@ -889,7 +949,7 @@ async function buscar(nombreParam){
   if (!nombre) return;
 
   filasModificadas.clear();
-  btnSiguiente.classList.add("hidden");
+  btnSiguiente.disabled = true; btnSiguiente.classList.add("disabled");
   btnSiguiente.disabled = false;
   btnSiguiente.textContent = "Enviar cambios";
 
@@ -1088,17 +1148,49 @@ function renderizarFilasFase1(filtro){
     const grupo = clasificarItem(item);
     if (grupo !== grupoActual){
       grupoActual = grupo;
-      rows += `<tr class="grupo-header"><td colspan="6">${escapeHtml(grupo)}</td></tr>`;
+      rows += `<tr class="grupo-header"><td colspan="8">${escapeHtml(grupo)}</td></tr>`;
     }
     const bufKey = `${item.tallerista}__${item.sector || ""}__${item.descripcion}`;
     const bufItem = getBuffer().find(b => `${b.tallerista}__${b.sector || ""}__${b.descripcion}` === bufKey);
-    const bufCajVal = bufItem ? bufItem.cajones : "";
+    const bufCajVal = bufItem ? Number(bufItem.cajones) : 0;
     const bufUniVal = bufItem ? (bufItem.unidades || "") : "";
+    const bufKgVal = bufItem ? (bufItem.kg || "") : "";
+    const bufPesoCaj = bufItem ? Number(bufItem.pesoCajones || 0) : 0;
 
-    const cajCell = item.esCarton
-      ? `<td class="right"><span class="zero">—</span></td>`
-      : `<td class="right"><input type="text" inputmode="numeric" class="cell-input cell-input-small input-caj" placeholder="0" name="caj_${index}" value="${bufCajVal}" autocomplete="off"></td>`;
+    // Tandas (solo no-cartones)
+    const tandasArr = (bufItem && Array.isArray(bufItem.tandas)) ? bufItem.tandas : [];
+    const hayTandas = !item.esCarton && tandasArr.length > 0;
+    const totCajTandas = tandasArr.reduce((s, t) => s + (Number(t.caj) || 0), 0);
+    const totKgTandas = tandasArr.reduce((s, t) => s + (parseDecimal(t.kg) || 0), 0);
 
+    // Cajones: solo no-cartones
+    let cajCell;
+    if (item.esCarton) {
+      cajCell = `<td class="right"><span class="zero">—</span></td>`;
+    } else {
+      const cajVal = hayTandas ? totCajTandas : (bufCajVal || '');
+      const cajCls = hayTandas ? 'cell-input input-cajones input-with-tandas' : 'cell-input input-cajones';
+      const ro = hayTandas ? 'readonly' : '';
+      cajCell = `<td class="right"><input type="text" inputmode="numeric" class="${cajCls}" data-fila-idx-trigger="${index}" placeholder="0" value="${cajVal}" autocomplete="off" style="width:60px;text-align:center" ${ro}></td>`;
+    }
+
+    // Kg Neto: solo no-cartones (los cartones no se pesan)
+    let kgCell;
+    if (item.esCarton) {
+      kgCell = `<td class="right"><span class="zero">—</span></td>`;
+    } else {
+      const kgVal = hayTandas ? (totKgTandas > 0 ? String(totKgTandas) : '') : bufKgVal;
+      const kgCls = hayTandas ? 'cell-input input-kg input-with-tandas' : 'cell-input input-kg';
+      const ro = hayTandas ? 'readonly' : '';
+      kgCell = `<td class="right"><input type="text" inputmode="decimal" class="${kgCls}" data-fila-idx-kg="${index}" placeholder="0,0" value="${kgVal}" autocomplete="off" style="width:80px;text-align:center" ${ro}></td>`;
+    }
+
+    // Tandas (T): solo no-cartones
+    const tandaCell = item.esCarton
+      ? `<td class="center"><span class="zero">—</span></td>`
+      : `<td class="center"><button type="button" class="tanda-trigger ${hayTandas ? 'has-tandas' : ''}" data-action="tandas" data-fila-idx="${index}" title="Cargar por tandas">${hayTandas ? tandasArr.length : '+'}</button></td>`;
+
+    // Uni: solo cartones/cajas (no se pesan, se cuentan unidades)
     const uniCell = item.esCarton
       ? `<td class="right"><input type="text" inputmode="numeric" class="cell-input cell-input-small input-uni" placeholder="0" name="uni_${index}" value="${bufUniVal}" autocomplete="off"></td>`
       : `<td class="right"><span class="zero">—</span></td>`;
@@ -1108,6 +1200,8 @@ function renderizarFilasFase1(filtro){
         data-fila-idx="${index}"
         data-cajones-esperados="${Number(item.cajonesEnviar)}"
         data-es-carton="${item.esCarton ? "1" : "0"}"
+        data-cajones="${bufCajVal}"
+        data-peso-cajones="${bufPesoCaj}"
       >
         <td>${item.sector ? escapeHtml(item.sector) : '<span class="zero">Sin sector</span>'}</td>
         <td class="descripcion-cell">${escapeHtml(item.descripcionDisplay || item.descripcion)}</td>
@@ -1116,6 +1210,8 @@ function renderizarFilasFase1(filtro){
           <div class="faltante-box" data-index="${index}"></div>
         </td>
         ${cajCell}
+        ${kgCell}
+        ${tandaCell}
         ${uniCell}
       </tr>
     `;
@@ -1133,11 +1229,13 @@ function renderizarFilasFase1(filtro){
               <th class="right"><span class="th-wrap">Cjn<br>a Env.</span></th>
               <th class="center"><span class="th-wrap">Falt</span></th>
               <th class="right"><span class="th-wrap">Caj</span></th>
+              <th class="right"><span class="th-wrap">KG<br>Neto</span></th>
+              <th class="center" title="Tandas"><span class="th-wrap">T</span></th>
               <th class="right"><span class="th-wrap">Uni</span></th>
             </tr>
           </thead>
           <tbody>
-            ${rows || `<tr><td colspan="6" class="zero" style="text-align:center;padding:16px">Sin resultados para "${escapeHtml(filtro)}"</td></tr>`}
+            ${rows || `<tr><td colspan="8" class="zero" style="text-align:center;padding:16px">Sin resultados para "${escapeHtml(filtro)}"</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1287,19 +1385,8 @@ function mostrarFase(n){
   fase3.classList.toggle("hidden", n !== 3);
 }
 
-btnSiguiente.addEventListener("click", () => {
-  const buf = getBuffer();
-  if (!buf.length){
-    alert("Selecciona al menos un artículo con cajones para enviar");
-    return;
-  }
-  renderizarFase2();
-  mostrarFase(2);
-});
-
-btnVolverFase1.addEventListener("click", () => {
-  mostrarFase(1);
-});
+// btnSiguiente.addEventListener → eliminado. Fase 1 y 2 unificadas: btnEnviar va directo.
+// btnVolverFase1.addEventListener → eliminado (no hay Fase 2).
 
 function renderizarFase2(){
   const buf = getBuffer();
@@ -1313,12 +1400,13 @@ function renderizarFase2(){
   fase2TableBody.innerHTML = itemsConCaj.map((item) => {
     const esCarton = !!item.esCarton;
     const bufIdx = item._bufIdx;
+    const kgVal = item.kg ? parseDecimal(item.kg) : 0;
     const cajCell = esCarton
       ? `<td class="right"><span class="zero">—</span></td>`
       : `<td class="right"><b>${item.cajones}</b></td>`;
     const cantCell = esCarton
       ? `<td class="right" style="font-weight:700;color:#111;">${Number(item.unidades)} <small style="color:#666;font-weight:400;">uni</small></td>`
-      : `<td class="right"><input type="text" inputmode="decimal" class="cell-input input-kg-fase2" data-buf-idx="${bufIdx}" placeholder="0,0" value="${item.kg || ""}" autocomplete="off"></td>`;
+      : `<td class="right"><input type="text" inputmode="decimal" class="cell-input input-kg-fase2" data-buf-idx="${bufIdx}" placeholder="0,0" value="${kgVal ? formatNumKgEt(kgVal) : ''}" autocomplete="off"></td>`;
     return `
     <tr data-buf-idx="${bufIdx}" data-es-carton="${esCarton ? '1' : '0'}">
       <td>${escapeHtml(item.tallerista)}</td>
@@ -1339,7 +1427,9 @@ function renderizarFase2(){
     input.addEventListener("change", () => {
       const idx = Number(input.dataset.bufIdx);
       const buf = getBuffer();
-      if (buf[idx]) buf[idx].kg = input.value.trim();
+      if (buf[idx]) {
+        buf[idx].kg = String(parseDecimal(input.value));
+      }
       localStorage.setItem(BUFFER_KEY, JSON.stringify(buf));
       validarFase2Completa();
     });
@@ -1371,13 +1461,22 @@ function validarFase2Completa(){
 }
 
 btnEnviar.addEventListener("click", async () => {
-  // Sincronizar valores de los inputs al buffer antes de validar (por si el user presionó Enviar sin blur)
-  const bufSync = getBuffer();
-  fase2TableBody.querySelectorAll(".input-kg-fase2").forEach(input => {
-    const idx = Number(input.dataset.bufIdx);
-    if (bufSync[idx]) bufSync[idx].kg = input.value.trim();
+  // Sync de inputs Fase 1 unificada (cajones, kg, uni) por si user presionó Enviar sin blur.
+  // Skip filas con inputs READONLY (tienen tandas — el valor mostrado es derivado).
+  resultEl.querySelectorAll("tbody tr").forEach(row => {
+    const inputCaj = row.querySelector(".input-cajones");
+    if (inputCaj && !inputCaj.readOnly){
+      const totalCaj = parseInt(inputCaj.value, 10) || 0;
+      if (totalCaj > 0) {
+        row.dataset.cajones = totalCaj;
+        registrarCambioFila(row, {}, totalCaj, 0);
+      }
+    }
+    const inputKg = row.querySelector(".input-kg");
+    if (inputKg && !inputKg.readOnly) registrarKgFilaTall(row, inputKg.value);
+    const inputUni = row.querySelector(".input-uni");
+    if (inputUni) registrarCambioFila(row);
   });
-  localStorage.setItem(BUFFER_KEY, JSON.stringify(bufSync));
 
   const buf = getBuffer();
   const itemsConCaj = buf.filter(b =>
@@ -1385,12 +1484,16 @@ btnEnviar.addEventListener("click", async () => {
     (Number(b.cajones) > 0 || Number(b.unidades) > 0)
   );
 
-  // Validar que todos los NO-cartones tengan Kg
-  const faltanKg = itemsConCaj.filter(b => !b.esCarton && !(parseDecimal(b.kg) > 0));
+  // Validar que todos los NO-cartones con cajones>0 tengan Kg
+  const faltanKg = itemsConCaj.filter(b => !b.esCarton && Number(b.cajones) > 0 && !(parseDecimal(b.kg) > 0));
   if (faltanKg.length){
-    alert("Por favor ingresa Kg para todos los artículos");
+    alert("Falta cargar Kg neto para: " + faltanKg.map(b => b.descripcion).join(", "));
     return;
   }
+
+  // Confirmación visual antes de insertar
+  const confirmado = await mostrarConfirmacionEnvioTall(itemsConCaj);
+  if (!confirmado) return;
 
   btnEnviar.disabled = true;
   const textOriginal = btnEnviar.textContent;
@@ -1625,7 +1728,7 @@ btnImprimir.addEventListener("click", () => {
   setTimeout(() => ventana.print(), 300);
 });
 
-function registrarCambioFila(row){
+function registrarCambioFila(row, selPopup, totalCajPopup, pesoTotalPopup){
   const idx = Number(row.dataset.filaIdx);
   const item = filasFiltradas[idx];
   if (!item) return;
@@ -1636,11 +1739,14 @@ function registrarCambioFila(row){
   const descripcionDisplay = item.descripcionDisplay || descripcion;
   const esCarton = item.esCarton;
 
-  const inputCaj = row.querySelector('input[name^="caj_"]');
   const inputUni = row.querySelector('input[name^="uni_"]');
   const faltanteBox = row.querySelector(".faltante-box");
 
-  const cajEnviar = parseInputNumber(inputCaj?.value);
+  // Cajones: popup (no-cartones) o input vacío (cartones — siempre 0 cajones)
+  const cajEnviar = esCarton ? 0 : (totalCajPopup !== undefined ? totalCajPopup : Number(row.dataset.cajones || 0));
+  const pesoCajones = totalCajPopup !== undefined ? pesoTotalPopup : Number(row.dataset.pesoCajones || 0);
+  const cajonesSel = selPopup !== undefined ? selPopup : null;
+
   const uniEnviar = parseInputNumber(inputUni?.value);
   const faltante = !!faltanteBox?.classList.contains("active");
 
@@ -1650,6 +1756,14 @@ function registrarCambioFila(row){
     faltante === true;
 
   if (hayCambios){
+    const buf = getBuffer();
+    const key = `${tallerista}__${sector}__${descripcion}`;
+    const bufIdx = buf.findIndex(b => `${b.tallerista}__${b.sector}__${b.descripcion}` === key);
+    // Preservar cajonesSel/pesoCajones del buffer si el cambio vino del F/uni (no del popup)
+    const prevSel = (bufIdx >= 0 && cajonesSel === null) ? (buf[bufIdx].cajonesSel || null) : cajonesSel;
+    const prevPeso = (bufIdx >= 0 && totalCajPopup === undefined) ? Number(buf[bufIdx].pesoCajones || 0) : pesoCajones;
+    const prevKg = (bufIdx >= 0) ? (buf[bufIdx].kg || "") : "";
+    const prevTandas = (bufIdx >= 0 && Array.isArray(buf[bufIdx].tandas)) ? buf[bufIdx].tandas : [];
     addToBuffer({
       tallerista,
       sector,
@@ -1659,18 +1773,187 @@ function registrarCambioFila(row){
       unidades: uniEnviar ?? 0,
       faltante,
       esCarton,
-      kg: "",
+      cajonesSel: prevSel,
+      pesoCajones: prevPeso,
+      kg: prevKg,
+      tandas: prevTandas,
       timestamp: Date.now()
     });
   } else {
-    // Quitar del buffer si se vació
     const buf = getBuffer();
     const key = `${tallerista}__${sector}__${descripcion}`;
-    const idx = buf.findIndex(b => `${b.tallerista}__${b.sector}__${b.descripcion}` === key);
-    if (idx >= 0){
-      buf.splice(idx, 1);
+    const bufIdx = buf.findIndex(b => `${b.tallerista}__${b.sector}__${b.descripcion}` === key);
+    if (bufIdx >= 0){
+      buf.splice(bufIdx, 1);
       saveBuffer(buf);
     }
+  }
+}
+
+// Popup confirmación EnviosTall
+function mostrarConfirmacionEnvioTall(items){
+  return new Promise(resolve => {
+    let overlay = document.getElementById("confirmEnvioTallOverlay");
+    if (!overlay){
+      overlay = document.createElement("div");
+      overlay.id = "confirmEnvioTallOverlay";
+      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px";
+      overlay.innerHTML = `
+        <div style="background:#fff;border-radius:14px;width:min(700px,100%);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
+          <div style="background:#111;color:#fff;padding:14px 18px;font-weight:800;font-size:17px">Confirmar Envío</div>
+          <div id="confirmEnvioTallBody" style="padding:14px 18px;overflow-y:auto;flex:1"></div>
+          <div style="padding:12px 18px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid #e5e7eb">
+            <button id="confirmEnvioTallCancel" type="button" style="background:#fff;color:#111;border:2px solid #d0d7de;border-radius:10px;padding:10px 20px;font-weight:800;cursor:pointer;font-size:15px">Cancelar</button>
+            <button id="confirmEnvioTallOk" type="button" style="background:#111;color:#fff;border:0;border-radius:10px;padding:10px 24px;font-weight:800;cursor:pointer;font-size:15px">✓ Confirmar Envío</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+    }
+    const body = document.getElementById("confirmEnvioTallBody");
+    const rows = items.map(it => {
+      const caj = Number(it.cajones) || 0;
+      const kg = parseDecimal(it.kg);
+      const uni = Number(it.unidades) || 0;
+      const cajCell = it.esCarton ? "—" : `<b>${caj}</b>`;
+      const kgCell = it.esCarton ? "—" : `<b>${kg.toLocaleString('es-AR',{maximumFractionDigits:2})}</b>`;
+      const uniCell = it.esCarton ? `<b>${uni}</b>` : "—";
+      return `<tr>
+        <td style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap">${escapeHtml(it.descripcionDisplay || it.descripcion)}</td>
+        <td style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap">${escapeHtml(it.sector || "—")}</td>
+        <td style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap">${cajCell}</td>
+        <td style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap">${kgCell}</td>
+        <td style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap">${uniCell}</td>
+      </tr>`;
+    }).join("");
+    body.innerHTML = `
+      <div style="font-weight:700;margin-bottom:10px;color:#555;font-size:15px;text-align:center">${items.length} artículo${items.length>1?'s':''} a <b style="color:#111">${escapeHtml(talleristaActivo)}</b></div>
+      <div style="display:flex;justify-content:center">
+        <table style="width:auto;border-collapse:collapse;font-size:16px;table-layout:auto">
+          <thead><tr style="background:#f3f4f6">
+            <th style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap;font-size:15px">Descripción</th>
+            <th style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap;font-size:15px">Sector</th>
+            <th style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap;font-size:15px">Cajones Enviados</th>
+            <th style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap;font-size:15px">Kg Neto</th>
+            <th style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap;font-size:15px">Uni</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+    overlay.style.display = "flex";
+    const cleanup = () => { overlay.style.display = "none"; };
+    document.getElementById("confirmEnvioTallOk").onclick = () => { cleanup(); resolve(true); };
+    document.getElementById("confirmEnvioTallCancel").onclick = () => { cleanup(); resolve(false); };
+    overlay.onclick = (e) => { if (e.target === overlay){ cleanup(); resolve(false); } };
+  });
+}
+
+// Botón Limpiar — vacía todo lo cargado del tallerista actual
+const btnLimpiarTall = document.getElementById("btnLimpiar");
+if (btnLimpiarTall){
+  btnLimpiarTall.addEventListener("click", () => {
+    if (!talleristaActivo){ alert("Seleccioná un tallerista primero."); return; }
+    const buf = getBuffer();
+    const tieneAlgo = buf.some(b => b.tallerista === talleristaActivo && (
+      Number(b.cajones) > 0 || Number(b.unidades) > 0 || parseDecimal(b.kg) > 0 ||
+      (Array.isArray(b.tandas) && b.tandas.length > 0)
+    ));
+    if (!tieneAlgo){ alert("No hay nada cargado para limpiar."); return; }
+    if (!confirm("¿Vaciar todo lo cargado para " + talleristaActivo + "? (cajones, kg, uni, tandas)")) return;
+    const restante = buf.filter(b => b.tallerista !== talleristaActivo);
+    localStorage.setItem(BUFFER_KEY, JSON.stringify(restante));
+    actualizarBtnSiguiente();
+    renderizarFilasFase1(txtFiltroArticulo ? txtFiltroArticulo.value : "");
+  });
+}
+
+// Abre popup tandas para una fila tallerista (solo no-cartones)
+function abrirTandasFilaTall(idx){
+  const item = filasFiltradas[idx];
+  if (!item || item.esCarton) return;
+  const tallerista = item.tallerista || "";
+  const sector = item.sector || "";
+  const descripcion = item.descripcion || "";
+  const descripcionDisplay = item.descripcionDisplay || descripcion;
+  const buf = getBuffer();
+  const key = `${tallerista}__${sector}__${descripcion}`;
+  const bufIdx = buf.findIndex(b => `${b.tallerista}__${b.sector || ""}__${b.descripcion}` === key);
+  let tandasIni = (bufIdx >= 0 && Array.isArray(buf[bufIdx].tandas)) ? buf[bufIdx].tandas : [];
+  // Preload tanda 1 desde valores escritos a mano
+  if (tandasIni.length === 0 && bufIdx >= 0){
+    const caj = Number(buf[bufIdx].cajones) || 0;
+    const kg = parseDecimal(buf[bufIdx].kg);
+    if (caj > 0 || kg > 0) tandasIni = [{ caj, kg, uni: 0 }];
+  }
+  window.tandasPopup.open({
+    titulo: `Tandas — ${descripcionDisplay}`,
+    initial: tandasIni,
+    pedirCaj: true,
+    pedirKg: true,
+    pedirUni: false,
+    onConfirm: (tandas, totales) => {
+      const buf2 = getBuffer();
+      const bufIdx2 = buf2.findIndex(b => `${b.tallerista}__${b.sector || ""}__${b.descripcion}` === key);
+      if (tandas.length === 0 && totales.caj === 0 && totales.kg === 0){
+        if (bufIdx2 >= 0){
+          buf2[bufIdx2].tandas = [];
+          buf2[bufIdx2].cajones = 0;
+          buf2[bufIdx2].kg = "";
+          if (!Number(buf2[bufIdx2].unidades || 0)) buf2.splice(bufIdx2, 1);
+          saveBuffer(buf2);
+        }
+      } else {
+        const newItem = bufIdx2 >= 0 ? buf2[bufIdx2] : {
+          tallerista, sector, descripcion, descripcionDisplay,
+          unidades: 0, faltante: false, esCarton: false,
+          cajonesSel: null, pesoCajones: 0
+        };
+        newItem.tandas = tandas;
+        newItem.cajones = totales.caj;
+        newItem.kg = totales.kg > 0 ? String(totales.kg) : "";
+        if (bufIdx2 >= 0) buf2[bufIdx2] = newItem;
+        else buf2.push(newItem);
+        saveBuffer(buf2);
+      }
+      renderizarFilasFase1(txtFiltroArticulo ? txtFiltroArticulo.value : "");
+    }
+  });
+}
+
+// Persistir Kg Neto en el buffer (Fase 1 unificada — no-cartones)
+function registrarKgFilaTall(row, rawValue){
+  const idx = Number(row.dataset.filaIdx);
+  const item = filasFiltradas[idx];
+  if (!item) return;
+  const tallerista = item.tallerista || "";
+  const sector = item.sector || "";
+  const descripcion = item.descripcion || "";
+  const descripcionDisplay = item.descripcionDisplay || descripcion;
+  const esCarton = item.esCarton;
+  const num = parseDecimal(rawValue);
+  const buf = getBuffer();
+  const key = `${tallerista}__${sector}__${descripcion}`;
+  const bufIdx = buf.findIndex(b => `${b.tallerista}__${b.sector}__${b.descripcion}` === key);
+  if (bufIdx >= 0){
+    buf[bufIdx].kg = num > 0 ? String(num) : "";
+    saveBuffer(buf);
+  } else if (num > 0){
+    // No habia entrada (cajones aun no cargados), igual guardar kg
+    addToBuffer({
+      tallerista,
+      sector,
+      descripcion,
+      descripcionDisplay,
+      cajones: 0,
+      unidades: 0,
+      faltante: false,
+      esCarton,
+      cajonesSel: null,
+      pesoCajones: 0,
+      kg: String(num),
+      timestamp: Date.now()
+    });
   }
 }
 
@@ -1741,7 +2024,7 @@ async function enviarCambios(volverLuego = false){
   sectoresCache = null;
 
   filasModificadas.clear();
-  btnSiguiente.classList.add("hidden");
+  btnSiguiente.disabled = true; btnSiguiente.classList.add("disabled");
   btnSiguiente.disabled = false;
   btnSiguiente.textContent = "Enviar";
 

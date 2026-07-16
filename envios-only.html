@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <script src="auth-guard.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Logística</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 28px;
+      padding: 48px 40px;
+      width: 100%; max-width: 720px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.35);
+      text-align: center;
+    }
+    h1 {
+      font-size: 42px; font-weight: 800;
+      color: #0f172a; text-transform: uppercase;
+      letter-spacing: 1.5px; margin-bottom: 28px;
+    }
+    .grid-2 {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 18px; margin-bottom: 18px;
+    }
+    .col-labels {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 18px; margin-bottom: 12px;
+    }
+    .col-label {
+      font-size: 40px; font-weight: 700; color: #0f172a;
+      text-transform: uppercase; letter-spacing: 1.5px;
+      text-align: center;
+    }
+    .grid-1 {
+      display: grid; grid-template-columns: 1fr;
+      gap: 18px; margin-bottom: 18px;
+    }
+    .btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%;
+      padding: 32px 16px;
+      min-height: 100px;
+      border: none; border-radius: 20px;
+      font-family: inherit; font-size: 24px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 1.2px;
+      color: #fff; cursor: pointer;
+      transition: transform .08s, opacity .15s;
+      text-decoration: none;
+      text-align: center;
+    }
+    .btn:hover { opacity: .92; }
+    .btn:active { transform: scale(.985); }
+    .btn-env-ps   { background: linear-gradient(135deg, #10b981, #059669); }
+    .btn-env-tall { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+    .btn-ent-ps   { background: linear-gradient(135deg, #14b8a6, #0d9488); }
+    .btn-ent-tall { background: linear-gradient(135deg, #6366f1, #4338ca); }
+    .btn-ins      { background: linear-gradient(135deg, #ef4444, #b91c1c); }
+    .btn-calc     { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    .btn-mon      { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+    .btn-maest    { background: linear-gradient(135deg, #ec4899, #be185d); }
+
+    /* Solo monitor + maestro en pantallas ≥1600px (proxy 20" — tablets/celulares quedan fuera) */
+    .only-big { display: none !important; pointer-events: none; }
+    @media (min-width: 1600px) {
+      .only-big { display: flex !important; pointer-events: auto; }
+    }
+
+    .salir {
+      margin-top: 20px;
+      background: none; border: none;
+      color: #94a3b8; font-size: 16px; cursor: pointer;
+      text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700;
+      padding: 10px 20px;
+    }
+    .app-version {
+      margin-top: 8px;
+      color: #cbd5e1; font-size: 13px; font-weight: 600;
+      letter-spacing: .5px;
+    }
+    .salir:hover { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Logística</h1>
+
+    <div class="col-labels">
+      <div class="col-label">Prov. Serv.</div>
+      <div class="col-label">Talleristas</div>
+    </div>
+
+    <div class="grid-2">
+      <a class="btn btn-env-ps"   href="Prov Serv/Envios/EnviosPS.html">Envíos PS</a>
+      <a class="btn btn-env-tall" href="Talleristas/Envios/EnviosTall.html">Envíos Tall</a>
+    </div>
+
+    <div class="grid-2">
+      <a class="btn btn-ent-ps"   href="Prov Serv/Entregas/EntregaPS.html">Entrega PS</a>
+      <a class="btn btn-ent-tall" href="Talleristas/Recepcion/Recepcion Cervantes.html">Entrega Tall Cerv</a>
+    </div>
+
+    <div class="grid-1">
+      <a class="btn btn-ins"  href="StockFlejes/recepcion.html">Recepción Insumos</a>
+      <a class="btn btn-calc" href="calculadora.html">Calculadora</a>
+    </div>
+
+    <div class="grid-2">
+      <a class="btn btn-mon only-big"   href="Produccion/monitor.html">Monitor en vivo</a>
+      <a class="btn btn-maest only-big" href="Produccion/maestro.html">Maestro Producción</a>
+    </div>
+
+    <button class="salir" onclick="cerrarSesion()">Cerrar sesión</button>
+    <div class="app-version" id="appVersion"></div>
+  </div>
+
+  <script src="version.js?v=20260617b"></script>
+  <script>
+    function cerrarSesion(){
+      sessionStorage.clear();
+      window.location.href = 'login.html?logout=1';
+    }
+  </script>
+</body>
+</html>

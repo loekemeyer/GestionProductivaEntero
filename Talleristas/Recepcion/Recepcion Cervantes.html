@@ -2,6 +2,8 @@
 <html lang="es">
 <head>
 <script src="../../auth-guard.js"></script>
+<link rel="stylesheet" href="../../tandas-popup.css?v=20260604a">
+<script src="../../tandas-popup.js?v=20260604a"></script>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Recepción (test)</title>
@@ -45,9 +47,13 @@
   .grid.con-unidades{
     grid-template-columns:130px 110px 110px minmax(260px,1fr);
   }
+  .grid.con-grj-cajas{
+    grid-template-columns:130px 110px 110px 40px minmax(260px,1fr);
+  }
   .grid .h{font-weight:900;font-size:16px;color:#333}
   .grid input[data-role="cajas"],
-  .grid input[data-role="kg-grj"]{
+  .grid input[data-role="kg-grj"],
+  .grid input[data-role="cajas-grj"]{
     width:100% !important;
     min-width:0;
     height:44px;
@@ -100,36 +106,128 @@
     text-align:center !important;
     letter-spacing:0 !important;
   }
+
+  /* ===== Restyle tipo EnviosTall ===== */
+  .card{max-width:720px;padding:24px}
+
+  .header-top{
+    display:grid;
+    grid-template-columns:1fr auto 1fr;
+    align-items:center;
+    gap:12px;
+    margin-bottom:18px;
+  }
+  .header-top > :first-child{ justify-self:start; }
+  .header-top > :last-child{ justify-self:end; }
+  .header-top h2{
+    margin:0;
+    grid-column:2;
+    font-size:36px;
+    font-weight:800;
+    text-align:center;
+    line-height:1.1;
+  }
+  .btn-home{
+    height:54px;
+    padding:0 20px;
+    border-radius:12px;
+    border:2px solid #d0d7de;
+    background:#fff;
+    color:#111;
+    font-weight:700;
+    font-size:18px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .send{
+    height:54px;
+    padding:0 22px;
+    border-radius:12px;
+    font-size:18px;
+    font-weight:800;
+  }
+
+  /* Botones de tallerista como cards grandes */
+  .talleristas-grid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:14px;
+    margin:10px 0;
+  }
+  .tall-btn{
+    min-height:100px;
+    border-radius:18px;
+    border:3px solid #c9c9c9;
+    background:#fff;
+    color:#111;
+    font-size:30px;
+    font-weight:700;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .tall-btn.active{ background:#111;color:#fff;border-color:#111; }
+  .tall-btn:disabled{ opacity:.4;cursor:not-allowed; }
+
+  /* LK / CH */
+  .marca-grid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:14px;
+    margin:10px 0;
+  }
+  .marca-btn{
+    min-height:70px;
+    border-radius:16px;
+    border:3px solid #c9c9c9;
+    background:#fff;
+    color:#111;
+    font-size:26px;
+    font-weight:800;
+    cursor:pointer;
+  }
+  .marca-btn.active{ background:#111;color:#fff;border-color:#111; }
+  .marca-btn:disabled{ opacity:.4;cursor:not-allowed; }
+
+  .fecha-row{ align-items:center;gap:10px;margin-top:14px; }
+  .fecha-row label{ font-weight:800;font-size:18px; }
+  #fechaEnvio{ height:44px;font-size:18px;border-radius:10px;border:2px solid #d0d7de;padding:0 12px; }
+  .status{ font-size:16px; }
 </style>
 </head>
 
 <body>
- <button onclick="window.location.href='../../Inicio/index.html'" class="btn-home" type="button">
-   ← Inicio
- </button>
+ <script>
+   function gpHome(){
+     var r = sessionStorage.getItem('gp_role') || 'admin';
+     window.location.href = (r === 'envios') ? '../../envios-only.html' : '../../Inicio/index.html';
+   }
+ </script>
 <div class="card">
-  <h2 style="margin:0 0 10px">Recepción Talleristas Cervantes</h2>
-  
-  <div class="row">
-    <button id="poly" type="button">Poly</button>
-    <button id="martin" type="button">Martin</button>
-    <button id="carlos" type="button">Carlos</button>
+  <div class="header-top">
+    <button onclick="gpHome()" class="btn-home" type="button">← Inicio</button>
+    <h2 id="recepcionTitulo">Recepción Cervantes</h2>
+    <button id="enviar" class="send" type="button" disabled>Enviar</button>
   </div>
 
-  <div class="row">
-    <button id="lk" type="button" disabled>LK</button>
-    <button id="ch" type="button" disabled>CH</button>
+  <div class="talleristas-grid">
+    <button id="poly" class="tall-btn" type="button">Poly</button>
+    <button id="martin" class="tall-btn" type="button">Martin</button>
+    <button id="carlos" class="tall-btn" type="button">Carlos</button>
+    <button id="lucho" class="tall-btn" type="button">Lucho</button>
+  </div>
+
+  <div class="marca-grid">
+    <button id="lk" class="marca-btn" type="button" disabled>LK</button>
+    <button id="ch" class="marca-btn" type="button" disabled>CH</button>
   </div>
 
   <div id="nombreTallProv" class="status"></div>
 
-  <div class="row" style="align-items:center;gap:8px">
-    <label style="font-weight:800;font-size:14px">Fecha:</label>
-    <input type="date" id="fechaEnvio" style="height:38px;border-radius:10px;border:2px solid #d0d7de;padding:0 10px;font-size:14px">
-  </div>
-
-  <div class="row">
-    <button id="enviar" class="send" type="button" disabled>Enviar</button>
+  <div class="row fecha-row">
+    <label>Fecha:</label>
+    <input type="date" id="fechaEnvio">
   </div>
 
   <div id="status" class="status bad">Seleccioná un nombre para continuar.</div>
@@ -158,6 +256,8 @@
       <div class="h">Código</div>
       <div class="h" id="modalCajasHeader">Cajas</div>
       <div class="h" id="modalUnidadesHeader" class="hidden">Unidades</div>
+      <div class="h" id="modalCajasGrjHeader" class="hidden">Cajas</div>
+      <div class="h" id="modalTandaHeader" class="hidden" title="Tandas">T</div>
       <div class="h">Descripción</div>
     </div>
 
@@ -167,6 +267,7 @@
 
     <div class="modal-actions">
       <button id="cancelModal" class="xbtn btn-secondary" type="button">Cancelar</button>
+      <button id="btnLimpiarRec" class="xbtn btn-secondary" type="button" title="Vaciar todo lo cargado">🗑 Limpiar</button>
       <button id="sendModal" class="xbtn btn-primary" type="button">Enviar</button>
     </div>
 
@@ -183,7 +284,7 @@
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
 
   const PARTES_TABLE = "Partes x Tallerista";
-  const ENTREGAS_TABLE = "Entregas Tallerista Virgilio";
+  const ENTREGAS_TABLE = "Entregas Tallerista Cervantes";
 
   const WEBAPP_BASE = "https://script.google.com/macros/s/AKfycbz3jZ7oahGOULPWKnTJGTTh_HIpLpyILu8tWkNHg6U_r5s7R3osFh3cQV5G7FUq8oXs/exec";
 
@@ -261,15 +362,17 @@
 
   const DESC_EXTRA = {
     G3: "Cpo Sacacorcho 520 p/cromar",
-    G4: "Cpo Sacacorcho 521 p/cromar"
+    G4: "Cpo Sacacorcho 521 p/cromar",
+    JF1: "Tochos Zinc p/Rectificar"
   };
 
   // Qué artículos van a cada empresa por tallerista
   // Si la empresa tiene lista explícita → solo esos; si no tiene lista → todo menos los de la otra empresa
   const ARTICULOS_EMPRESA = {
     CARLOS: { LK: ["GRJ7","GRJ9","GRJ10"], CH: [], never: ["A10","C1","C10","A15"] }, // CH va por Virgilio
-    MARTIN: { LK: ["GRJ1","GRJ7","G3","G4","X5","Toch"], CH: [], never: ["A10","C1","C10","A15","V9","X1"] }, // CH va por Virgilio
-    POLY:   { LK: ["M6"], CH: ["M8"], never: ["M10","M9"] } // En Cervantes Poly SOLO carga las transformaciones 1:1 (M6→M10 LK / M8→M9 CH). Los demás artículos de Poly (031/034/066/108/502/512/513/550 LK; 713/836/867 CH) se reciben en Virgilio.
+    MARTIN: { LK: ["GRJ1","GRJ7","G3","G4","X5"], CH: [], never: ["A10","C1","C10","A15","V9","X1","Toch"] }, // CH va por Virgilio. Toch ya no aplica (Lucho lo reemplaza con JF1)
+    POLY:   { LK: ["M6"], CH: ["M8"], never: ["M10","M9"] }, // En Cervantes Poly SOLO carga las transformaciones 1:1 (M6→M10 LK / M8→M9 CH). Los demás artículos de Poly (031/034/066/108/502/512/513/550 LK; 713/836/867 CH) se reciben en Virgilio.
+    LUCHO:  { LK: ["JF1"], CH: [], never: [] } // Lucho devuelve JF1 (Tochos Zinc p/Rectificar) tras procesar F7
   };
 
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -286,7 +389,7 @@
         .eq("activo", true);
       if (error) { console.warn("[Recep Cervantes] No se pudo validar Talleristas:", error.message); return; }
       const enBD = new Set((data||[]).map(r => String(r.nombre).trim()));
-      const hardcoded = new Set(["Carlos","Martin","Poly"]);
+      const hardcoded = new Set(["Carlos","Martin","Poly","Lucho"]);
       const faltan = [...enBD].filter(n => !hardcoded.has(n));
       const sobran = [...hardcoded].filter(n => !enBD.has(n));
       if (faltan.length || sobran.length) {
@@ -358,7 +461,8 @@
     const mapaNombres = {
       POLY: "Poly",
       MARTIN: "Martin",
-      CARLOS: "Carlos"
+      CARLOS: "Carlos",
+      LUCHO: "Lucho"
     };
 
     return mapaNombres[nombre] || (nombre.charAt(0) + nombre.slice(1).toLowerCase());
@@ -444,6 +548,11 @@
     poly.classList.toggle("active", nombre === "POLY");
     martin.classList.toggle("active", nombre === "MARTIN");
     carlos.classList.toggle("active", nombre === "CARLOS");
+    lucho.classList.toggle("active", nombre === "LUCHO");
+
+    // Título dinámico: "Recepción de <Tall>"
+    const recTit = document.getElementById("recepcionTitulo");
+    if (recTit) recTit.textContent = nombre ? `Recepción de ${formatName(nombre)}` : "Recepción Cervantes";
 
     lk.classList.remove("active");
     ch.classList.remove("active");
@@ -503,6 +612,7 @@
   poly.onclick = () => selectTallerista("POLY");
   martin.onclick = () => selectTallerista("MARTIN");
   carlos.onclick = () => selectTallerista("CARLOS");
+  lucho.onclick = () => selectTallerista("LUCHO");
   lk.onclick = () => selectEmpresa("LK");
   ch.onclick = () => selectEmpresa("CH");
 
@@ -674,17 +784,30 @@
       hdrUnidades.classList.toggle("hidden", !esCarlos);
     }
 
+    // Header extra "Cajas" para GRJ Kg (Lucho, etc): operario carga Kg + Cajas manualmente.
+    const hdrCajasGrj = document.getElementById("modalCajasGrjHeader");
+    if (hdrCajasGrj) {
+      hdrCajasGrj.classList.toggle("hidden", !(hayGrj && !esCarlos));
+    }
+    // Header T (tandas) — solo cuando hay GRJ Kg
+    const hdrTanda = document.getElementById("modalTandaHeader");
+    if (hdrTanda) {
+      hdrTanda.classList.toggle("hidden", !(hayGrj && !esCarlos));
+    }
+
     if (modalGridHeader) {
       modalGridHeader.classList.toggle("con-unidades", esCarlos);
+      modalGridHeader.classList.toggle("con-grj-cajas", hayGrj && !esCarlos);
     }
 
     linesWrap.classList.toggle("con-unidades", esCarlos);
+    linesWrap.classList.toggle("con-grj-cajas", hayGrj && !esCarlos);
 
     if (hintEl) {
       if (esCarlos) {
         hintEl.textContent = "Tip: completá Kg y Unidades por artículo.";
       } else if (hayGrj) {
-        hintEl.textContent = "Tip: completá Kg por artículo (se permite decimal).";
+        hintEl.textContent = "Tip: completá Kg + Cajas por artículo (Kg decimal, Cajas entero).";
       } else if (todosTrans) {
         hintEl.textContent = "Tip: completá unidades por artículo. Solo acepta números enteros.";
       } else {
@@ -762,6 +885,58 @@
         linesWrap.appendChild(uni);
       }
 
+      // Para GRJ Kg (Lucho, etc): agregar input Cajas manual (no esCarlos)
+      if (esGrj && !esCarlosInput){
+        const cajGrj = document.createElement("input");
+        cajGrj.type = "text";
+        cajGrj.inputMode = "numeric";
+        cajGrj.placeholder = "0 caj";
+        cajGrj.setAttribute("data-role", "cajas-grj");
+        cajGrj.setAttribute("data-idx", String(i));
+
+        cajGrj.addEventListener("input", () => {
+          cajGrj.value = cajGrj.value.replace(/\D/g, "");
+        });
+
+        cajGrj.addEventListener("keydown", (e) => {
+          if (e.key === "Enter"){
+            e.preventDefault();
+            const next = linesWrap.querySelector(`input[data-role="kg-grj"][data-idx="${i + 1}"]`);
+            if (next) next.focus();
+          }
+        });
+
+        linesWrap.appendChild(cajGrj);
+
+        // Botón T (tandas) — solo para GRJ Kg (Lucho, etc)
+        const tandaBtn = document.createElement("button");
+        tandaBtn.type = "button";
+        const tandaArr = tandasByIdxRec[i] || [];
+        const hayTandasRow = tandaArr.length > 0;
+        tandaBtn.className = "tanda-trigger" + (hayTandasRow ? " has-tandas" : "");
+        tandaBtn.textContent = hayTandasRow ? String(tandaArr.length) : "+";
+        tandaBtn.title = "Cargar por tandas";
+        tandaBtn.setAttribute("data-role", "tanda-btn");
+        tandaBtn.setAttribute("data-idx", String(i));
+        tandaBtn.addEventListener("click", () => abrirTandasFilaRec(i, item));
+        linesWrap.appendChild(tandaBtn);
+
+        // Si hay tandas, marcar kg/cajas como readonly con totales
+        if (hayTandasRow){
+          const totCaj = tandaArr.reduce((s, t) => s + (Number(t.caj) || 0), 0);
+          const totKg = tandaArr.reduce((s, t) => {
+            const n = parseFloat(String(t.kg || "0").replace(",", "."));
+            return s + (Number.isFinite(n) ? n : 0);
+          }, 0);
+          kg.value = String(totKg);
+          kg.readOnly = true;
+          kg.classList.add("input-with-tandas");
+          cajGrj.value = String(totCaj);
+          cajGrj.readOnly = true;
+          cajGrj.classList.add("input-with-tandas");
+        }
+      }
+
       const desc = document.createElement("div");
       desc.className = "descCell";
       desc.textContent = item.desc || "";
@@ -773,6 +948,110 @@
     if (firstKg) firstKg.focus();
   }
 
+  // Tandas (memoria efímera del modal) — solo aplica a GRJ Kg
+  const tandasByIdxRec = {};
+
+  function abrirTandasFilaRec(idx, item){
+    let initial = tandasByIdxRec[idx] || [];
+    // Preload desde inputs cargados a mano
+    if (initial.length === 0){
+      const kgIn = linesWrap.querySelector(`input[data-role="kg-grj"][data-idx="${idx}"]`);
+      const cajIn = linesWrap.querySelector(`input[data-role="cajas-grj"][data-idx="${idx}"]`);
+      const kg = parseFloat(String(kgIn?.value || "0").replace(",", ".")) || 0;
+      const caj = parseInt(cajIn?.value, 10) || 0;
+      if (kg > 0 || caj > 0) initial = [{ caj, kg, uni: 0 }];
+    }
+    window.tandasPopup.open({
+      titulo: `Tandas — ${item.desc || item.codigo}`,
+      initial,
+      pedirCaj: true,
+      pedirKg: true,
+      pedirUni: false,
+      onConfirm: (tandas, totales) => {
+        if (tandas.length === 0 && totales.caj === 0 && totales.kg === 0){
+          delete tandasByIdxRec[idx];
+          // Limpiar inputs
+          const kgIn = linesWrap.querySelector(`input[data-role="kg-grj"][data-idx="${idx}"]`);
+          const cajIn = linesWrap.querySelector(`input[data-role="cajas-grj"][data-idx="${idx}"]`);
+          if (kgIn){ kgIn.value = ""; kgIn.readOnly = false; kgIn.classList.remove("input-with-tandas"); }
+          if (cajIn){ cajIn.value = ""; cajIn.readOnly = false; cajIn.classList.remove("input-with-tandas"); }
+        } else {
+          tandasByIdxRec[idx] = tandas;
+          const kgIn = linesWrap.querySelector(`input[data-role="kg-grj"][data-idx="${idx}"]`);
+          const cajIn = linesWrap.querySelector(`input[data-role="cajas-grj"][data-idx="${idx}"]`);
+          if (kgIn){ kgIn.value = String(totales.kg); kgIn.readOnly = true; kgIn.classList.add("input-with-tandas"); }
+          if (cajIn){ cajIn.value = String(totales.caj); cajIn.readOnly = true; cajIn.classList.add("input-with-tandas"); }
+        }
+        // Actualizar texto del botón T
+        const btn = linesWrap.querySelector(`button[data-role="tanda-btn"][data-idx="${idx}"]`);
+        if (btn){
+          const arr = tandasByIdxRec[idx] || [];
+          btn.textContent = arr.length > 0 ? String(arr.length) : "+";
+          btn.classList.toggle("has-tandas", arr.length > 0);
+        }
+      }
+    });
+  }
+
+  // Popup confirmación Recepción Cervantes
+  function mostrarConfirmacionRecepcion(items, esCarlos){
+    return new Promise(resolve => {
+      let overlay = document.getElementById("confirmRecepcionOverlay");
+      if (!overlay){
+        overlay = document.createElement("div");
+        overlay.id = "confirmRecepcionOverlay";
+        overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:2500;padding:16px";
+        overlay.innerHTML = `
+          <div style="background:#fff;border-radius:14px;width:min(720px,100%);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
+            <div style="background:#111;color:#fff;padding:14px 18px;font-weight:800;font-size:17px">Confirmar Recepción</div>
+            <div id="confirmRecepcionBody" style="padding:14px 18px;overflow-y:auto;flex:1"></div>
+            <div style="padding:12px 18px;display:flex;justify-content:flex-end;gap:10px;border-top:1px solid #e5e7eb">
+              <button id="confirmRecepcionCancel" type="button" style="background:#fff;color:#111;border:2px solid #d0d7de;border-radius:10px;padding:10px 20px;font-weight:800;cursor:pointer;font-size:15px">Cancelar</button>
+              <button id="confirmRecepcionOk" type="button" style="background:#111;color:#fff;border:0;border-radius:10px;padding:10px 24px;font-weight:800;cursor:pointer;font-size:15px">✓ Confirmar Recepción</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+      }
+      const body = document.getElementById("confirmRecepcionBody");
+      const rows = items.map(it => {
+        const isGrj = esGrjRealKg(it.codigo);
+        const isTrans = esTransUnidades(it.codigo);
+        let cantidad = "";
+        if (esCarlos) cantidad = `<b>${it.kg}</b> kg · <b>${it.unidades}</b> uni`;
+        else if (isGrj) cantidad = `<b>${it.cajasGrj || 0}</b> caj · <b>${it.kg}</b> kg`;
+        else if (isTrans) cantidad = `<b>${it.cajas}</b> uni`;
+        else cantidad = `<b>${it.cajas}</b> cajas`;
+        return `<tr>
+          <td style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap"><b>${esc(it.codigo)}</b></td>
+          <td style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap">${esc(it.desc || "")}</td>
+          <td style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap">${cantidad}</td>
+        </tr>`;
+      }).join("");
+      body.innerHTML = `
+        <div style="font-weight:700;margin-bottom:10px;color:#555;font-size:15px;text-align:center">${items.length} artículo${items.length>1?'s':''} de <b style="color:#111">${esc(tallerista)}</b></div>
+        <div style="display:flex;justify-content:center">
+          <table style="width:auto;border-collapse:collapse;font-size:16px;table-layout:auto">
+            <thead><tr style="background:#f3f4f6">
+              <th style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap;font-size:15px">Código</th>
+              <th style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap;font-size:15px">Descripción</th>
+              <th style="padding:8px 14px;border:1px solid #d0d7de;text-align:center;white-space:nowrap;font-size:15px">Cantidad</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+      overlay.style.display = "flex";
+      const cleanup = () => { overlay.style.display = "none"; };
+      document.getElementById("confirmRecepcionOk").onclick = () => { cleanup(); resolve(true); };
+      document.getElementById("confirmRecepcionCancel").onclick = () => { cleanup(); resolve(false); };
+      overlay.onclick = (e) => { if (e.target === overlay){ cleanup(); resolve(false); } };
+    });
+  }
+
+  // Helper esc local (HTML escape) si no existe
+  function esc(s){ return String(s == null ? "" : s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
+
   function getItemsFromModal(){
   const codes = Array.from(linesWrap.querySelectorAll('input[data-role="codigo"]'));
   const esCarlos = tallerista === "CARLOS";
@@ -780,11 +1059,13 @@
   return codes.map((c, i) => {
     const cajasEl  = linesWrap.querySelector(`input[data-role="cajas"][data-idx="${i}"]`);
     const kgGrjEl  = linesWrap.querySelector(`input[data-role="kg-grj"][data-idx="${i}"]`);
+    const cajasGrjEl = linesWrap.querySelector(`input[data-role="cajas-grj"][data-idx="${i}"]`);
     const kgCarlosEl = linesWrap.querySelector(`input[data-role="kg-carlos"][data-idx="${i}"]`);
     const unidadesEl = linesWrap.querySelector(`input[data-role="unidades"][data-idx="${i}"]`);
 
     const cajasStr = cajasEl  ? cajasEl.value.trim()  : "";
     const kgGrjStr = kgGrjEl  ? kgGrjEl.value.trim() : "";
+    const cajasGrjStr = cajasGrjEl ? cajasGrjEl.value.trim() : "";
     const kgCarlosStr = kgCarlosEl ? kgCarlosEl.value.trim() : "";
     const unidadesStr = unidadesEl ? unidadesEl.value.trim() : "";
 
@@ -793,6 +1074,7 @@
     return {
       codigo: String(c.value || "").trim(),
       cajas: cajasStr,
+      cajasGrj: cajasGrjStr,
       kg:    kgGrjStr || kgCarlosStr,
       unidades: unidadesStr,
       desc:  String(itemBase.desc || "").trim()
@@ -860,6 +1142,29 @@
   closeModal.onclick = () => { if (!isSubmitting) closeModalFn(); };
   cancelModal.onclick = () => { if (!isSubmitting) closeModalFn(); };
 
+  // Botón Limpiar — vaciar inputs y tandas del modal actual
+  const btnLimpiarRec = document.getElementById("btnLimpiarRec");
+  if (btnLimpiarRec){
+    btnLimpiarRec.onclick = () => {
+      if (isSubmitting) return;
+      if (!confirm("¿Vaciar todos los datos cargados del modal?")) return;
+      // Limpiar inputs
+      linesWrap.querySelectorAll('input[data-role="cajas"], input[data-role="kg-grj"], input[data-role="cajas-grj"], input[data-role="kg-carlos"], input[data-role="unidades"]').forEach(inp => {
+        inp.value = "";
+        inp.readOnly = false;
+        inp.classList.remove("input-with-tandas");
+      });
+      // Limpiar tandas
+      Object.keys(tandasByIdxRec).forEach(k => delete tandasByIdxRec[k]);
+      // Reset botones T
+      linesWrap.querySelectorAll('button[data-role="tanda-btn"]').forEach(btn => {
+        btn.textContent = "+";
+        btn.classList.remove("has-tandas");
+      });
+      modalMsg.textContent = "";
+    };
+  }
+
   overlay.addEventListener("click", (e) => {
     if (!isSubmitting && e.target === overlay) closeModalFn();
   });
@@ -907,29 +1212,7 @@
     }
 
     const esCarlos = tallerista === "CARLOS";
-    const detalle = items
-      .map(it => {
-        if (esCarlos){
-          return `${it.codigo} - ${it.desc} - ${it.kg} kg - ${it.unidades} uni`;
-        }
-        if (esGrjRealKg(it.codigo)){
-          const kg = Number(it.kg) || 0;
-          const kgxuniGrj = GRJ_PESOS[it.codigo] || 0;
-          const units = kgxuniGrj > 0 ? Math.round(kg / kgxuniGrj) : 0;
-          return `${it.codigo} - ${it.desc} - ${it.kg} kg (≈ ${units} uni)`;
-        }
-        if (esTransUnidades(it.codigo)){
-          // Transformacion 1:1: descuenta el componente, mismo nro de unidades
-          const compList = (GRJ_COMPONENTES[it.codigo] || []).join(", ");
-          return `${it.codigo} - ${it.desc} - ${it.cajas} uni (descuenta ${compList || "—"})`;
-        }
-        return `${it.codigo} - ${it.desc} - ${it.cajas} cajas`;
-      })
-      .join("\n");
-
-    const ok = confirm(
-      `¿Está seguro con las cantidades?\n\n${detalle}`
-    );
+    const ok = await mostrarConfirmacionRecepcion(items, esCarlos);
     if (!ok) return;
 
     lastSendCode = genNumericCode(4);
@@ -1000,14 +1283,14 @@
           if (sbErr) throw new Error("Error guardando en Supabase: " + sbErr.message);
         }
 
-        // Para items GRJ: calcular unidades y registrar cada componente
-        // Cajas = unidades calculadas (Kg / KgxUni_GRJ), Cod_GRJ y Kg_GRJ para trazabilidad
+        // Para items GRJ: usar Cajas del input manual del operario (campo cajasGrj).
+        // Antes se calculaba units = Math.round(Kg / KgxUni_GRJ); ahora es input directo.
+        // Cod_GRJ y Kg_GRJ siguen para trazabilidad.
         if (grjItems.length){
           const registrosGrj = [];
           grjItems.forEach(it => {
-            const kg         = Number(it.kg) || 0;
-            const kgxuniGrj  = GRJ_PESOS[it.codigo] || 0;
-            const units      = kgxuniGrj > 0 ? Math.round(kg / kgxuniGrj) : 0;
+            const kg    = Number(it.kg) || 0;
+            const units = Number(it.cajasGrj) || 0;
             (GRJ_COMPONENTES[it.codigo] || []).forEach(comp => {
               registrosGrj.push({
                 "Nombre_Tall": formatName(tallerista),
@@ -1093,7 +1376,7 @@
   // Pre-carga articulos de todos los talleristas al arrancar (despues de despiece)
   async function precargarPartes(){
     await despiecePromise;
-    await Promise.all(["POLY","MARTIN","CARLOS"].map(key =>
+    await Promise.all(["POLY","MARTIN","CARLOS","LUCHO"].map(key =>
       fetchCodesForTallerista(formatName(key), key).catch(() => {})
     ));
   }

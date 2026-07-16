@@ -264,3 +264,139 @@ td:nth-child(12){
 .btn-index:hover{
   background:#333;
 }
+
+/* FILTRO DESCRIPCION */
+.filtro-desc{
+  padding:10px 14px;
+  border-radius:10px;
+  border:1px solid #ccc;
+  font-size:14px;
+  font-family:inherit;
+  min-width:240px;
+  margin-left:10px;
+}
+.filtro-desc:focus{
+  outline:none;
+  border-color:#2d6cdf;
+}
+
+/* BOTON IMPRIMIR */
+.btn-imprimir{
+  padding:10px 14px;
+  border-radius:10px;
+  border:1px solid #2d6cdf;
+  background:#2d6cdf;
+  color:#fff;
+  cursor:pointer;
+  font-weight:bold;
+  margin-left:10px;
+}
+.btn-imprimir:hover{
+  background:#1d4fb0;
+}
+
+/* AREA DE IMPRESION (oculta en pantalla) */
+.print-only{
+  display:none;
+}
+/* ENCABEZADO IMPRESION */
+.print-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  border-bottom:3px solid #111;
+  padding-bottom:8px;
+  margin-bottom:14px;
+}
+.print-doc{
+  font-size:12px;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:#555;
+}
+.print-title{
+  margin:2px 0 0;
+  font-size:24px;
+}
+.print-head-right{
+  text-align:right;
+  font-size:13px;
+  color:#333;
+}
+.print-count{
+  color:#666;
+}
+
+/* TABLA IMPRESION */
+.print-table{
+  width:100%;
+  border-collapse:collapse;
+}
+.print-table th,
+.print-table td{
+  border:1px solid #999;
+  padding:7px 10px;
+  font-size:13px;
+  text-align:left;
+}
+.print-table thead th{
+  background:#111;
+  color:#fff;
+  font-size:12px;
+  text-transform:uppercase;
+  letter-spacing:.5px;
+}
+.print-table tr.zebra td{
+  background:#f4f6f8;
+}
+.print-table .p-num{
+  width:36px;
+  text-align:center;
+  color:#666;
+}
+.print-table .p-caj,
+.print-table .p-cjn{
+  width:90px;
+  text-align:right;
+}
+.print-table .p-cjn{
+  font-weight:700;
+}
+.print-table tfoot .print-total td{
+  background:#e8edf3;
+  font-weight:800;
+  font-size:14px;
+  border-top:2px solid #111;
+}
+
+/* MODO IMPRESION: solo #printArea */
+@media print{
+  @page{ margin:14mm; }
+  body{ background:#fff; padding:0; }
+  body *{ visibility:hidden; }
+  #printArea, #printArea *{ visibility:visible; }
+  #printArea{
+    display:block;
+    position:absolute;
+    left:0;
+    top:0;
+    width:100%;
+  }
+  .card{
+    box-shadow:none;
+    max-width:none;
+    padding:0;
+  }
+  /* repetir encabezado de tabla en cada hoja + no cortar filas */
+  .print-table thead{ display:table-header-group; }
+  .print-table tr{ page-break-inside:avoid; }
+  .print-table thead th{
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+  .print-table tr.zebra td,
+  .print-table tfoot .print-total td{
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+}

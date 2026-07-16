@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <script src="auth-guard.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calcular Cajones</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      min-height: 100vh;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 28px;
+      width: 100%; max-width: 480px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.35);
+      margin-top: 20px;
+    }
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 22px;
+    }
+    h1 {
+      font-size: 18px; font-weight: 800;
+      color: #0f172a; text-transform: uppercase; letter-spacing: 1px;
+    }
+    .back {
+      background: none; border: none;
+      color: #64748b; font-size: 13px; font-weight: 600; cursor: pointer;
+      text-transform: uppercase; letter-spacing: 1px;
+    }
+    .back:hover { color: #0f172a; }
+
+    .field { margin-bottom: 16px; }
+    label {
+      display: block; font-size: 12px; font-weight: 700;
+      color: #475569; margin-bottom: 6px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    input[type="number"], select {
+      width: 100%; padding: 12px 14px;
+      border: 2px solid #e2e8f0; border-radius: 10px;
+      font-size: 16px; font-family: inherit; color: #0f172a;
+      background: #f8fafc; outline: none;
+      transition: border-color .15s, background .15s;
+    }
+    input[type="number"]:focus, select:focus { border-color: #334155; background: #fff; }
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"] { -moz-appearance: textfield; }
+
+    .row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+
+    .resultado {
+      background: #0f172a; color: #fff;
+      padding: 18px; border-radius: 14px;
+      margin-top: 14px;
+    }
+    .resultado .lbl {
+      font-size: 11px; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
+    }
+    .resultado .val {
+      font-size: 28px; font-weight: 800;
+      font-family: 'Consolas', monospace; margin-top: 2px;
+    }
+    .resultado-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 8px 0; border-bottom: 1px solid #1e293b;
+    }
+    .resultado-row:last-child { border-bottom: none; }
+    .resultado-row .lbl-row { font-size: 13px; color: #94a3b8; }
+    .resultado-row .val-row { font-size: 18px; font-weight: 700; font-family: 'Consolas', monospace; }
+    .val-uni { color: #10b981; font-size: 32px; }
+
+    .seccion-titulo {
+      font-size: 13px; font-weight: 800;
+      color: #0f172a; text-transform: uppercase; letter-spacing: 1px;
+      margin: 20px 0 10px; padding-top: 14px;
+      border-top: 2px solid #f1f5f9;
+    }
+    .seccion-titulo:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+
+    .hint { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .error { color: #dc2626; font-size: 13px; font-weight: 600; margin-top: 8px; }
+
+    .cat-btns {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    }
+    .cat-btn {
+      padding: 10px 8px;
+      border: 2px solid #e2e8f0;
+      background: #f8fafc;
+      border-radius: 10px;
+      font-family: inherit; font-size: 14px; font-weight: 800;
+      color: #0f172a;
+      cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      transition: all .15s;
+    }
+    .cat-btn:hover:not(.disabled) { border-color: #334155; background: #fff; }
+    .cat-btn.active { background: #0f172a; color: #fff; border-color: #0f172a; }
+    .cat-btn.disabled { opacity: .45; cursor: not-allowed; }
+    .cat-sub { font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; }
+    .cat-btn.active .cat-sub { color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <button class="back" onclick="window.location.href='calculadora.html'">← Volver</button>
+      <h1>Calcular Cajones</h1>
+      <span></span>
+    </div>
+
+    <div class="seccion-titulo">1 · Peso neto</div>
+
+    <div class="field">
+      <label for="pesoBruto">Peso Bruto (Kg)</label>
+      <input type="number" id="pesoBruto" inputmode="decimal" step="0.01" min="0" placeholder="0,00" />
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="cajonSel">Cajón Nº</label>
+        <select id="cajonSel">
+          <option value="">-- Seleccionar --</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="cantCajones">Cantidad</label>
+        <input type="number" id="cantCajones" inputmode="numeric" min="1" step="1" value="1" />
+      </div>
+    </div>
+    <div class="hint" id="cajonHint" style="margin-top:-8px;margin-bottom:14px;"></div>
+
+    <div class="resultado" id="bloqueNeto" style="display:none;">
+      <div class="resultado-row">
+        <span class="lbl-row">Bruto</span>
+        <span class="val-row" id="rBruto">— Kg</span>
+      </div>
+      <div class="resultado-row">
+        <span class="lbl-row" id="rCajonLbl">Cajón</span>
+        <span class="val-row" id="rCajon">— Kg</span>
+      </div>
+      <div class="resultado-row">
+        <span class="lbl-row" style="color:#fff;">Neto</span>
+        <span class="val-row" id="rNeto" style="color:#10b981; font-size:24px;">— Kg</span>
+      </div>
+    </div>
+
+    <div class="seccion-titulo">2 · Unidades por cajón <span style="font-weight:600; color:#94a3b8; font-size:11px;">(opcional)</span></div>
+
+    <div class="field">
+      <label>Categoría</label>
+      <div class="cat-btns" id="catBtns">
+        <button type="button" class="cat-btn" data-cat="SP">SP <span class="cat-sub">Sector Procesado</span></button>
+        <button type="button" class="cat-btn" data-cat="SC">SC <span class="cat-sub">Sector Crudo</span></button>
+        <button type="button" class="cat-btn" data-cat="PEP">PEP <span class="cat-sub">Plásticos</span></button>
+        <button type="button" class="cat-btn" data-cat="REM">REM <span class="cat-sub">Remaches</span></button>
+        <button type="button" class="cat-btn disabled" data-cat="GAR" disabled title="Garage no tiene peso x unidad">Garage <span class="cat-sub">sin pesos</span></button>
+      </div>
+    </div>
+
+    <div class="field" id="sectorWrap" style="display:none;">
+      <label for="sectorSel">Sector <span style="color:#94a3b8; font-weight:600;">(opcional)</span></label>
+      <select id="sectorSel">
+        <option value="">-- Seleccionar --</option>
+      </select>
+      <div class="hint" id="sectorHint"></div>
+    </div>
+
+    <div class="resultado" id="bloqueUni" style="display:none;">
+      <div class="resultado-row">
+        <span class="lbl-row">Kg X Uni</span>
+        <span class="val-row" id="rKgUni">—</span>
+      </div>
+      <div class="resultado-row">
+        <span class="lbl-row" style="color:#fff;">Unidades</span>
+        <span class="val-row val-uni" id="rUni">—</span>
+      </div>
+    </div>
+
+    <div class="error" id="errorMsg" style="display:none;"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://hrxfctzncixxqmpfhskv.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const elBruto = document.getElementById('pesoBruto');
+    const elCajon = document.getElementById('cajonSel');
+    const elCant  = document.getElementById('cantCajones');
+    const elCajonHint = document.getElementById('cajonHint');
+    const elSector = document.getElementById('sectorSel');
+    const elSectorHint = document.getElementById('sectorHint');
+    const elSectorWrap = document.getElementById('sectorWrap');
+    const elCatBtns = document.getElementById('catBtns');
+    const elBloqueNeto = document.getElementById('bloqueNeto');
+    const elBloqueUni = document.getElementById('bloqueUni');
+    const elError = document.getElementById('errorMsg');
+
+    let pesoCajones = {};   // {1: 1.70, 2: 1.97, ...}
+    let sectores = [];      // [{key, label, kgUni}, ...] de la categoria activa
+    let catActiva = null;
+
+    function showError(m){ elError.textContent = m; elError.style.display = m ? 'block' : 'none'; }
+    function fmtKg(n){ return Number(n).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:3}) + ' Kg'; }
+
+    const CAJ_CACHE_KEY = 'peso_cajones_cache_v1';
+
+    function renderCajonesDesdeMap(){
+      elCajon.innerHTML = '<option value="">-- Seleccionar --</option>';
+      Object.keys(pesoCajones)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .forEach(numero => {
+          const peso = pesoCajones[numero];
+          const opt = document.createElement('option');
+          opt.value = numero;
+          opt.textContent = `Nº ${numero}  ·  ${peso.toFixed(2)} Kg`;
+          elCajon.appendChild(opt);
+        });
+    }
+
+    async function cargarCajones(){
+      // 1) Levantar cache local primero — funciona sin internet.
+      try {
+        const raw = localStorage.getItem(CAJ_CACHE_KEY);
+        if (raw){
+          const cached = JSON.parse(raw);
+          if (cached && typeof cached === 'object'){
+            pesoCajones = cached;
+            renderCajonesDesdeMap();
+          }
+        }
+      } catch(e){}
+
+      // 2) Intentar refrescar desde Supabase. Si falla, seguimos con cache.
+      try {
+        const { data, error } = await sb.from('peso_cajones').select('numero, peso_kg').order('numero');
+        if (error || !data) {
+          if (!Object.keys(pesoCajones).length) showError("Sin conexión y no hay cache local de cajones.");
+          return;
+        }
+        const fresh = {};
+        data.forEach(r => { fresh[r.numero] = parseFloat(r.peso_kg); });
+        pesoCajones = fresh;
+        localStorage.setItem(CAJ_CACHE_KEY, JSON.stringify(fresh));
+        renderCajonesDesdeMap();
+      } catch (e) {
+        if (!Object.keys(pesoCajones).length) showError("Sin conexión y no hay cache local de cajones.");
+      }
+    }
+
+    // Definicion por categoria: tabla + nombres de columnas
+    const CATS = {
+      SP:  { tabla: 'SP Kg',          col: 'Sp',     desc: 'Parte',       kg: 'Kg X Uni' },
+      SC:  { tabla: 'SC Kg',          col: 'SC',     desc: 'Descripcion', kg: 'Kg X Uni' },
+      PEP: { tabla: 'SectorPlasticos',col: 'Sector', desc: 'Descripcion', kg: 'Kg x Uni' },
+      REM: { tabla: 'MERGE_REM',      col: null,     desc: null,          kg: null      }
+    };
+
+    const SEC_CACHE_KEY = 'pesos_sectores_cache_v1'; // { SP: [...], SC: [...], PEP: [...], REM: [...] }
+
+    function leerCacheSectores(){
+      try {
+        const raw = localStorage.getItem(SEC_CACHE_KEY);
+        if (!raw) return {};
+        const obj = JSON.parse(raw);
+        return (obj && typeof obj === 'object') ? obj : {};
+      } catch (e) { return {}; }
+    }
+
+    function guardarCacheCategoria(cat, lista){
+      try {
+        const cache = leerCacheSectores();
+        cache[cat] = lista;
+        localStorage.setItem(SEC_CACHE_KEY, JSON.stringify(cache));
+      } catch (e) {}
+    }
+
+    function ordenarSectores(arr){
+      return arr.sort((a, b) => {
+        const ak = String(a.key), bk = String(b.key);
+        const am = ak.match(/^(\d+)(.*)$/), bm = bk.match(/^(\d+)(.*)$/);
+        if (am && bm) {
+          const d = parseInt(am[1]) - parseInt(bm[1]);
+          if (d !== 0) return d;
+          return (am[2] || '').localeCompare(bm[2] || '');
+        }
+        return ak.localeCompare(bk);
+      });
+    }
+
+    async function fetchCategoria(cat){
+      if (cat === 'REM') {
+        const [r1, r2] = await Promise.all([
+          sb.from('Remaches SC').select('"SC","Descripción","Kg x Uni"').order('"SC"'),
+          sb.from('Remaches SP').select('"SP","Descripción","Kg x Uni"').order('"SP"')
+        ]);
+        if (r1.error || r2.error) throw new Error((r1.error||r2.error).message);
+        const sc = (r1.data || []).map(r => ({ key: r.SC, label: (r.SC || '') + (r['Descripción'] ? ' — ' + r['Descripción'] : ''), kgUni: parseFloat(r['Kg x Uni']), sub: 'SC' }));
+        const sp = (r2.data || []).map(r => ({ key: r.SP, label: (r.SP || '') + (r['Descripción'] ? ' — ' + r['Descripción'] : ''), kgUni: parseFloat(r['Kg x Uni']), sub: 'SP' }));
+        return [...sc, ...sp].filter(s => s.key && Number.isFinite(s.kgUni) && s.kgUni > 0);
+      }
+      const c = CATS[cat];
+      if (!c) return [];
+      const cols = `"${c.col}","${c.desc}","${c.kg}"`;
+      const res = await sb.from(c.tabla).select(cols).order('"' + c.col + '"');
+      if (res.error) throw new Error(res.error.message);
+      return (res.data || [])
+        .map(r => ({
+          key: r[c.col],
+          label: (r[c.col] || '') + (r[c.desc] ? ' — ' + r[c.desc] : ''),
+          kgUni: parseFloat(r[c.kg])
+        }))
+        .filter(s => s.key && Number.isFinite(s.kgUni) && s.kgUni > 0);
+    }
+
+    async function cargarCategoria(cat){
+      elBloqueUni.style.display = 'none';
+      sectores = [];
+      catActiva = cat;
+      elSectorWrap.style.display = '';
+      elSectorHint.textContent = '';
+
+      // 1) Cache local primero — funciona sin internet.
+      const cache = leerCacheSectores();
+      if (cache[cat] && Array.isArray(cache[cat]) && cache[cat].length){
+        sectores = ordenarSectores([...cache[cat]]);
+        renderSectores();
+        elSectorHint.textContent += '  (cache local)';
+      } else {
+        elSector.innerHTML = '<option value="">Cargando...</option>';
+      }
+
+      // 2) Refrescar desde Supabase. Si falla, mantenemos cache.
+      try {
+        const fresca = await fetchCategoria(cat);
+        sectores = ordenarSectores(fresca);
+        guardarCacheCategoria(cat, sectores);
+        renderSectores();
+      } catch (e) {
+        if (!sectores.length) {
+          elSector.innerHTML = '<option value="">-- Sin conexión --</option>';
+          elSectorHint.textContent = 'Sin conexión y sin cache local para ' + cat + '.';
+        }
+      }
+    }
+
+    function renderSectores(){
+      elSector.innerHTML = '<option value="">-- Seleccionar --</option>';
+      sectores.forEach((s, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        const subTxt = s.sub ? ` (${s.sub})` : '';
+        opt.textContent = `${s.key}${subTxt}  ·  ${s.kgUni} Kg/u` + (s.label.includes('—') ? '  —  ' + s.label.split('—').slice(1).join('—').trim() : '');
+        elSector.appendChild(opt);
+      });
+      elSectorHint.textContent = sectores.length ? `${sectores.length} sectores en ${catActiva}.` : 'Sin sectores válidos en esta categoría.';
+    }
+
+    elCatBtns.addEventListener('click', (e) => {
+      const btn = e.target.closest('.cat-btn');
+      if (!btn || btn.disabled || btn.classList.contains('disabled')) return;
+      const cat = btn.dataset.cat;
+      // Toggle visual
+      elCatBtns.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cargarCategoria(cat);
+    });
+
+    function calcularNeto(){
+      const bruto = parseFloat(elBruto.value);
+      const numCaj = parseInt(elCajon.value, 10);
+      let cant = parseInt(elCant.value, 10);
+      if (!Number.isFinite(cant) || cant < 1) cant = 1;
+
+      if (!Number.isFinite(bruto) || !Number.isFinite(numCaj)){
+        elBloqueNeto.style.display = 'none';
+        elBloqueUni.style.display = 'none';
+        elCajonHint.textContent = numCaj ? 'Cajón Nº ' + numCaj + ' = ' + pesoCajones[numCaj] + ' Kg c/u' : '';
+        return null;
+      }
+      const pesoCajU = pesoCajones[numCaj] || 0;
+      const tara = pesoCajU * cant;
+      const neto = bruto - tara;
+      document.getElementById('rBruto').textContent = fmtKg(bruto);
+      document.getElementById('rCajonLbl').textContent = cant > 1
+        ? `Cajón × ${cant} (${pesoCajU} Kg c/u)`
+        : 'Cajón';
+      document.getElementById('rCajon').textContent = fmtKg(tara);
+      document.getElementById('rNeto').textContent = fmtKg(neto);
+      elCajonHint.textContent = cant > 1
+        ? `${cant} cajones Nº ${numCaj} × ${pesoCajU} Kg = ${tara.toFixed(2)} Kg de tara`
+        : `Peso cajón Nº ${numCaj} = ${pesoCajU} Kg`;
+      elBloqueNeto.style.display = '';
+      if (neto < 0) showError('⚠ Peso neto negativo: revisar bruto, cajón o cantidad'); else showError('');
+      return neto;
+    }
+
+    function calcularUnidades(){
+      const neto = calcularNeto();
+      if (neto == null || neto < 0) { elBloqueUni.style.display = 'none'; return; }
+      const idx = elSector.value;
+      if (idx === '') { elBloqueUni.style.display = 'none'; return; }
+      const s = sectores[parseInt(idx, 10)];
+      if (!s) return;
+      const uni = neto / s.kgUni;
+      const tag = catActiva + (s.sub ? ' ' + s.sub : '');
+      document.getElementById('rKgUni').textContent = s.kgUni + ' Kg/u  (' + tag + ' ' + s.key + ')';
+      document.getElementById('rUni').textContent = uni.toLocaleString('es-AR', { maximumFractionDigits: 1 });
+      elBloqueUni.style.display = '';
+    }
+
+    elBruto.addEventListener('input', calcularUnidades);
+    elCajon.addEventListener('change', calcularUnidades);
+    elCant.addEventListener('input', calcularUnidades);
+    elSector.addEventListener('change', calcularUnidades);
+
+    (async function init(){
+      await cargarCajones();
+      // Sectores se cargan on-demand al clickear cada categoria
+    })();
+  </script>
+</body>
+</html>

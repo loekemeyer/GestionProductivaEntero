@@ -86,3 +86,37 @@ td.origen {
   max-width: none;
   white-space: nowrap;
 }
+
+/* ── Inverso: columnas Tallerista..Item ANCLADAS a la derecha; Origen scrollea ──
+   Requiere border-collapse:separate para que sticky no pierda los bordes.
+   Los offsets `right` son acumulativos y dependen de los anchos fijos de abajo:
+   Item 46 · Desc 200 · Sector 70 · Partes/uni 68 · Tallerista 120  (total 504px). */
+table.trace.trace-frozen {
+  border-collapse: separate;
+  border-spacing: 0;
+  border-top: 1px solid #e2e8f0;
+  border-left: 1px solid #e2e8f0;
+}
+table.trace.trace-frozen th,
+table.trace.trace-frozen td {
+  border-top: 0; border-left: 0;
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+/* compacto: padding mínimo + TODO el contenido de las columnas fijas centrado */
+table.trace.trace-frozen th, table.trace.trace-frozen td { padding: 2px 5px; }
+table.trace.trace-frozen th:nth-child(n+2), table.trace.trace-frozen td:nth-child(n+2) { text-align: center; vertical-align: middle; }
+/* columnas fijas (2ª a 6ª): sticky a la derecha con ancho fijo.
+   right = suma de anchos de las columnas a su derecha (box-sizing:border-box → el padding no cuenta). */
+table.trace.trace-frozen th:nth-child(2), table.trace.trace-frozen td:nth-child(2) { position: sticky; right: 319px; width: 82px; min-width: 82px; max-width: 82px; box-shadow: -3px 0 5px -3px rgba(0,0,0,0.18); }
+table.trace.trace-frozen th:nth-child(3), table.trace.trace-frozen td:nth-child(3) { position: sticky; right: 267px; width: 52px; min-width: 52px; max-width: 52px; }
+table.trace.trace-frozen th:nth-child(4), table.trace.trace-frozen td:nth-child(4) { position: sticky; right: 213px; width: 54px; min-width: 54px; max-width: 54px; }
+table.trace.trace-frozen th:nth-child(5), table.trace.trace-frozen td:nth-child(5) { position: sticky; right: 38px;  width: 175px; min-width: 175px; max-width: 175px; }
+table.trace.trace-frozen th:nth-child(6), table.trace.trace-frozen td:nth-child(6) { position: sticky; right: 0;    width: 38px; min-width: 38px; max-width: 38px; }
+/* fondos opacos: sin esto el Origen se transparenta bajo las columnas ancladas */
+table.trace.trace-frozen tbody td:nth-child(n+2) { z-index: 1; background: #fff; }
+table.trace.trace-frozen tbody tr:nth-child(even) td:nth-child(n+2) { background: #fafbfc; }
+table.trace.trace-frozen tbody td.tall { background: #fef3c7 !important; }
+/* header: la esquina fija (thead cols 2-6) por encima de todo al scrollear */
+table.trace.trace-frozen thead th { z-index: 2; }
+table.trace.trace-frozen thead th:nth-child(n+2) { z-index: 3; }

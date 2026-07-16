@@ -264,6 +264,19 @@
       padding: 3px 6px; font-size: 13px; font-family: inherit; background: #eff6ff;
     }
 
+    /* CONFIANZA BADGES (motor rectificado) */
+    .conf-badge {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+    }
+    .conf-alta  { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+    .conf-media { background: #fef9c3; color: #854d0e; border: 1px solid #fde047; }
+    .conf-baja  { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+    .items-table tr.row-baja  { background: #fef2f2; }
+    .items-table tr.row-media { background: #fefce8; }
+    .dato-card.conf-media { border: 2px solid #facc15; }
+    .dato-card.conf-baja  { border: 2px solid #ef4444; }
+
     @media (max-width: 640px) {
       .preview-area.visible { flex-direction: column; }
       .preview-img-wrap { flex: none; max-height: 200px; border-right: none; border-bottom: 1px solid #e2e8f0; }
@@ -306,6 +319,16 @@
             <button class="btn-rotate" id="btnRotR" title="Rotar 90° derecha">&#8635;</button>
             <span class="rotate-label" id="rotateLabel">0°</span>
           </div>
+          <div class="rotate-row" style="margin-top:8px;gap:14px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;font-weight:600">
+              Modelo IA:
+              <select id="selModelo" style="padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;font-family:inherit;font-size:13px;font-weight:600">
+                <option value="claude" selected>Claude Sonnet 4.6 (recomendado)</option>
+                <option value="gpt">GPT-4o</option>
+              </select>
+              <span class="rotate-label" id="preprocStatus" style="margin-left:0"></span>
+            </label>
+          </div>
           <div class="btn-row">
             <button class="btn-analizar" id="btnAnalizar">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -339,6 +362,7 @@
                 <th>Descripcion</th>
                 <th class="num">Cajas</th>
                 <th class="num">KG</th>
+                <th>Confianza</th>
                 <th>Observaciones</th>
                 <th></th>
               </tr>
@@ -366,11 +390,12 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <script>
     const SUPABASE_URL = "https://hrxfctzncixxqmpfhskv.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
     const EDGE_FN = SUPABASE_URL + "/functions/v1/leer-remito-tallerista";
-    const ENTREGAS_TABLE = "Entregas Tallerista Virgilio";
+    const ENTREGAS_TABLE = "Entregas Tallerista Cervantes";
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     const uploadZone = document.getElementById("uploadZone");
@@ -483,6 +508,49 @@
       });
     }
 
+    // Pre-proceso: grayscale + contrast stretch para apagar el fondo punteado gris
+    // y resaltar el trazo oscuro de lapicera/fibron. Tambien limita el lado mayor a
+    // 1800px para que el payload no se vaya al techo.
+    // Curva: brillo < UMBRAL_BAJO → 0 (negro puro), > UMBRAL_ALTO → 255 (blanco puro),
+    // entre medio interpolacion lineal. Esto "tira" los grises del fondo a blanco sin
+    // destruir trazos finos.
+    function preprocesarImagen(b64) {
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX_DIM = 1800;
+          let w = img.width, h = img.height;
+          if (Math.max(w, h) > MAX_DIM) {
+            const r = MAX_DIM / Math.max(w, h);
+            w = Math.round(w * r);
+            h = Math.round(h * r);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, w, h);
+
+          const imgData = ctx.getImageData(0, 0, w, h);
+          const px = imgData.data;
+          const UMBRAL_BAJO = 90;   // <= 90 → negro
+          const UMBRAL_ALTO = 175;  // >= 175 → blanco
+          const rango = UMBRAL_ALTO - UMBRAL_BAJO;
+          for (let i = 0; i < px.length; i += 4) {
+            const lum = 0.299 * px[i] + 0.587 * px[i+1] + 0.114 * px[i+2];
+            let v;
+            if (lum <= UMBRAL_BAJO) v = 0;
+            else if (lum >= UMBRAL_ALTO) v = 255;
+            else v = Math.round(((lum - UMBRAL_BAJO) / rango) * 255);
+            px[i] = px[i+1] = px[i+2] = v;
+          }
+          ctx.putImageData(imgData, 0, 0);
+          resolve(canvas.toDataURL("image/jpeg", 0.92));
+        };
+        img.src = b64;
+      });
+    }
+
     async function applyRotation(delta) {
       if (!originalB64) return;
       rotationDeg = (rotationDeg + delta + 360) % 360;
@@ -555,7 +623,15 @@
       return [...new Set(data.map(r => String(r.cod || "").trim()).filter(Boolean))].sort();
     }
 
-    // Analizar en 2 pasos
+    // Analizar en 2 pasos. v15+: el paso 2 paso de "OCR sobre foto cruda" a
+    // "rectificar+limpiar en cliente y mandar grilla compuesta a paso 3 (Edge Fn)".
+    // El checkbox chkPreproc queda como fallback: si esta TILDADO, se mantiene el
+    // flujo viejo (paso 1+2) por compatibilidad con plantillas viejas sin fiduciales.
+    // Flujo unico (legacy): pre-proceso de imagen + paso 1 (encabezado) + paso 2 (cajas
+    // contra lista de cods conocidos de Partes x Tallerista). El flujo rectificado con
+    // fiduciales quedo desactivado por decision del usuario (2026-05-27); el motor
+    // sigue en disco (ocr-segmentos/lector-rectificado.js) por si se reactiva.
+    const preprocStatus = document.getElementById("preprocStatus");
     btnAnalizar.addEventListener("click", async () => {
       if (!currentB64) return;
       hideResults();
@@ -563,33 +639,34 @@
       btnAnalizar.disabled = true;
 
       try {
-        const imgPayload = { imagen: currentB64, mime: currentFile.type || "image/jpeg" };
+        const modeloUI = ((document.getElementById("selModelo") || {}).value) || "claude";
 
-        // PASO 1: Leer encabezado (tallerista, fecha, cod prov)
-        loading.querySelector("p").textContent = "Paso 1/2: Leyendo encabezado...";
+        loading.querySelector("p").textContent = "Procesando imagen...";
+        const imgParaModelo = await preprocesarImagen(currentB64);
+        if (preprocStatus) preprocStatus.textContent = "— ultimo analisis: " + modeloUI;
+        const imgPayload = { imagen: imgParaModelo, mime: "image/jpeg", modelo: modeloUI };
+
+        loading.querySelector("p").textContent = "Paso 1/2: Leyendo encabezado con " + modeloUI + "...";
         const encabezado = await callEdge({ ...imgPayload, paso: 1 });
-
         const tallerista = String(encabezado.tallerista || "").trim();
         if (!tallerista) throw new Error("No se pudo leer el nombre del tallerista");
 
-        // Buscar códigos de este tallerista en la base
         const codigos = await getCodigosTallerista(tallerista);
         if (!codigos.length) throw new Error("No se encontraron artículos para el tallerista: " + tallerista);
 
-        // PASO 2: Leer cajas/kg para esos códigos específicos
-        loading.querySelector("p").textContent = "Paso 2/2: Leyendo cajas para " + codigos.length + " artículos...";
+        loading.querySelector("p").textContent = "Paso 2/2: Leyendo cajas con " + modeloUI + " (" + codigos.length + " articulos)...";
         const detalle = await callEdge({ ...imgPayload, paso: 2, codigos });
 
-        // Combinar encabezado + detalle
-        const resultado = {
+        await renderResultado({
           tallerista: encabezado.tallerista,
           fecha: encabezado.fecha,
           codigo_proveedor: encabezado.codigo_proveedor,
           numero_remito: encabezado.numero_remito,
-          articulos: detalle.articulos || []
-        };
-
-        await renderResultado(resultado);
+          // v24+: paso 2 ahora devuelve confianza por cod. Usarla tal cual.
+          articulos: detalle.articulos || [],
+          cods_desconocidos: detalle.cods_desconocidos || [],
+          _flujo: "legacy",
+        });
       } catch (err) {
         showError("Error: " + err.message);
       } finally {
@@ -598,27 +675,69 @@
       }
     });
 
+    // Los remitos solo traen DD/MM (sin año). Si la IA devolvio año, lo descartamos
+    // y reasignamos segun el mes actual: si el mes leido es muy posterior al actual,
+    // probablemente sea del año anterior (rollover de enero).
+    function normalizarFechaSoloDDMM(fechaStr){
+      if (!fechaStr || typeof fechaStr !== 'string') return fechaStr;
+      const s = fechaStr.trim();
+      // Extraer dia/mes ignorando cualquier año que venga.
+      let dia, mes;
+      let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (m) { mes = +m[2]; dia = +m[3]; }
+      else {
+        m = s.match(/^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-]\d{2,4})?$/);
+        if (!m) return fechaStr;
+        dia = +m[1]; mes = +m[2];
+      }
+      if (!(dia >= 1 && dia <= 31) || !(mes >= 1 && mes <= 12)) return fechaStr;
+      // Año: actual por defecto. Si mes leido > mes actual + 1 → año anterior (rollover).
+      const hoy = new Date();
+      const mesActual = hoy.getMonth() + 1;
+      let anio = hoy.getFullYear();
+      if (mes > mesActual + 1) anio -= 1;
+      return String(dia).padStart(2,'0') + '/' + String(mes).padStart(2,'0') + '/' + anio;
+    }
+
     async function renderResultado(d) {
       loading.classList.remove("visible");
       lastResultado = d;
       isEditing = false;
       btnEditar.innerHTML = "&#9998; Editar datos";
 
-      // Datos principales
+      // Forzar año correcto: el remito solo tiene DD/MM, la IA inventa el año.
+      d.fecha = normalizarFechaSoloDDMM(d.fecha);
+
+      // Datos principales — solo advertir si la fecha es inexistente.
+      // Si vienen confianzas de paso 3 (rectificado), pintamos borde por nivel.
+      const vfecha = validarFecha(d.fecha);
+      const fechaExtra = !vfecha.ok
+        ? '<div style="color:#c62828;font-size:11px;font-weight:700;margin-top:2px;">⚠ ' + esc(vfecha.error) + '</div>'
+        : '';
+      const fechaBorder = !vfecha.ok ? 'border: 2px solid #c62828;' : '';
+      const confs = d._confianzas || {};
+      const confClass = (c) => (c === "media" || c === "baja") ? ("conf-" + c) : "";
+      const confExtra = (c) => (c === "media" || c === "baja")
+        ? `<div style="margin-top:4px"><span class="conf-badge conf-${c}">${c}</span></div>`
+        : "";
       const campos = [
-        { label: "Tallerista", key: "tallerista", value: d.tallerista },
-        { label: "Fecha del Remito", key: "fecha", value: d.fecha },
-        { label: "Codigo Proveedor", key: "codigo_proveedor", value: d.codigo_proveedor },
-        { label: "Numero de Remito", key: "numero_remito", value: d.numero_remito },
+        { label: "Tallerista", key: "tallerista", value: d.tallerista, extra: '', cls: '', style: '' },
+        { label: "Fecha del Remito", key: "fecha", value: d.fecha, extra: fechaExtra + confExtra(confs.fecha), cls: confClass(confs.fecha), style: fechaBorder },
+        { label: "Codigo Proveedor (cod CH)", key: "codigo_proveedor", value: d.codigo_proveedor, extra: confExtra(confs.cod_ch), cls: confClass(confs.cod_ch), style: '' },
+        { label: "N° Carga Portal", key: "numero_remito", value: d.numero_remito, extra: confExtra(confs.ncp), cls: confClass(confs.ncp), style: '' },
       ];
       datosGrid.innerHTML = campos.map(c =>
-        `<div class="dato-card" data-field="${c.key}">
+        `<div class="dato-card ${c.cls}" data-field="${c.key}" style="${c.style}">
           <div class="label">${c.label}</div>
           <div class="value">${esc(c.value) || '-'}</div>
+          ${c.extra}
         </div>`
       ).join("");
 
-      // Items - completar descripción desde Despiece, filtrar solo los que tienen datos
+      // Items - completar descripción desde Despiece.
+      // Modo rectificado: mostrar TODOS los cods (incluso cajas=0) para que el operario
+      //                   pueda revisar visualmente que no se haya perdido nada.
+      // Modo legacy:      filtrar los que tienen 0 cajas y 0 kg (comportamiento original).
       const allItems = d.articulos || [];
       allItems.forEach(it => {
         if (!it.descripcion || it.descripcion.trim() === "") {
@@ -627,20 +746,32 @@
           if (desc) it.descripcion = desc;
         }
       });
-      const items = allItems.filter(it => (Number(it.cajas) || 0) > 0 || (Number(it.kg) || 0) > 0);
+      // Mostrar SIEMPRE todos los items que devolvio el modelo. Antes el flujo legacy
+      // filtraba cajas>0 lo que ocultaba items donde la IA los marco erroneamente en 0
+      // (ej. casilla con trazo no detectado). Mejor que el operario vea los cods del
+      // tallerista y corrija los que estan mal antes de guardar. btnGuardar igual filtra
+      // cajas>0 al insertar, asi que los 0s no se persisten.
+      const items = allItems;
 
-      itemsBody.innerHTML = items.map((it, idx) =>
-        `<tr data-idx="${idx}">
+      itemsBody.innerHTML = items.map((it, idx) => {
+        const conf = it.confianza || null;
+        const rowCls = (conf === "media") ? "row-media" : (conf === "baja" ? "row-baja" : "");
+        const confCell = conf
+          ? `<span class="conf-badge conf-${conf}">${conf}</span>`
+          : '<span style="color:#a0aec0">—</span>';
+        return `<tr data-idx="${idx}" class="${rowCls}">
           <td>${esc(it.codigo)}</td>
           <td>${esc(it.descripcion)}</td>
           <td class="num"><strong>${it.cajas ? it.cajas : '-'}</strong></td>
           <td class="num">${it.kg ? it.kg : '-'}</td>
+          <td>${confCell}</td>
           <td>${esc(it.observaciones)}</td>
           <td><button class="btn-edit-row" title="Editar" data-idx="${idx}">&#9998;</button></td>
-        </tr>`
-      ).join("");
+        </tr>`;
+      }).join("");
 
-      // Lápiz: editar fila inline
+      // Lápiz: editar fila inline. td 4 ahora es la celda Confianza (read-only,
+      // no se edita: si el operario cambia el valor, marcamos confianza=alta).
       itemsBody.querySelectorAll(".btn-edit-row").forEach(btn => {
         btn.addEventListener("click", () => {
           const idx = Number(btn.dataset.idx);
@@ -651,15 +782,18 @@
           tds[1].innerHTML = `<input class="inline-edit" value="${esc(it.descripcion)}" />`;
           tds[2].innerHTML = `<input class="inline-edit" style="width:60px;text-align:right" value="${it.cajas || 0}" />`;
           tds[3].innerHTML = `<input class="inline-edit" style="width:60px;text-align:right" value="${it.kg || 0}" />`;
-          tds[4].innerHTML = `<input class="inline-edit" value="${esc(it.observaciones)}" />`;
-          tds[5].innerHTML = `<button class="btn-save-row" data-idx="${idx}">OK</button>`;
-          tds[5].querySelector(".btn-save-row").addEventListener("click", () => {
+          // tds[4] = Confianza (no editable)
+          tds[5].innerHTML = `<input class="inline-edit" value="${esc(it.observaciones)}" />`;
+          tds[6].innerHTML = `<button class="btn-save-row" data-idx="${idx}">OK</button>`;
+          tds[6].querySelector(".btn-save-row").addEventListener("click", () => {
             const inputs = tr.querySelectorAll("input");
             items[idx].codigo = inputs[0].value;
             items[idx].descripcion = inputs[1].value;
             items[idx].cajas = Number(inputs[2].value) || 0;
             items[idx].kg = Number(inputs[3].value) || 0;
             items[idx].observaciones = inputs[4].value;
+            // Si el operario corrigio la cifra, la confianza ahora es manual = alta
+            items[idx].confianza = "alta";
             if (lastResultado) lastResultado.articulos = allItems;
             renderResultado(lastResultado);
           });
@@ -681,10 +815,120 @@
       }
       totalesRow.innerHTML = totalesHtml;
 
+      // ====== CODS DESCONOCIDOS (modo legacy, paso 2): el modelo vio cods en la foto
+      // que NO estan en Partes x Tallerista para este tallerista. NO se guardan en DB,
+      // se muestran solo como advertencia para que el operario/IT decida si agregarlos
+      // a la tabla madre Articulos Virgilio X Tallerista.
+      const desconocidos = Array.isArray(d.cods_desconocidos) ? d.cods_desconocidos : [];
+      let descEl = document.getElementById("descSection");
+      if (!descEl) {
+        descEl = document.createElement("div");
+        descEl.id = "descSection";
+        descEl.style.cssText = "margin-top:14px;";
+        totalesRow.parentNode.insertBefore(descEl, totalesRow);
+      }
+      if (desconocidos.length){
+        descEl.innerHTML = `
+          <div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:10px;padding:14px 18px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <span style="font-size:18px;">⚠</span>
+              <strong style="color:#92400e;font-size:14px;">Códigos detectados en el remito pero NO en la base de datos</strong>
+            </div>
+            <p style="color:#78350f;font-size:12.5px;margin-bottom:10px;">
+              Estos códigos aparecen impresos en la foto pero no están dados de alta para
+              <strong>${esc(d.tallerista || "este tallerista")}</strong> en
+              <code>Partes x Tallerista</code>. <strong>NO se van a guardar.</strong>
+              Si son códigos válidos, hay que agregarlos a la tabla madre
+              <code>Articulos Virgilio X Tallerista</code>.
+            </p>
+            <table class="items-table" style="background:#fff;">
+              <thead>
+                <tr>
+                  <th>Codigo</th>
+                  <th class="num">Cajas leidas</th>
+                  <th>Confianza</th>
+                  <th>Observaciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${desconocidos.map(it => {
+                  const c = it.confianza || null;
+                  const confCell = c ? `<span class="conf-badge conf-${c}">${c}</span>` : '<span style="color:#a0aec0">—</span>';
+                  return `<tr>
+                    <td><strong>${esc(it.codigo)}</strong></td>
+                    <td class="num">${it.cajas != null ? it.cajas : '-'}</td>
+                    <td>${confCell}</td>
+                    <td>${esc(it.observaciones)}</td>
+                  </tr>`;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      } else {
+        descEl.innerHTML = "";
+      }
+
       resultado.classList.add("visible");
       btnGuardar.style.display = "";
       btnGuardar.disabled = false;
       saveMsg.className = "save-msg";
+    }
+
+    // Validar fecha leida del remito. Acepta DD/MM, DD/MM/YYYY, DD-MM, DD-MM-YYYY, YYYY-MM-DD.
+    // Devuelve { ok, fechaISO, error, advertencia }.
+    function validarFecha(str) {
+      if (!str || typeof str !== 'string') return { ok: false, error: 'Sin fecha leída' };
+      const s = str.trim();
+      let dia, mes, anio;
+      const hoy = new Date();
+      const anioActual = hoy.getFullYear();
+
+      // YYYY-MM-DD
+      let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      if (m) { anio = +m[1]; mes = +m[2]; dia = +m[3]; }
+      else {
+        // DD/MM[/YYYY] o DD-MM[-YYYY]
+        m = s.match(/^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?$/);
+        if (!m) return { ok: false, error: 'Formato no reconocido: "' + s + '"' };
+        dia = +m[1]; mes = +m[2];
+        anio = m[3] ? (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : anioActual;
+      }
+
+      // Validar rangos
+      if (!(dia >= 1 && dia <= 31)) return { ok: false, error: 'Día inválido: ' + dia };
+      if (!(mes >= 1 && mes <= 12)) {
+        // Heurística: si mes > 12 pero dia <= 12, probablemente esté invertido (MM/DD en lugar de DD/MM)
+        const sugerencia = (mes > 12 && dia >= 1 && dia <= 12)
+          ? ' — ¿quizás escribiste MM/DD? Probá invertir: ' + String(mes).padStart(2,'0') + '/' + String(dia).padStart(2,'0')
+          : '';
+        return { ok: false, error: 'Mes inválido: ' + mes + sugerencia };
+      }
+
+      // Validar dias por mes (incluye febrero bisiesto)
+      const NOMBRE_MES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+      const bisiesto = (anio % 4 === 0 && anio % 100 !== 0) || (anio % 400 === 0);
+      const diasPorMes = [31, bisiesto ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      const maxDia = diasPorMes[mes - 1];
+      if (dia > maxDia) {
+        const nombreMes = NOMBRE_MES[mes - 1];
+        let err;
+        if (mes === 2 && dia === 29 && !bisiesto) {
+          err = anio + ' no es año bisiesto — Febrero tiene 28 días';
+        } else {
+          err = nombreMes + ' tiene ' + maxDia + ' días (escrito: ' + dia + ')';
+        }
+        return { ok: false, error: err };
+      }
+
+      // Segunda verificacion defensiva via Date (por si acaso)
+      const d = new Date(anio, mes - 1, dia);
+      if (d.getDate() !== dia || d.getMonth() !== mes - 1 || d.getFullYear() !== anio) {
+        return { ok: false, error: 'Fecha inexistente: ' + dia + '/' + mes + '/' + anio };
+      }
+
+      const iso = anio + '-' + String(mes).padStart(2,'0') + '-' + String(dia).padStart(2,'0');
+      return { ok: true, fechaISO: iso };
     }
 
     function arDateISO(){
@@ -713,26 +957,49 @@
       }
 
       const tallNombre = formatTallName(lastResultado.tallerista);
-      const fecha = lastResultado.fecha || arDateISO();
+
+      // Validar fecha leida del remito
+      const fechaRaw = lastResultado.fecha || arDateISO();
+      const vf = validarFecha(fechaRaw);
+      if (!vf.ok) {
+        saveMsg.className = "save-msg visible error";
+        saveMsg.textContent = "Fecha invalida del remito: " + vf.error + ". Editá la fecha antes de guardar.";
+        return;
+      }
+      const fecha = vf.fechaISO;
 
       const detalle = articulos
         .map(it => `${it.codigo} - ${it.descripcion || ""} - ${it.cajas} cajas`)
         .join("\n");
 
-      if (!confirm(`¿Guardar entrega de ${tallNombre}?\n\n${detalle}`)) return;
+      if (!confirm(`¿Guardar entrega de ${tallNombre}?\nFecha: ${fecha}\n\n${detalle}`)) return;
 
       btnGuardar.disabled = true;
       saveMsg.className = "save-msg visible ok";
       saveMsg.textContent = "Guardando...";
 
       try {
+        // Codigo_Tall es NOT NULL en la tabla. Resolverlo desde codigo_proveedor (cod CH)
+        // leido del remito. Si no se pudo leer / no es numerico -> 0 (la tabla acepta 0
+        // como sentinel; el operario despues puede actualizar manualmente).
+        // NO mandamos "Sucursal": la columna no existe (la sucursal Cervantes vs Virgilio
+        // se infiere del modulo de carga; esta tabla recibe ambos).
+        const codigoTall = Number(lastResultado.codigo_proveedor) || 0;
+        if (!codigoTall) {
+          console.warn("[Entrega Cervantes Fotos] Codigo_Tall=0 al guardar; el cod CH no se pudo leer del remito.");
+        }
         const registros = articulos.map(it => ({
           "Nombre_Tall": tallNombre,
+          "Codigo_Tall": codigoTall,
           "Cod": String(it.codigo || "").trim(),
           "Cajas": Number(it.cajas) || 0,
           "Fecha": fecha,
-          "Sucursal": "Cerv"
         }));
+        // TODO GRJ: cuando se sume soporte para talleristas con GRJ (Carlos/Martin),
+        // replicar la logica de Recepcion Cervantes.html lineas 969-1052 (isGRJ /
+        // esGrjRealKg / esTransUnidades + GRJ_COMPONENTES + GRJ_PESOS).
+        // Para Lucho (primer tallerista soportado) NO hay GRJ, asi que el INSERT
+        // simple alcanza.
 
         const { error } = await sb.from(ENTREGAS_TABLE).insert(registros);
         if (error) throw new Error(error.message);
@@ -761,10 +1028,15 @@
           valueEl.innerHTML = '<input type="text" value="' + (val === "-" ? "" : val).replace(/"/g, '&quot;') + '" />';
         });
 
-        // Hacer editables los items
-        itemsBody.querySelectorAll("td").forEach(td => {
-          const val = td.textContent.trim();
-          td.innerHTML = '<input type="text" value="' + val.replace(/"/g, '&quot;') + '" />';
+        // Hacer editables los items. Saltar td 4 (Confianza, read-only) y td 6 (boton).
+        itemsBody.querySelectorAll("tr").forEach(tr => {
+          const tds = tr.querySelectorAll("td");
+          const editables = [0, 1, 2, 3, 5]; // Codigo, Desc, Cajas, KG, Observaciones
+          editables.forEach(i => {
+            if (!tds[i]) return;
+            const val = tds[i].textContent.trim();
+            tds[i].innerHTML = '<input type="text" value="' + val.replace(/"/g, '&quot;') + '" />';
+          });
         });
       } else {
         // Guardar cambios
@@ -782,12 +1054,14 @@
         rows.forEach(tr => {
           const inputs = tr.querySelectorAll("input");
           if (inputs.length >= 5) {
+            // Si el operario edito, marcamos confianza como "alta" (revisada manual).
             lastResultado.articulos.push({
               codigo: inputs[0].value,
               descripcion: inputs[1].value,
               cajas: Number(inputs[2].value) || 0,
               kg: Number(inputs[3].value) || 0,
-              observaciones: inputs[4].value
+              observaciones: inputs[4].value,
+              confianza: "alta",
             });
           }
         });

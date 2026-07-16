@@ -127,6 +127,17 @@
     .print-only { display: none; }
     .print-only h2 { font-size: 24px; margin-bottom: 8px; }
     .print-only .sub { font-size: 14px; color: #555; margin-bottom: 16px; }
+
+    /* ===== Virgilio (tareas + M3/HS) ===== */
+    .v-section-title { font-size: 18px; font-weight: 800; margin: 18px 0 6px; color: #111; }
+    .v-table { width: auto; border-collapse: collapse; border: 1.5px solid #000; margin: 6px 0 18px; font-size: 16px; }
+    .v-table th { background: #f5f5f5; padding: 10px 16px; border: 1px solid #000; font-weight: 800; text-align: center; }
+    .v-table td { padding: 8px 16px; border: 1px solid #000; text-align: center; font-variant-numeric: tabular-nums; }
+    .v-table td.tarea { text-align: left; font-weight: 700; }
+    .v-table td.mxh { font-weight: 800; }
+    .v-table input { height: 38px; border: 1px solid #c9d1d9; border-radius: 8px; padding: 0 8px; font-size: 15px; text-align: center; width: 110px; box-sizing: border-box; outline: none; }
+    .v-table input:focus { border-color: #4b89ff; }
+    #vPromTable tr.actual { background: #fff7d6; font-weight: 800; }
   </style>
 </head>
 <body>
@@ -143,6 +154,13 @@
     </div>
 
     <div class="header-fields">
+      <div class="field">
+        <label>Sede</label>
+        <select id="sedeSel">
+          <option value="cervantes" selected>Cervantes</option>
+          <option value="virgilio">Virgilio</option>
+        </select>
+      </div>
       <div class="field field-nombre">
         <label>Nombre del entrevistado</label>
         <input type="text" id="entNombre" placeholder="Apellido Nombre" />
@@ -151,6 +169,21 @@
         <label>Fecha</label>
         <input type="date" id="entFecha" />
       </div>
+    </div>
+
+    <div id="virgilioApp" style="display:none;">
+      <div class="v-section-title">Tareas Realizadas</div>
+      <table class="v-table" id="vTareasTable">
+        <thead><tr><th>Tarea</th><th>M3</th><th>HS</th><th>M3/HS</th></tr></thead>
+        <tbody id="vTareasBody"></tbody>
+      </table>
+      <div class="actions" id="vActions">
+        <button class="btn" id="vBtnGuardar" style="background:#2e7d32;">💾 Guardar</button>
+        <button class="btn btn-print" id="vBtnImprimir">🖨 Imprimir</button>
+      </div>
+      <div id="vSaveStatus" style="margin-top:10px;font-size:13px;"></div>
+      <div class="v-section-title">Promedios Entrevistas</div>
+      <table class="v-table" id="vPromTable"><thead id="vPromHead"></thead><tbody id="vPromBody"></tbody></table>
     </div>
 
     <table id="mainTable">
@@ -203,6 +236,27 @@
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
   let matricesMap = {}; // N_Matriz -> { Matriz, Tiempo_Historico }
+  let sede = 'cervantes'; // 'cervantes' (implementado) | 'virgilio' (pendiente, proxima tarea)
+
+  // Muestra/oculta el form segun la sede. Cervantes = matrices (logica original).
+  // Virgilio = tareas (Picking/Armado Pedido) con M3/HS, otra UI (#virgilioApp).
+  let virgilioInit = false;
+  function aplicarSede() {
+    const esVirg = sede === 'virgilio';
+    document.getElementById('virgilioApp').style.display = esVirg ? 'block' : 'none';
+    document.getElementById('mainTable').style.display = esVirg ? 'none' : '';
+    document.querySelector('.actions').style.display = esVirg ? 'none' : '';
+    document.getElementById('saveStatus').style.display = esVirg ? 'none' : '';
+    if (esVirg && !virgilioInit) {
+      virgilioInit = true;
+      buildVirgilioRows();
+      document.getElementById('vBtnGuardar').addEventListener('click', guardarVirgilio);
+      document.getElementById('vBtnImprimir').addEventListener('click', imprimirVirgilio);
+      document.getElementById('entNombre').addEventListener('input', () => { if (sede === 'virgilio') renderPromedios(); });
+      cargarPromedios();
+    }
+    if (esVirg) renderPromedios();
+  }
 
   function esc(v) { return v == null ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -630,6 +684,7 @@
   }
 
   async function guardar() {
+    if (sede !== 'cervantes') return; // Virgilio: pendiente (proxima tarea)
     const nombre = document.getElementById('entNombre').value.trim();
     const fecha = document.getElementById('entFecha').value;
     const status = document.getElementById('saveStatus');
@@ -733,6 +788,151 @@
     });
   }
 
+  // ============================================================
+  // VIRGILIO: tareas Picking / Armado Pedido, metrica M3/HS = M3 / horas.
+  // Referencia "Promedios Entrevistas" = promedio por persona de Entrevistas_Virgilio.
+  // ============================================================
+  const TAREAS_V = ['Picking', 'Armado Pedido'];
+  let promediosV = []; // [{ nombre, vals: {Picking:n, 'Armado Pedido':n} }]
+
+  function parseNum(v) {
+    if (v == null) return 0;
+    let s = String(v).trim().replace(/[^\d,.-]/g, '');
+    if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
+    else s = s.replace(/,/g, '');
+    const n = Number(s);
+    return isFinite(n) ? n : 0;
+  }
+  function fmtNum(n) {
+    return (n == null || isNaN(n)) ? '' : Number(n).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  }
+
+  function buildVirgilioRows() {
+    const body = document.getElementById('vTareasBody');
+    body.innerHTML = '';
+    TAREAS_V.forEach(t => {
+      const tr = document.createElement('tr');
+      tr.dataset.tarea = t;
+      tr.innerHTML =
+        '<td class="tarea">' + esc(t) + '</td>' +
+        '<td><input type="text" inputmode="decimal" class="v-m3" placeholder="0" /></td>' +
+        '<td><input type="time" class="v-hs" /></td>' +
+        '<td class="mxh">-</td>';
+      body.appendChild(tr);
+      tr.querySelectorAll('.v-m3, .v-hs').forEach(el => el.addEventListener('input', calcVirgilio));
+    });
+  }
+
+  function mxhDeFila(tr) {
+    const m3 = parseNum(tr.querySelector('.v-m3').value);
+    const horas = hhmmToSec(tr.querySelector('.v-hs').value) / 3600;
+    return (m3 > 0 && horas > 0) ? (m3 / horas) : null;
+  }
+
+  function calcVirgilio() {
+    document.querySelectorAll('#vTareasBody tr').forEach(tr => {
+      const v = mxhDeFila(tr);
+      tr.querySelector('.mxh').textContent = (v != null) ? fmtNum(v) : '-';
+    });
+    renderPromedios();
+  }
+
+  async function cargarPromedios() {
+    const { data, error } = await sb.from('Entrevistas_Virgilio')
+      .select('nombre, tarea, m3_por_hs')
+      .order('created_at', { ascending: false });
+    promediosV = [];
+    if (!error && data) {
+      const map = {}; // nombre -> tarea -> {sum,count}
+      data.forEach(r => {
+        const nom = String(r.nombre || '').trim(); if (!nom) return;
+        const ta = String(r.tarea || '').trim();
+        const val = Number(r.m3_por_hs);
+        if (!isFinite(val)) return;
+        map[nom] = map[nom] || {};
+        map[nom][ta] = map[nom][ta] || { sum: 0, count: 0 };
+        map[nom][ta].sum += val; map[nom][ta].count++;
+      });
+      promediosV = Object.entries(map).map(([nombre, tareas]) => {
+        const vals = {};
+        TAREAS_V.forEach(t => { const o = tareas[t]; vals[t] = o ? o.sum / o.count : null; });
+        return { nombre, vals };
+      }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    }
+    renderPromedios();
+  }
+
+  function renderPromedios() {
+    const head = document.getElementById('vPromHead');
+    const body = document.getElementById('vPromBody');
+    if (!head || !body) return;
+    head.innerHTML = '<tr><th>Nombre</th>' + TAREAS_V.map(t => '<th>' + esc(t) + ' M3/HS</th>').join('') + '</tr>';
+
+    const nombreAct = document.getElementById('entNombre').value.trim();
+    const actVals = {};
+    document.querySelectorAll('#vTareasBody tr').forEach(tr => { actVals[tr.dataset.tarea] = mxhDeFila(tr); });
+    const hayAct = TAREAS_V.some(t => actVals[t] != null);
+
+    let b = '';
+    if (hayAct) {
+      b += '<tr class="actual"><td>' + esc(nombreAct || '(actual)') + '</td>' +
+        TAREAS_V.map(t => '<td>' + (actVals[t] != null ? fmtNum(actVals[t]) : '-') + '</td>').join('') + '</tr>';
+    }
+    promediosV.forEach(p => {
+      b += '<tr><td>' + esc(p.nombre) + '</td>' +
+        TAREAS_V.map(t => '<td>' + (p.vals[t] != null ? fmtNum(p.vals[t]) : '-') + '</td>').join('') + '</tr>';
+    });
+    body.innerHTML = b || '<tr><td colspan="' + (TAREAS_V.length + 1) + '" style="color:#999;font-style:italic;">Sin entrevistas previas.</td></tr>';
+  }
+
+  async function guardarVirgilio() {
+    const nombre = document.getElementById('entNombre').value.trim();
+    const fecha = document.getElementById('entFecha').value;
+    const status = document.getElementById('vSaveStatus');
+    if (!nombre) { status.style.color = '#c62828'; status.textContent = 'Falta el nombre del entrevistado.'; return; }
+    if (!fecha) { status.style.color = '#c62828'; status.textContent = 'Falta la fecha.'; return; }
+
+    const rows = [];
+    document.querySelectorAll('#vTareasBody tr').forEach(tr => {
+      const tarea = tr.dataset.tarea;
+      const m3 = parseNum(tr.querySelector('.v-m3').value);
+      const horas = hhmmToSec(tr.querySelector('.v-hs').value) / 3600;
+      if (m3 > 0 && horas > 0) {
+        rows.push({
+          nombre, fecha, tarea,
+          m3, horas: Math.round(horas * 1e4) / 1e4,
+          m3_por_hs: Math.round((m3 / horas) * 1e4) / 1e4
+        });
+      }
+    });
+    if (!rows.length) { status.style.color = '#c62828'; status.textContent = 'Cargá M3 y HS de al menos una tarea.'; return; }
+
+    const btn = document.getElementById('vBtnGuardar');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    status.style.color = '#555'; status.textContent = 'Guardando ' + rows.length + ' tarea(s)...';
+    const { error } = await sb.from('Entrevistas_Virgilio').insert(rows);
+    btn.disabled = false; btn.textContent = '💾 Guardar';
+    if (error) { status.style.color = '#c62828'; status.textContent = 'Error: ' + error.message; }
+    else { status.style.color = '#2e7d32'; status.textContent = 'Guardado: ' + rows.length + ' tarea(s).'; cargarPromedios(); }
+  }
+
+  function imprimirVirgilio() {
+    const nombre = document.getElementById('entNombre').value.trim() || '(sin nombre)';
+    const fecha = document.getElementById('entFecha').value || '';
+    const tabla = document.getElementById('vPromTable').outerHTML;
+    const win = window.open('', '_blank', 'width=900,height=650');
+    if (!win) { alert('El navegador bloqueó la ventana. Permití pop-ups.'); return; }
+    win.document.write('<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Entrevista Virgilio</title>' +
+      '<style>body{font-family:Arial,sans-serif;padding:18px;color:#111}h2{margin:0 0 4px}.sub{color:#555;margin-bottom:14px;font-size:14px}' +
+      'table{border-collapse:collapse;border:1.5px solid #000}th,td{border:1px solid #000;padding:7px 12px;text-align:center;font-size:14px}' +
+      'th{background:#eee;font-weight:800}tr.actual{background:#fff7d6;font-weight:800;-webkit-print-color-adjust:exact;print-color-adjust:exact}</style>' +
+      '</head><body><h2>Promedios Entrevistas — Virgilio</h2><div class="sub">Entrevistado: ' + esc(nombre) + ' &nbsp;·&nbsp; Fecha: ' + esc(fecha) + '</div>' +
+      tabla + '<\/body><\/html>');
+    win.document.close(); win.focus();
+    win.onload = () => win.print();
+    setTimeout(() => { try { win.print(); } catch (e) {} }, 300);
+  }
+
   async function init() {
     // Fecha default = hoy
     document.getElementById('entFecha').value = new Date().toISOString().slice(0, 10);
@@ -760,6 +960,12 @@
       await buildPivotForPrint();
       window.print();
     });
+
+    document.getElementById('sedeSel').addEventListener('change', (e) => {
+      sede = e.target.value;
+      aplicarSede();
+    });
+    aplicarSede();
   }
 
   init();

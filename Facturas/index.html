@@ -585,8 +585,8 @@
       <div class="upload-zone" id="uploadZone">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0L8 8m4-4l4 4"/><path d="M20 16v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/></svg>
         <p>Toca para seleccionar imagen</p>
-        <span class="hint">JPG, PNG o PDF - Max 10MB</span>
-        <input type="file" id="fileInput" accept="image/*,.pdf" />
+        <span class="hint">JPG, PNG, HEIC o PDF - Max 10MB</span>
+        <input type="file" id="fileInput" accept="image/*,.heic,.heif,.pdf" />
       </div>
       <button class="btn-camara" id="btnCamara">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -708,6 +708,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script>
     const SUPABASE_URL = "https://hrxfctzncixxqmpfhskv.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
@@ -774,20 +776,93 @@
     // Boton recortar
     document.getElementById("btnRecortar").addEventListener("click", () => abrirRecorte());
 
-    function handleFile(file) {
-      if (file.size > 10 * 1024 * 1024) { showError("El archivo supera 10MB."); return; }
-      currentFile = file;
+    function setLoadingText(txt) {
+      const p = loading.querySelector("p");
+      if (p) p.textContent = txt;
+      loading.classList.add("visible");
+    }
+    function leerComoDataURL(file) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = e => resolve(e.target.result);
+        r.onerror = () => reject(new Error("no se pudo leer el archivo"));
+        r.readAsDataURL(file);
+      });
+    }
+    const PDFJS_VER = "3.11.174";
+    const PDFJS_BASE = "https://cdn.jsdelivr.net/npm/pdfjs-dist@" + PDFJS_VER;
+    let _pdfWorkerReady = null;
+    // El worker se carga como blob same-origin (evita que el browser bloquee un Worker cross-origin)
+    async function prepararPdfWorker() {
+      if (pdfjsLib.GlobalWorkerOptions.workerSrc) return;
+      if (!_pdfWorkerReady) {
+        _pdfWorkerReady = fetch(PDFJS_BASE + "/build/pdf.worker.min.js")
+          .then(r => r.text())
+          .then(txt => {
+            pdfjsLib.GlobalWorkerOptions.workerSrc =
+              URL.createObjectURL(new Blob([txt], { type: "application/javascript" }));
+          });
+      }
+      return _pdfWorkerReady;
+    }
+    // PDF -> rasteriza la 1ra pagina a PNG (OpenAI Vision no acepta PDF)
+    async function pdfPrimeraPaginaADataURL(file) {
+      if (!window.pdfjsLib) throw new Error("pdf.js no cargo");
+      await prepararPdfWorker();
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({
+        data: buf,
+        standardFontDataUrl: PDFJS_BASE + "/standard_fonts/" // fuentes estandar (facturas con texto vectorial)
+      }).promise;
+      const page = await pdf.getPage(1);
+      const base = page.getViewport({ scale: 1 });
+      const escala = Math.min(3, Math.max(1.5, 1600 / base.width)); // ~1600px de ancho para que la IA lea bien
+      const viewport = page.getViewport({ scale: escala });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      return canvas.toDataURL("image/png");
+    }
+    // HEIC/HEIF (iPhone) -> JPEG (OpenAI Vision no acepta HEIC)
+    async function heicADataURL(file) {
+      if (!window.heic2any) throw new Error("heic2any no cargo");
+      const out = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.92 });
+      return await leerComoDataURL(Array.isArray(out) ? out[0] : out);
+    }
 
-      const reader = new FileReader();
-      reader.onload = e => {
-        currentB64 = e.target.result;
+    async function handleFile(file) {
+      if (file.size > 10 * 1024 * 1024) { showError("El archivo supera 10MB."); return; }
+
+      const name = (file.name || "").toLowerCase();
+      const type = (file.type || "").toLowerCase();
+      const esPdf  = type === "application/pdf" || name.endsWith(".pdf");
+      const esHeic = type.includes("heic") || type.includes("heif") || name.endsWith(".heic") || name.endsWith(".heif");
+
+      try {
+        let dataUrl;
+        if (esPdf) {
+          setLoadingText("Convirtiendo PDF...");
+          dataUrl = await pdfPrimeraPaginaADataURL(file);
+        } else if (esHeic) {
+          setLoadingText("Convirtiendo imagen HEIC...");
+          dataUrl = await heicADataURL(file);
+        } else if (type.startsWith("image/")) {
+          dataUrl = await leerComoDataURL(file);
+        } else {
+          showError("Formato no soportado. Usa una foto (JPG/PNG), HEIC o PDF.");
+          return;
+        }
+        currentFile = file;
+        currentB64 = dataUrl;
         previewImg.src = currentB64;
         uploadZone.style.display = "none";
         btnCamara.style.display = "none";
         previewArea.classList.add("visible");
         hideResults();
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        showError("No se pudo procesar el archivo: " + (err && err.message ? err.message : err));
+      }
     }
 
     btnLimpiar.addEventListener("click", limpiar);
@@ -831,8 +906,11 @@
     btnAnalizar.addEventListener("click", async () => {
       if (!currentB64) return;
       hideResults();
-      loading.classList.add("visible");
+      setLoadingText("Analizando factura con IA...");
       btnAnalizar.disabled = true;
+
+      // mime real derivado del data URL que efectivamente se manda (PDF/HEIC ya vienen convertidos a png/jpeg)
+      const mimeReal = (currentB64.match(/^data:([^;]+);/) || [])[1] || "image/jpeg";
 
       try {
         const res = await fetch(EDGE_FN, {
@@ -843,7 +921,7 @@
           },
           body: JSON.stringify({
             imagen: currentB64,
-            mime: currentFile.type || "image/jpeg"
+            mime: mimeReal
           })
         });
 

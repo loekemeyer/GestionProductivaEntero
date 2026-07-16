@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Manual de Onboarding — Gestión Productiva</title>
+<style>
+  @page { size: A4; margin: 2.5cm; }
+  body {
+    font-family: 'Calibri', 'Arial', sans-serif;
+    font-size: 12pt;
+    line-height: 1.5;
+    color: #1a1a1a;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  h1 {
+    color: #0f172a;
+    font-size: 26pt;
+    border-bottom: 3px solid #3b82f6;
+    padding-bottom: 12px;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    color: #64748b;
+    font-size: 13pt;
+    font-style: italic;
+    margin-bottom: 32px;
+  }
+  h2 {
+    color: #1e40af;
+    font-size: 18pt;
+    margin-top: 32px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #cbd5e1;
+    padding-bottom: 4px;
+  }
+  h3 {
+    color: #1e293b;
+    font-size: 14pt;
+    margin-top: 20px;
+    margin-bottom: 8px;
+  }
+  p { margin: 8px 0; }
+  ol, ul { margin: 8px 0; padding-left: 28px; }
+  ol li, ul li { margin: 6px 0; }
+  .screenshot {
+    background: #fef3c7;
+    border: 2px dashed #d97706;
+    color: #92400e;
+    padding: 16px 20px;
+    margin: 12px 0;
+    border-radius: 6px;
+    font-style: italic;
+    font-weight: 600;
+    text-align: center;
+  }
+  .note {
+    background: #dbeafe;
+    border-left: 4px solid #3b82f6;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 4px;
+  }
+  .warning {
+    background: #fee2e2;
+    border-left: 4px solid #dc2626;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 4px;
+  }
+  .step-num {
+    display: inline-block;
+    background: #3b82f6;
+    color: white;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    text-align: center;
+    font-weight: bold;
+    margin-right: 8px;
+  }
+  code, kbd {
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11pt;
+    color: #1e40af;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+  }
+  th, td {
+    border: 1px solid #cbd5e1;
+    padding: 8px 12px;
+    text-align: left;
+  }
+  th { background: #1e40af; color: white; }
+  tr:nth-child(even) { background: #f8fafc; }
+  .toc {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    padding: 16px 24px;
+    border-radius: 6px;
+    margin-bottom: 32px;
+  }
+  .toc h2 { border: none; margin-top: 0; }
+  .toc ol { margin-left: 0; padding-left: 24px; }
+  .page-break { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<h1>Manual de Onboarding — Gestión Productiva</h1>
+<p class="subtitle">Guía paso a paso para nuevos empleados — Cómo entrar al sistema localmente con Visual Studio Code y Live Server</p>
+
+<div class="toc">
+<h2>Índice</h2>
+<ol>
+  <li>Requisitos previos</li>
+  <li>Abrir Visual Studio Code</li>
+  <li>Abrir la carpeta del proyecto</li>
+  <li>Instalar la extensión Live Server</li>
+  <li>Iniciar el servidor con "Go Live"</li>
+  <li>Abrir Gestión Productiva en el navegador</li>
+  <li>Iniciar sesión con Google</li>
+  <li>Pantalla principal del sistema</li>
+  <li>Solución de problemas (Troubleshooting)</li>
+</ol>
+</div>
+
+<div class="page-break"></div>
+
+<h2>1. Requisitos previos</h2>
+<p>Antes de empezar, asegurate de tener instalado en la PC:</p>
+<ul>
+  <li><strong>Visual Studio Code</strong> (también llamado "VS Code"). Es un editor gratuito de Microsoft. Si no lo tenés, descargalo de <code>https://code.visualstudio.com</code> e instalalo siguiendo el asistente (todo siguiente, siguiente, finalizar).</li>
+  <li><strong>Navegador web</strong> (Chrome, Edge, Firefox). Cualquier moderno sirve.</li>
+  <li><strong>Cuenta de Google autorizada</strong> por administración. Si nunca te dieron acceso, pedile a tu encargado que te agregue. Si intentás ingresar con una cuenta no autorizada, el sistema te lo va a decir.</li>
+  <li><strong>Acceso a la carpeta compartida</strong> del proyecto (normalmente en la unidad de red, por ejemplo <code>Z:\AA IT\Gestion Productiva</code>). Si no la ves, pedí permiso al área de sistemas.</li>
+</ul>
+
+<h2>2. Abrir Visual Studio Code</h2>
+<ol>
+  <li>Hacé doble click en el ícono azul de Visual Studio Code en el escritorio, o buscalo en el menú Inicio escribiendo "code".</li>
+  <li>Esperá unos segundos a que cargue.</li>
+</ol>
+
+<div class="screenshot">[INSERTAR SCREENSHOT: Escritorio o menú Inicio mostrando el ícono de VS Code y la pantalla de bienvenida del editor abierto.]</div>
+
+<h2>3. Abrir la carpeta del proyecto</h2>
+<ol>
+  <li>En Visual Studio Code, hacé click en el menú <strong>"Archivo"</strong> (arriba a la izquierda) o usá el atajo <kbd>Ctrl + K</kbd> seguido de <kbd>Ctrl + O</kbd>.</li>
+  <li>Click en <strong>"Abrir carpeta..."</strong> (o <em>"Open Folder..."</em> si está en inglés).</li>
+  <li>Navegá hasta la carpeta compartida del proyecto. Por ejemplo:
+    <ul><li><code>Z:\AA IT\Gestion Productiva (4)\Gestion Productiva (3)\Gestion Productiva (3)\Gestion Productiva\Gestion Productiva</code></li></ul>
+  </li>
+  <li>Click en <strong>"Seleccionar carpeta"</strong>.</li>
+  <li>Si te aparece una pregunta tipo <em>"¿Confías en los autores de los archivos de esta carpeta?"</em>, hacé click en <strong>"Sí, confío en los autores"</strong>.</li>
+</ol>
+
+<div class="screenshot">[INSERTAR SCREENSHOT: Diálogo "Abrir carpeta" mostrando la ruta del proyecto seleccionada, y VS Code después con el árbol de archivos visible en el panel izquierdo (Explorador).]</div>
+
+<div class="note">
+<strong>Resultado esperado:</strong> En el panel izquierdo (Explorador) vas a ver muchas carpetas como <code>Produccion</code>, <code>Talleristas</code>, <code>Prov Serv</code>, <code>Informes</code>, etc. + archivos como <code>login.html</code>, <code>index.html</code>, <code>envios-only.html</code>.
+</div>
+
+<h2>4. Instalar la extensión Live Server (solo la primera vez)</h2>
+<p>Live Server es una extensión gratuita que levanta un mini-servidor web local para que el sistema funcione correctamente desde tu PC.</p>
+<ol>
+  <li>En la barra lateral izquierda de VS Code, hacé click en el ícono de <strong>Extensiones</strong> (cuadraditos apilados, 4° desde arriba) o usá <kbd>Ctrl + Shift + X</kbd>.</li>
+  <li>En el buscador, escribí <strong>"Live Server"</strong>.</li>
+  <li>El primer resultado es de "Ritwick Dey". Hacé click en <strong>"Instalar"</strong>.</li>
+  <li>Esperá unos segundos a que termine la instalación. Ya está listo, no hace falta reiniciar.</li>
+</ol>
+
+<div class="screenshot">[INSERTAR SCREENSHOT: Panel de Extensiones con "Live Server" buscado, mostrando la extensión de Ritwick Dey y el botón "Instalar" o "Desinstalar" (si ya está instalado).]</div>
+
+<div class="note">
+<strong>¿Cómo sé si ya está instalado?</strong> En la barra de estado abajo a la derecha de VS Code debería aparecer un botón <strong>"Go Live"</strong> con un ícono de antena. Si lo ves, ya está instalado, podés saltar al paso 5.
+</div>
+
+<div class="page-break"></div>
+
+<h2>5. Iniciar el servidor con "Go Live"</h2>
+<ol>
+  <li>Mirá abajo a la derecha de VS Code, en la barra de estado azul.</li>
+  <li>Hacé click en <strong>"Go Live"</strong> (con un ícono de antena/wifi).</li>
+  <li>Tu navegador por defecto se va a abrir automáticamente con una URL similar a <code>http://127.0.0.1:5500</code> o <code>http://127.0.0.1:5501</code>.</li>
+</ol>
+
+<div class="screenshot">[INSERTAR SCREENSHOT: Barra de estado de VS Code con el botón "Go Live" resaltado, y el navegador abriéndose con la URL local.]</div>
+
+<div class="warning">
+<strong>Importante:</strong> mientras estés usando el sistema, NO cierres Visual Studio Code. Si lo cerrás, el servidor se apaga y el sistema deja de funcionar. Podés minimizarlo, eso sí.
+</div>
+
+<h2>6. Abrir Gestión Productiva en el navegador</h2>
+<p>Cuando Live Server abre el navegador, te lleva a la lista de archivos. Tenés que ir a la página correcta:</p>
+<ol>
+  <li>Si te abrió un listado de carpetas → hacé click en <code>login.html</code> o en <code>index.html</code> (ambos te llevan al mismo lugar: el login).</li>
+  <li>Si te abrió directamente la página de login (pantalla oscura con el logo "Gestión Productiva"), perfecto, seguí al paso 7.</li>
+</ol>
+
+<div class="screenshot">[INSERTAR SCREENSHOT: Pantalla de login con el fondo oscuro azul, logo cuadrado, título "GESTIÓN PRODUCTIVA" y botón blanco grande "Continuar con Google".]</div>
+
+<h2>7. Iniciar sesión con Google</h2>
+<ol>
+  <li>Hacé click en el botón <strong>"Continuar con Google"</strong>.</li>
+  <li>Se abre una nueva ventana de Google.</li>
+  <li>Seleccioná o ingresá la cuenta de Google que te asignaron (la de la empresa).</li>
+  <li>Si te pide contraseña, ingresala.</li>
+  <li>Si Google te pregunta permisos de la aplicación, hacé click en "Permitir" o "Continuar".</li>
+  <li>Vas a volver automáticamente al sistema.</li>
+</ol>
+
+<div class="screenshot">[INSERTAR SCREENSHOT: Ventana de selección de cuenta de Google, mostrando una o más cuentas para elegir.]</div>
+
+<div class="warning">
+<strong>Si te aparece un mensaje rojo:</strong> "Tu cuenta no está autorizada para usar esta aplicación", significa que el administrador no te dio acceso todavía. Comunicate con <code>loekemeyer.n8n@gmail.com</code> para solicitar acceso, indicando tu mail de Google de la empresa.
+</div>
+
+<h2>8. Pantalla principal del sistema</h2>
+<p>Una vez ingresado, vas a ver la pantalla principal con los módulos disponibles según tu rol:</p>
+<ul>
+  <li><strong>Rol Logística</strong>: ves 4-6 botones grandes (Envíos PS, Envíos Tall, Entrega PS, Entrega Tall Cerv, Recepción Insumos, Calculadora).</li>
+  <li><strong>Rol Admin</strong>: ves un menú completo con todos los módulos (Producción, Stock, Talleristas, Informes, etc.).</li>
+</ul>
+
+<div class="screenshot">[INSERTAR SCREENSHOT: Pantalla principal del sistema mostrando los botones del menú según el rol asignado.]</div>
+
+<div class="note">
+<strong>Listo.</strong> Desde acá podés navegar a cualquier módulo. Cuando termines, podés cerrar el navegador. Si querés volver a ingresar, repetí desde el paso 5 (Go Live) — VS Code y la carpeta del proyecto ya quedaron configurados.
+</div>
+
+<div class="page-break"></div>
+
+<h2>9. Solución de problemas (Troubleshooting)</h2>
+
+<h3>9.1 — No veo el botón "Go Live"</h3>
+<p><strong>Causa</strong>: la extensión Live Server no está instalada o VS Code no reconoció que se instaló.</p>
+<p><strong>Solución</strong>: volvé al paso 4 e instalala. Si dice "Desinstalar" pero el botón no aparece, cerrá VS Code y volvé a abrirlo.</p>
+
+<h3>9.2 — Live Server abre pero el navegador muestra "Esta página no funciona" o error 404</h3>
+<p><strong>Causa</strong>: abrió en una URL que no existe (por ejemplo si tenía otro archivo abierto).</p>
+<p><strong>Solución</strong>: en la barra de direcciones del navegador, escribí manualmente: <code>http://127.0.0.1:5500/login.html</code> (probá también con 5501 si 5500 no anda).</p>
+
+<h3>9.3 — Al hacer click en "Continuar con Google", se abre y se cierra muy rápido</h3>
+<p><strong>Causa</strong>: bloqueador de popups del navegador.</p>
+<p><strong>Solución</strong>: permití los popups para esta página. En Chrome, click en el ícono de candado a la izquierda de la URL → "Configuración del sitio" → Pop-ups: Permitir.</p>
+
+<h3>9.4 — Después de loguearme me lleva a una pantalla vacía o me bota de vuelta al login</h3>
+<p><strong>Causa</strong>: sesión expirada o caché viejo.</p>
+<p><strong>Solución</strong>: cerrá todas las pestañas del sistema, presioná <kbd>Ctrl + Shift + Supr</kbd> en el navegador y borrá cookies + caché. Volvé a abrir y loguear.</p>
+
+<h3>9.5 — El sistema dice "Sesión expirada. Redirigiendo a login"</h3>
+<p><strong>Causa</strong>: pasaron más de 24 horas desde el último login y Google requiere re-autenticación.</p>
+<p><strong>Solución</strong>: solo hacé click en "Continuar con Google" otra vez. Es automático, no perdiste nada.</p>
+
+<h3>9.6 — Funciona pero todo está muy lento</h3>
+<p><strong>Causa</strong>: muchas páginas abiertas o muchos refrescos simultáneos.</p>
+<p><strong>Solución</strong>: cerrá las pestañas que no uses. Si el problema persiste, comunicate con sistemas — puede ser un tema del servidor de base de datos.</p>
+
+<h3>9.7 — Cerré Visual Studio Code sin querer y el sistema dejó de andar</h3>
+<p><strong>Causa</strong>: al cerrar VS Code, Live Server se apagó.</p>
+<p><strong>Solución</strong>: volvé a abrir VS Code (paso 2) — debería abrir la carpeta del proyecto donde la dejaste. Hacé click en "Go Live" otra vez (paso 5).</p>
+
+<h3>9.8 — Veo errores rojos en una pantalla del sistema</h3>
+<p><strong>Solución</strong>: tomá una captura del error y mandala a sistemas indicando: en qué pantalla estabas, qué hiciste justo antes, y qué dice el error.</p>
+
+<hr style="margin-top: 40px; border: 1px solid #cbd5e1;">
+<p style="text-align: center; color: #64748b; font-size: 10pt; margin-top: 24px;">
+Documento generado para onboarding interno — Loekemeyer Hnos. · Departamento de IT
+</p>
+
+</body>
+</html>

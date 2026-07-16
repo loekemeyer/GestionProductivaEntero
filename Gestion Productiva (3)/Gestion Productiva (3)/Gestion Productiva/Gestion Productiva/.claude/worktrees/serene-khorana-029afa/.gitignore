@@ -1,0 +1,29 @@
+# Dependencias
+node_modules/
+
+# Planillas de datos de negocio (sensibles)
+A Agregar/
+
+# Archivos temporales Windows / Office
+Thumbs.db
+*.lnk
+~$*
+.~lock.*
+
+# Config local de IDE
+.claude/settings.local.json
+
+# Logs y temporales
+*.log
+tmp/
+temp/
+
+# Archivos binarios grandes (Excel/Word/PDF de trabajo)
+*.xlsx
+*.xls
+*.docx
+*.doc
+*.pdf
+
+# Permitir estructura Excel de referencia si existe
+!Tablas_Madre_y_Dependencias.xls

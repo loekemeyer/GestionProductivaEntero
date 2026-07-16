@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Medir Template — Cervantes-v1.0</title>
+<style>
+  /* === Template original embebido === */
+  @page { size: A4 landscape; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: #ddd; padding: 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+  }
+  .hoja {
+    width: 297mm; height: 210mm; background: white; padding: 8mm;
+    position: relative; box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+  }
+  .fiducial { position: absolute; width: 8mm; height: 8mm; background: black; }
+  .fiducial.tl { top: 8mm; left: 8mm; }
+  .fiducial.tr { top: 8mm; right: 8mm; }
+  .fiducial.bl { bottom: 8mm; left: 8mm; }
+  .fiducial.br { bottom: 8mm; right: 8mm; }
+  .contenido { position: absolute; top: 20mm; left: 20mm; right: 20mm; bottom: 20mm; display: flex; flex-direction: column; }
+  .encabezado { display: grid; grid-template-columns: 1.2fr 1fr 1.4fr 1fr; border: 0.5pt solid #666; margin-bottom: 4mm; }
+  .encabezado .celda { padding: 2mm 3mm; border-right: 0.5pt solid #666; display: flex; align-items: center; gap: 3mm; min-height: 14mm; }
+  .encabezado .celda:last-child { border-right: none; }
+  .etiqueta { font-size: 8pt; color: #888; text-transform: uppercase; letter-spacing: 0.5pt; font-weight: 500; }
+  .valor-fijo { font-size: 12pt; font-weight: 700; color: #000; }
+  .grupo-casillas { display: flex; align-items: center; gap: 1mm; }
+  .grupo-casillas .separador { font-size: 14pt; color: #999; padding: 0 0.5mm; }
+  .casilla { width: 7mm; height: 11mm; border: 0.3pt solid #aaa; position: relative; background: white; }
+  .casilla svg { width: 100%; height: 100%; display: block; }
+  .seg { fill: #c8c8c8; }
+  .grilla { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2mm; }
+  .columna { border: 0.5pt solid #666; display: flex; flex-direction: column; }
+  .columna .cab { background: #f5f5f5; border-bottom: 0.5pt solid #666; padding: 1.5mm 0; text-align: center; }
+  .columna .cab-cod { font-size: 7pt; color: #888; text-transform: uppercase; letter-spacing: 0.5pt; }
+  .columna .fila { display: grid; grid-template-columns: 22mm 1fr; border-bottom: 0.3pt solid #ccc; align-items: center; min-height: 14mm; }
+  .columna .fila:last-child { border-bottom: none; }
+  .columna .codigo { font-size: 11pt; font-weight: 700; text-align: center; border-right: 0.3pt solid #ccc; padding: 1mm; }
+  .columna .caja { display: flex; justify-content: center; align-items: center; gap: 0.8mm; padding: 1mm; }
+  .pie { margin-top: 3mm; display: flex; justify-content: space-between; align-items: flex-start; font-size: 7pt; color: #666; line-height: 1.4; gap: 5mm; }
+  .pie .instrucciones { flex: 1; }
+  .pie .meta { text-align: right; font-family: "Courier New", monospace; color: #000; }
+
+  /* === Overlay de medicion === */
+  .overlay-rect {
+    position: absolute; border: 1px solid #00cc00; pointer-events: none;
+    background: rgba(0,255,0,0.08); z-index: 10;
+  }
+  .overlay-rect.fecha     { border-color: #ff6600; background: rgba(255,102,0,0.08); }
+  .overlay-rect.cod_ch    { border-color: #0099ff; background: rgba(0,153,255,0.08); }
+  .overlay-rect.ncp       { border-color: #cc00cc; background: rgba(204,0,204,0.08); }
+  .overlay-rect.caja      { border-color: #00cc00; background: rgba(0,204,0,0.08); }
+  .overlay-fid {
+    position: absolute; border: 2px solid red; pointer-events: none; z-index: 11;
+  }
+
+  /* === Panel output === */
+  .panel {
+    width: 297mm; background: #1e1e1e; color: #d4d4d4; padding: 20px;
+    border-radius: 8px; font-family: "Courier New", monospace; font-size: 12px;
+  }
+  .panel h2 { color: #4ec9b0; font-family: sans-serif; margin-bottom: 10px; }
+  .panel button {
+    background: #007acc; color: white; border: none; padding: 8px 16px;
+    border-radius: 4px; cursor: pointer; font-size: 13px; margin-right: 10px;
+  }
+  .panel button:hover { background: #1f8ed8; }
+  .panel textarea {
+    width: 100%; min-height: 400px; background: #000; color: #0f0; border: 1px solid #555;
+    padding: 10px; font-family: "Courier New", monospace; font-size: 11px; margin-top: 10px;
+  }
+  .panel .info { color: #ce9178; margin: 10px 0; }
+</style>
+</head>
+<body>
+
+<div class="hoja" id="hoja">
+  <div class="fiducial tl"></div>
+  <div class="fiducial tr"></div>
+  <div class="fiducial bl"></div>
+  <div class="fiducial br"></div>
+
+  <div class="contenido">
+    <div class="encabezado">
+      <div class="celda">
+        <span class="etiqueta">Tallerista</span>
+        <span class="valor-fijo">LUCHO</span>
+      </div>
+      <div class="celda">
+        <span class="etiqueta">Cód LK</span>
+        <span class="valor-fijo">3806</span>
+      </div>
+      <div class="celda" data-zona="fecha">
+        <span class="etiqueta">Fecha</span>
+        <div class="grupo-casillas" id="grupo-fecha"></div>
+      </div>
+      <div class="celda" data-zona="ncp">
+        <span class="etiqueta">N° Carga<br>Portal</span>
+        <div class="grupo-casillas" id="grupo-ncp"></div>
+      </div>
+    </div>
+    <div class="encabezado" style="margin-top: -4mm; margin-bottom: 4mm; grid-template-columns: 1fr;">
+      <div class="celda" data-zona="cod_ch">
+        <span class="etiqueta">Cód CH</span>
+        <div class="grupo-casillas" id="grupo-codch"></div>
+      </div>
+    </div>
+    <div class="grilla" id="grilla"></div>
+    <div class="pie">
+      <div class="instrucciones"><strong>Cómo completar:</strong> instrucciones...</div>
+      <div class="meta">Plantilla v1.0<br>R-000001</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>📐 Medicion del template</h2>
+  <div class="info" id="info">Midiendo...</div>
+  <button onclick="medir()">Re-medir</button>
+  <button onclick="copiarConfig()">Copiar al portapapeles</button>
+  <button onclick="toggleOverlay()">Toggle overlay verde</button>
+  <textarea id="output" readonly></textarea>
+</div>
+
+<script>
+  const CODIGOS_LUCHO = [
+    "099","543","586","809",
+    "505","546E","587","186",
+    "513","546","587T","123",
+    "518","574","720","119",
+    "542","569","722","574"
+  ];
+  const SVG8 = `
+    <svg viewBox="0 0 70 110" preserveAspectRatio="none">
+      <rect class="seg" x="15" y="10" width="40" height="6" rx="2"/>
+      <rect class="seg" x="56" y="17" width="6" height="35" rx="2"/>
+      <rect class="seg" x="56" y="58" width="6" height="35" rx="2"/>
+      <rect class="seg" x="15" y="94" width="40" height="6" rx="2"/>
+      <rect class="seg" x="8"  y="58" width="6" height="35" rx="2"/>
+      <rect class="seg" x="8"  y="17" width="6" height="35" rx="2"/>
+      <rect class="seg" x="15" y="52" width="40" height="6" rx="2"/>
+    </svg>`;
+
+  // Generar 4 casillas con separator /  para fecha
+  function casilla(extraClass = "") {
+    return `<div class="casilla ${extraClass}">${SVG8}</div>`;
+  }
+  document.getElementById("grupo-fecha").innerHTML =
+    casilla("fecha") + casilla("fecha") +
+    `<span class="separador">/</span>` +
+    casilla("fecha") + casilla("fecha");
+  document.getElementById("grupo-ncp").innerHTML =
+    casilla("ncp").repeat(4);
+  document.getElementById("grupo-codch").innerHTML =
+    casilla("cod_ch").repeat(4);
+
+  // Generar grilla 4 cols x 5 rows
+  const grilla = document.getElementById("grilla");
+  for (let c = 0; c < 4; c++) {
+    const col = document.createElement("div");
+    col.className = "columna";
+    col.innerHTML = `
+      <div class="cab">
+        <div style="display: grid; grid-template-columns: 22mm 1fr;">
+          <div class="cab-cod" style="border-right: 0.3pt solid #ccc;">Cod</div>
+          <div class="cab-cod">Caja</div>
+        </div>
+      </div>
+    `;
+    for (let r = 0; r < 5; r++) {
+      const idx = r * 4 + c;
+      const cod = CODIGOS_LUCHO[idx];
+      const fila = document.createElement("div");
+      fila.className = "fila";
+      fila.dataset.cod = cod;
+      fila.dataset.col = c;
+      fila.dataset.row = r;
+      fila.innerHTML = `
+        <div class="codigo">${cod}</div>
+        <div class="caja">${casilla("caja").repeat(3)}</div>
+      `;
+      col.appendChild(fila);
+    }
+    grilla.appendChild(col);
+  }
+
+  // === Medicion ===
+  let overlayVisible = true;
+  let layoutData = null;
+
+  function medir() {
+    document.querySelectorAll('.overlay-rect, .overlay-fid').forEach(el => el.remove());
+    const hoja = document.getElementById("hoja");
+    const hojaBox = hoja.getBoundingClientRect();
+    // Hoja CSS width should be 297mm. Compute px-per-mm in browser:
+    const pxPerMm_browser = hojaBox.width / 297;
+    // Target: canvas referencia a 10 px/mm => mm_to_canvasPx = mm * 10
+    const browserPxToCanvasPx = 10 / pxPerMm_browser;
+
+    function mid(el) {
+      const b = el.getBoundingClientRect();
+      const cx = (b.left + b.right) / 2 - hojaBox.left;
+      const cy = (b.top + b.bottom) / 2 - hojaBox.top;
+      return {
+        x_canvas: Math.round(cx * browserPxToCanvasPx),
+        y_canvas: Math.round(cy * browserPxToCanvasPx),
+        x_mm: +(cx / pxPerMm_browser).toFixed(2),
+        y_mm: +(cy / pxPerMm_browser).toFixed(2),
+        w_canvas: Math.round(b.width * browserPxToCanvasPx),
+        h_canvas: Math.round(b.height * browserPxToCanvasPx),
+      };
+    }
+
+    // Fiduciales
+    const fids = {};
+    ["tl","tr","bl","br"].forEach(pos => {
+      const el = hoja.querySelector(".fiducial." + pos);
+      fids[pos] = mid(el);
+      // overlay rojo
+      const ov = document.createElement("div");
+      ov.className = "overlay-fid";
+      ov.style.left = (el.offsetLeft - 2) + "px";
+      ov.style.top = (el.offsetTop - 2) + "px";
+      ov.style.width = (el.offsetWidth + 4) + "px";
+      ov.style.height = (el.offsetHeight + 4) + "px";
+      hoja.appendChild(ov);
+    });
+
+    // Casillas por zona
+    const zonas = { fecha: [], ncp: [], cod_ch: [], caja: [] };
+    hoja.querySelectorAll(".casilla").forEach(el => {
+      const cls = el.className.split(" ").filter(c => c !== "casilla")[0];
+      const m = mid(el);
+      zonas[cls].push(m);
+      const ov = document.createElement("div");
+      ov.className = "overlay-rect " + cls;
+      ov.style.left = el.offsetLeft + "px";
+      ov.style.top = el.offsetTop + "px";
+      ov.style.width = el.offsetWidth + "px";
+      ov.style.height = el.offsetHeight + "px";
+      el.parentElement.appendChild(ov);
+    });
+
+    // Ordenar caja por (col, row, digit) = orden de lectura
+    // Como las pusimos en orden DOM, ya estan en orden de fila (top->bot dentro de cada col)
+    // pero queremos orden visual: por fila r=0..4 de cada col c=0..3
+    // El DOM las puso col-major (col 0 entero, col 1 entero...). Reordenamos por (row, col).
+
+    layoutData = {
+      info: {
+        browser_pxPerMm: +pxPerMm_browser.toFixed(4),
+        hoja_width_css_px: +hojaBox.width.toFixed(2),
+        hoja_height_css_px: +hojaBox.height.toFixed(2),
+        casilla_count: zonas.caja.length + zonas.fecha.length + zonas.ncp.length + zonas.cod_ch.length,
+      },
+      fiduciales: fids,
+      lucho: {
+        fecha:  zonas.fecha.map(p => ({ x: p.x_canvas, y: p.y_canvas })),
+        cod_ch: zonas.cod_ch.map(p => ({ x: p.x_canvas, y: p.y_canvas })),
+        ncp:    zonas.ncp.map(p => ({ x: p.x_canvas, y: p.y_canvas })),
+        cajas:  zonas.caja.map(p => ({ x: p.x_canvas, y: p.y_canvas })),
+      }
+    };
+
+    // Output JS pegable
+    const js = generarCodigoConfig(layoutData);
+    document.getElementById("output").value = js;
+    document.getElementById("info").textContent =
+      `OK: ${layoutData.info.casilla_count} casillas medidas. ` +
+      `Browser pxPerMm: ${layoutData.info.browser_pxPerMm}. ` +
+      `Hoja CSS: ${layoutData.info.hoja_width_css_px}x${layoutData.info.hoja_height_css_px}px.`;
+
+    // Exponer en window para automation
+    window._layoutOutput = layoutData;
+  }
+
+  function generarCodigoConfig(d) {
+    const fmt = arr => arr.map(p => `    { x: ${p.x}, y: ${p.y} },`).join("\n");
+    return `// === PEGAR EN config.js dentro de LAYOUT_LUCHO ===
+
+// Fiduciales medidos (comparar contra constantes FIDUCIALES):
+//   tl: (${d.fiduciales.tl.x_canvas}, ${d.fiduciales.tl.y_canvas})
+//   tr: (${d.fiduciales.tr.x_canvas}, ${d.fiduciales.tr.y_canvas})
+//   bl: (${d.fiduciales.bl.x_canvas}, ${d.fiduciales.bl.y_canvas})
+//   br: (${d.fiduciales.br.x_canvas}, ${d.fiduciales.br.y_canvas})
+
+encabezado: {
+  fecha: [
+${fmt(d.lucho.fecha)}
+  ],
+  cod_ch: [
+${fmt(d.lucho.cod_ch)}
+  ],
+  ncp: [
+${fmt(d.lucho.ncp)}
+  ],
+},
+cajas: [
+${fmt(d.lucho.cajas)}
+],`;
+  }
+
+  function copiarConfig() {
+    const ta = document.getElementById("output");
+    ta.select();
+    document.execCommand("copy");
+    alert("Copiado al portapapeles");
+  }
+
+  function toggleOverlay() {
+    overlayVisible = !overlayVisible;
+    document.querySelectorAll(".overlay-rect, .overlay-fid").forEach(el => {
+      el.style.display = overlayVisible ? "block" : "none";
+    });
+  }
+
+  window.addEventListener("load", medir);
+</script>
+</body>
+</html>

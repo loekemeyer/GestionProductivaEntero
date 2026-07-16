@@ -73,6 +73,14 @@
               <option value="premio">Puntaje</option>
             </select>
           </div>
+          <div class="field" style="min-width:130px;">
+            <label>Unidad tiempo</label>
+            <select id="selUnidadTiempo">
+              <option value="seg" selected>Segundos</option>
+              <option value="min">Minutos</option>
+              <option value="hs">Horas</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -94,8 +102,8 @@
                   <th>Ini</th>
                   <th>Fin</th>
                   <th class="r">Uni</th>
-                  <th class="r">Seg</th>
-                  <th class="r">Seg x Uni</th>
+                  <th class="r" id="detallesHdrSeg">Seg</th>
+                  <th class="r" id="detallesHdrSegXUni">Seg x Uni</th>
                 </tr>
               </thead>
               <tbody id="detallesBody"></tbody>

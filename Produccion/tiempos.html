@@ -539,10 +539,13 @@ const popupBody = document.getElementById("popupBody");
     empleadosMap[String(e.Legajo || "").trim()] = e.Empleado || "";
   });
 
-  // Fechas default: inicio del mes actual → hoy
-  const hoy = new Date();
-  document.getElementById("fechaHasta").value = hoy.toISOString().slice(0, 10);
-  document.getElementById("fechaDesde").value = "2020-01-01";
+  // Sin filtro de fecha por defecto: muestra TODAS las matrices (incluidas las que
+  // tienen tiempo historico pero 0 registros, ej. matrices de tallerista). El usuario
+  // aplica un rango manualmente si lo necesita. Antes se seteaba 2020-01-01 → hoy, lo
+  // que activaba la regla "ocultar matrices sin registros con filtro de fecha" y
+  // escondia esas matrices al abrir.
+  document.getElementById("fechaHasta").value = "";
+  document.getElementById("fechaDesde").value = "";
 
   filtrarPorFecha();
   loadingMsg.style.display = "none";

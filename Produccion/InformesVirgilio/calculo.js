@@ -52,6 +52,7 @@ const CONFIG = {
     { key:'Limp',  label:'Limpieza',        tipo:'mu',   rendType:'none' },
     { key:'Perm',  label:'Permiso',         tipo:'mu',   rendType:'none' },
     { key:'sep2',  label:'',                tipo:'sep' },
+    { key:'FJ',    label:'Fin de Jornada',  tipo:'fj',   rendType:'none' },
     { key:'total', label:'TOTAL (cobertura real)', tipo:'tot',  rendType:'none' },
     { key:'faltante', label:'Tiempo Faltante', tipo:'falt', rendType:'none' }
   ],
@@ -252,9 +253,51 @@ function procesar(dataCruda, fechaDesde, fechaHasta) {
   const cruces = [];    // info: { legajo, opcion, inicio (DT real), fin (DT real), hsBruta, hsImputada }
   const paresOriginales = []; // { tipo, legajo, code, tanda, inicio, fin, hsBruta, hsImputada, olvidado }
 
+  // === FJ (Fin de Jornada): recolectar y comparar con conteos reales ===
+  // El celular envía opcion='FJ' con texto=JSON {opcion:count, ...} de todo lo que hizo ese día.
+  // Comparamos vs lo que efectivamente llegó a Supabase → detecta mensajes perdidos.
+  const conteoActualPorLegajoDia = {}; // legajo|fecha → { opcion: count }
+  prod.forEach(r => {
+    if (r.opcion === 'FJ') return;
+    const k = `${r.legajo}__${r.fecha}`;
+    if (!conteoActualPorLegajoDia[k]) conteoActualPorLegajoDia[k] = {};
+    conteoActualPorLegajoDia[k][r.opcion] = (conteoActualPorLegajoDia[k][r.opcion] || 0) + 1;
+  });
+  const fjEventos = []; // [{ legajo, fecha, hora, dt, reportado, actual, descripcion, eventsSnapshot }]
+  prod.forEach(r => {
+    if (r.opcion !== 'FJ') return;
+    let parsed = {};
+    try { parsed = JSON.parse(r.codigo || '{}'); } catch (_) {}
+    // Soporta 2 formatos:
+    //   Viejo: { "EP": 1, "TP": 1, ... }   ← solo counts en top-level
+    //   Nuevo: { "counts": {...}, "events": [...] }  ← incluye snapshot del día
+    let reportado, eventsSnapshot;
+    if (parsed && typeof parsed === 'object' && (parsed.counts || parsed.events)) {
+      reportado = parsed.counts || {};
+      eventsSnapshot = Array.isArray(parsed.events) ? parsed.events : [];
+    } else {
+      reportado = parsed || {};
+      eventsSnapshot = [];
+    }
+    const k = `${r.legajo}__${r.fecha}`;
+    fjEventos.push({
+      legajo: r.legajo,
+      fecha: r.fecha,
+      hora: r.hora,
+      dt: r.dt,
+      reportado,
+      actual: conteoActualPorLegajoDia[k] || {},
+      eventsSnapshot,
+      descripcion: r.descripcion
+    });
+  });
+
   // Agrupar por legajo
   const porLegajo = {};
-  prod.forEach(r => { (porLegajo[r.legajo] = porLegajo[r.legajo] || []).push(r); });
+  prod.forEach(r => {
+    if (r.opcion === 'FJ') return;  // FJ no entra al pipeline de pares/segmentos
+    (porLegajo[r.legajo] = porLegajo[r.legajo] || []).push(r);
+  });
 
   function pushSegmentos(tipo, legajo, dtStart, dtEnd, extra) {
     const cruzaDia = dtStart.toDateString() !== dtEnd.toDateString();
@@ -691,14 +734,18 @@ function procesar(dataCruda, fechaDesde, fechaHasta) {
     return false;
   });
 
+  // FJ filtrado por rango
+  const fjFiltrados = fjEventos.filter(fj => filtPorFechaIso(fechaIso(fj.fecha)));
+
   return {
     reportes: reportes.sort((a,b) => a.fecha.localeCompare(b.fecha) || a.legajo.localeCompare(b.legajo)),
     ccTotalHs, ccTotalMt3, mt3Entregados, crossDia,
     porPersona: agruparPorPersona(reportes, getMt3),
     porSector: agruparPorSector(reportes, getMt3),
     muertosPorTipo: agruparMuertos(reportes),
-    pivotEmpleados: agruparParaPivot(reportes, getMt3, paresFiltrados),
-    paresOriginales: paresFiltrados
+    pivotEmpleados: agruparParaPivot(reportes, getMt3, paresFiltrados, fjFiltrados),
+    paresOriginales: paresFiltrados,
+    fjEventos: fjFiltrados
   };
 }
 
@@ -812,7 +859,7 @@ function agruparMuertos(reportes) {
 // =============================================================================
 // PIVOT REPORTE DIARIO: filas=tareas, columnas=empleados
 // =============================================================================
-function agruparParaPivot(reportes, getMt3Fn, paresOriginales) {
+function agruparParaPivot(reportes, getMt3Fn, paresOriginales, fjEventos) {
   // Contar pares originales por (legajo, area)
   const olvidosPorLegArea = {};
   (paresOriginales || []).forEach(p => {
@@ -846,7 +893,8 @@ function agruparParaPivot(reportes, getMt3Fn, paresOriginales) {
         Limp: { hs: 0, olv: ol.Limp || 0 }, Perm: { hs: 0, olv: ol.Perm || 0 },
         opHs: 0, muHs: 0, totHs: 0,
         tarde: { hs: 0 }, temprano: { hs: 0 }, gap: { hs: 0 },
-        faltante: { hs: 0 }
+        faltante: { hs: 0 },
+        FJ: { dias: [], hayFJ: false }   // {dias: [{fecha, hora, reportado, actual, mismatches}]}
       };
     }
     const g = out[r.legajo];
@@ -887,6 +935,46 @@ function agruparParaPivot(reportes, getMt3Fn, paresOriginales) {
       g[k].mt3 = mt3;
       g[k].est = est;
     });
+  });
+
+  // === FJ: aggregar por legajo ===
+  // Si operario presionó FJ pero no aparece en reportes (sin segmentos válidos), lo agregamos igual.
+  (fjEventos || []).forEach(fj => {
+    if (!out[fj.legajo]) {
+      out[fj.legajo] = {
+        legajo: fj.legajo,
+        pick: { hs:0, mt3:0, est:false, tandas:new Set(), olv:0 },
+        arm:  { hs:0, mt3:0, est:false, tandas:new Set(), olv:0 },
+        cc:   { hs:0, mt3:0, est:false, tandas:new Set(), olv:0 },
+        cr:{hs:0,olv:0}, RT:{hs:0,olv:0}, RI:{hs:0,olv:0}, EI:{hs:0,olv:0},
+        MG:{hs:0,olv:0}, CT:{hs:0,olv:0}, AT:{hs:0,olv:0},
+        PB:{hs:0,olv:0}, PC:{hs:0,olv:0}, Limp:{hs:0,olv:0}, Perm:{hs:0,olv:0},
+        opHs:0, muHs:0, totHs:0,
+        tarde:{hs:0}, temprano:{hs:0}, gap:{hs:0}, faltante:{hs:0},
+        FJ: { dias: [], hayFJ: false }
+      };
+    }
+    const g = out[fj.legajo];
+    // Detectar mismatches reportado vs actual
+    const opciones = new Set([
+      ...Object.keys(fj.reportado || {}),
+      ...Object.keys(fj.actual || {})
+    ]);
+    const mismatches = [];
+    opciones.forEach(op => {
+      const rep = (fj.reportado || {})[op] || 0;
+      const act = (fj.actual || {})[op] || 0;
+      if (rep !== act) mismatches.push({ opcion: op, reportado: rep, actual: act, diff: rep - act });
+    });
+    g.FJ.dias.push({
+      fecha: fj.fecha,
+      hora: fj.hora,
+      reportado: fj.reportado || {},
+      actual: fj.actual || {},
+      eventsSnapshot: fj.eventsSnapshot || [],
+      mismatches
+    });
+    g.FJ.hayFJ = true;
   });
   return out;
 }

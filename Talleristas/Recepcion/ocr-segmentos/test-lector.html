@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Test Motor 7-Seg — Lucho</title>
+<style>
+  body { font-family: -apple-system, sans-serif; padding: 20px; background: #f0f0f0; max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 18px; margin-bottom: 12px; }
+  .row { display: flex; gap: 16px; align-items: flex-start; }
+  .col { flex: 1; }
+  .panel { background: white; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.1); margin-bottom: 12px; }
+  input[type=file] { padding: 10px; border: 2px dashed #888; border-radius: 6px; width: 100%; background: #fafafa; }
+  button { background: #007acc; color: white; border: none; padding: 8px 14px; border-radius: 5px; cursor: pointer; font-size: 13px; margin-right: 6px; }
+  button:disabled { background: #aaa; cursor: not-allowed; }
+  button:hover:not(:disabled) { background: #1f8ed8; }
+  #status { padding: 8px 12px; border-radius: 5px; background: #fff8dc; color: #5d4900; font-size: 13px; margin-bottom: 8px; }
+  #status.ok { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }
+  #status.error { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+  canvas { border: 1px solid #ccc; max-width: 100%; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 5px 8px; border-bottom: 1px solid #eee; text-align: left; }
+  th { background: #f5f5f5; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.revisar { background: #fff3cd; }
+  tr.vacia td { color: #aaa; }
+  .pill { padding: 1px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+  .pill.leida { background: #d1fae5; color: #065f46; }
+  .pill.revisar { background: #fed7aa; color: #9a3412; }
+  .pill.vacia { background: #e5e7eb; color: #6b7280; }
+  .seg-grid { display: inline-grid; grid-template-columns: repeat(7, 22px); gap: 2px; font-size: 10px; text-align: center; }
+  .seg-grid .on  { background: #000; color: #fff; padding: 2px; }
+  .seg-grid .off { background: #eee; color: #999; padding: 2px; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 5px; overflow: auto; font-size: 11px; max-height: 300px; }
+</style>
+</head>
+<body>
+
+<h1>🔍 Test Motor 7-Segmentos — plantilla Cervantes-v1.0 (Lucho)</h1>
+
+<div class="panel">
+  <input type="file" id="fileIn" accept="image/*">
+  <div style="margin-top: 8px">
+    <button id="btnAnalizar" disabled>Analizar</button>
+    <button id="btnReset">Reset</button>
+    <label style="margin-left: 12px"><input type="checkbox" id="chkOverlay" checked> Overlay casillas</label>
+  </div>
+  <div id="status" style="margin-top: 8px">Cargando OpenCV.js (~8MB)...</div>
+</div>
+
+<div class="row">
+  <div class="col panel">
+    <h3 style="font-size: 14px; margin-bottom: 8px">Imagen rectificada (2970×2100)</h3>
+    <canvas id="canvasOut" style="width: 100%"></canvas>
+  </div>
+  <div class="col panel">
+    <h3 style="font-size: 14px; margin-bottom: 8px">Resultado</h3>
+    <div id="encabezado" style="margin-bottom: 12px"></div>
+    <table id="tablaArt">
+      <thead><tr><th>Cod</th><th class="num">Cajas</th><th>Conf</th><th>Estado</th><th>Segmentos (c d u)</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="panel">
+  <h3 style="font-size: 14px; margin-bottom: 8px">Debug</h3>
+  <pre id="dbg">—</pre>
+</div>
+
+<script src="https://docs.opencv.org/4.x/opencv.js" async></script>
+<script type="module">
+  import { LAYOUT_LUCHO, CANVAS_REF, FIDUCIALES, CASILLA_PX } from "./config.js";
+  import { leerRemito, cargarImagen, detectarFiducialesDebug } from "./lector-segmentos.js";
+
+  const status = document.getElementById("status");
+  const fileIn = document.getElementById("fileIn");
+  const btnAnalizar = document.getElementById("btnAnalizar");
+  const btnReset = document.getElementById("btnReset");
+  const chkOverlay = document.getElementById("chkOverlay");
+  const canvasOut = document.getElementById("canvasOut");
+  const encabezado = document.getElementById("encabezado");
+  const tbody = document.querySelector("#tablaArt tbody");
+  const dbg = document.getElementById("dbg");
+
+  let imgSrcUrl = null;
+  let imgEl = null;
+  let lastResult = null;
+
+  // Esperar carga de opencv.js
+  function waitForCv() {
+    return new Promise(resolve => {
+      const check = () => {
+        if (typeof cv !== "undefined" && cv.Mat) {
+          if (cv.getBuildInformation) resolve();
+          else cv.onRuntimeInitialized = resolve;
+        } else setTimeout(check, 100);
+      };
+      check();
+    });
+  }
+  waitForCv().then(() => {
+    status.textContent = "OpenCV.js OK. Cargá una foto del remito.";
+    status.className = "ok";
+  });
+
+  fileIn.addEventListener("change", () => {
+    if (!fileIn.files.length) return;
+    if (imgSrcUrl) URL.revokeObjectURL(imgSrcUrl);
+    imgSrcUrl = URL.createObjectURL(fileIn.files[0]);
+    imgEl = new Image();
+    imgEl.onload = () => { btnAnalizar.disabled = false; status.textContent = "Foto cargada. Click Analizar."; };
+    imgEl.src = imgSrcUrl;
+  });
+
+  btnAnalizar.addEventListener("click", async () => {
+    if (!imgEl) return;
+    btnAnalizar.disabled = true;
+    status.textContent = "Analizando...";
+    status.className = "";
+    try {
+      const t0 = performance.now();
+      const r = await leerRemito(imgEl, LAYOUT_LUCHO);
+      const dt = (performance.now() - t0).toFixed(0);
+      lastResult = r;
+      status.textContent = `Listo en ${dt}ms. ${r.requiere_revision.length} casillas marcadas para revision.`;
+      status.className = "ok";
+      renderResultado(r);
+    } catch (e) {
+      status.textContent = "Error: " + e.message + " — mostrando diagnostico de candidatos.";
+      status.className = "error";
+      console.error(e);
+      // Diagnostico: dibujar candidatos sobre la imagen original
+      try {
+        const src = await cargarImagen(imgEl);
+        const dbgInfo = detectarFiducialesDebug(src);
+        // Dibujar todo en un canvas
+        canvasOut.width = src.cols;
+        canvasOut.height = src.rows;
+        cv.imshow("canvasOut", src);
+        const ctx = canvasOut.getContext("2d");
+        ctx.lineWidth = 4;
+        ctx.font = "16px monospace";
+        dbgInfo.candidatos.forEach((c, i) => {
+          ctx.strokeStyle = c.aceptado ? "#00ff00" : "#ff0000";
+          ctx.strokeRect(c.cx - c.w/2, c.cy - c.h/2, c.w, c.h);
+          ctx.fillStyle = ctx.strokeStyle;
+          ctx.fillText(`${i} A:${c.area.toFixed(0)} r:${c.ratio.toFixed(2)} s:${c.solidez.toFixed(2)}`, c.cx + 6, c.cy - 6);
+        });
+        const aceptados = dbgInfo.candidatos.filter(c => c.aceptado).length;
+        dbg.textContent = JSON.stringify({
+          imgSize: dbgInfo.imgSize,
+          candidatos_total: dbgInfo.candidatos.length,
+          candidatos_aceptados: aceptados,
+          razones_rechazo: dbgInfo.candidatos.filter(c => !c.aceptado).map(c => ({
+            cx: Math.round(c.cx), cy: Math.round(c.cy),
+            area: c.area.toFixed(0), ratio: c.ratio.toFixed(2), solidez: c.solidez.toFixed(2),
+            pasaArea: c.pasaArea, pasaRatio: c.pasaRatio, pasaSolidez: c.pasaSolidez,
+          })),
+          aceptados_detalle: dbgInfo.candidatos.filter(c => c.aceptado).map(c => ({
+            cx: Math.round(c.cx), cy: Math.round(c.cy),
+            area: c.area.toFixed(0), ratio: c.ratio.toFixed(2), solidez: c.solidez.toFixed(2),
+          })),
+        }, null, 2);
+        src.delete();
+      } catch (e2) {
+        console.error("Diagnostico fallo:", e2);
+      }
+    }
+    btnAnalizar.disabled = false;
+  });
+
+  btnReset.addEventListener("click", () => {
+    fileIn.value = "";
+    imgEl = null;
+    btnAnalizar.disabled = true;
+    encabezado.innerHTML = "";
+    tbody.innerHTML = "";
+    dbg.textContent = "—";
+    canvasOut.width = 0;
+    status.textContent = "Reset.";
+    status.className = "";
+  });
+
+  chkOverlay.addEventListener("change", () => {
+    if (lastResult) renderResultado(lastResult);
+  });
+
+  function renderResultado(r) {
+    // Encabezado
+    encabezado.innerHTML = `
+      <div><strong>Tallerista:</strong> ${r.tallerista}</div>
+      <div><strong>Cod LK:</strong> ${r.cod_lk}</div>
+      <div><strong>Fecha:</strong> ${r.fecha || '—'} <span class="pill ${r.fecha_estado}">${r.fecha_estado}</span></div>
+      <div><strong>Cod CH:</strong> ${r.cod_ch ?? '—'}</div>
+      <div><strong>N° Carga Portal:</strong> ${r.ncp ?? '—'}</div>
+    `;
+
+    // Articulos
+    tbody.innerHTML = r.articulos.map(a => {
+      const rowCls = a.estado === "revisar" ? "revisar" : (a.estado === "vacia" ? "vacia" : "");
+      const segs = a.casillas.map(c => {
+        return `<span class="pill ${c.estado}" style="font-size:10px">${c.valor ?? '–'}</span>`;
+      }).join(" ");
+      return `<tr class="${rowCls}">
+        <td><strong>${a.cod}</strong></td>
+        <td class="num">${a.cajas ?? '—'}</td>
+        <td>${a.confianza}</td>
+        <td><span class="pill ${a.estado}">${a.estado}</span></td>
+        <td>${segs}</td>
+      </tr>`;
+    }).join("");
+
+    // Canvas con warped
+    if (r._debug.warped) {
+      const w = r._debug.warped;
+      cv.imshow("canvasOut", w);
+
+      // Overlay casillas
+      if (chkOverlay.checked) {
+        const ctx = canvasOut.getContext("2d");
+        ctx.lineWidth = 3;
+        const draw = (arr, color) => {
+          ctx.strokeStyle = color;
+          arr.forEach(p => ctx.strokeRect(p.x - CASILLA_PX.w/2, p.y - CASILLA_PX.h/2, CASILLA_PX.w, CASILLA_PX.h));
+        };
+        draw(LAYOUT_LUCHO.encabezado.fecha, "orange");
+        draw(LAYOUT_LUCHO.encabezado.cod_ch, "blue");
+        draw(LAYOUT_LUCHO.encabezado.ncp, "magenta");
+        draw(LAYOUT_LUCHO.cajas, "lime");
+        // Fiduciales destino
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 5;
+        [FIDUCIALES.tl, FIDUCIALES.tr, FIDUCIALES.bl, FIDUCIALES.br].forEach(f => {
+          ctx.strokeRect(f.x - 40, f.y - 40, 80, 80);
+        });
+      }
+
+      w.delete();
+    }
+
+    // Debug
+    dbg.textContent = JSON.stringify({
+      fiduciales: r._debug.fiduciales,
+      fecha_estado: r.fecha_estado,
+      requiere_revision: r.requiere_revision,
+      resumen: r.articulos.map(a => ({ cod: a.cod, cajas: a.cajas, conf: a.confianza, st: a.estado }))
+    }, null, 2);
+  }
+</script>
+</body>
+</html>

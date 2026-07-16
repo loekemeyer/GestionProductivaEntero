@@ -566,9 +566,11 @@ function renderTabla(rows) {
 
   let tbodyHtml = "";
   const cajasInsertadas = new Set();
-  // Si hay busqueda de texto activa, no auto-anexar la fila Caja al final de cada cod
-  // (porque confunde: muestra la caja de cods cuyas piezas matchearon, no la pieza buscada en si)
-  const hayBusquedaTexto = !!(searchInput && searchInput.value && searchInput.value.trim());
+  // Auto-anexar fila Caja solo si:
+  // - no hay busqueda de texto, o
+  // - el cod actual matchea la busqueda por COD (no por descripcion de pieza de otro cod)
+  const qBusqueda = normalizeText(searchInput?.value || "");
+  const hayBusquedaTexto = !!qBusqueda;
 
   rows.forEach((r, idx) => {
     const cod    = escapeHtml(r["COD"]);
@@ -647,9 +649,10 @@ function renderTabla(rows) {
     }
 
     // Insertar fila de caja como una parte más al final de cada grupo de código
-    // (solo si no es vista filtrada por cajas y no hay busqueda de texto activa)
+    // (siempre que no haya busqueda, o que la busqueda matchee con el COD de este articulo)
     const sigCod = idx < rows.length - 1 ? normCod(rows[idx + 1]["COD"]) : null;
-    if (!hayBusquedaTexto && !r._esCajaVirtual && codNorm !== sigCod && r["N_Caja"] != null && !cajasInsertadas.has(codNorm)) {
+    const codMatcheaBusqueda = hayBusquedaTexto && normalizeText(r["COD"] || "").includes(qBusqueda);
+    if ((!hayBusquedaTexto || codMatcheaBusqueda) && !r._esCajaVirtual && codNorm !== sigCod && r["N_Caja"] != null && !cajasInsertadas.has(codNorm)) {
       cajasInsertadas.add(codNorm);
       // Buscar Uni_x_Caja del artículo (cuántas unidades entran en la caja)
       const uniEnCaja = rows.find(x => normCod(x["COD"]) === codNorm && x["Uni_x_Caja"] != null);

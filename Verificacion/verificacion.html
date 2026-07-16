@@ -26,11 +26,12 @@
         <h1>Verificación de Integridad</h1>
 
         <div id="seccionTabs" style="display:flex;margin:16px 0 20px;border-bottom:2px solid #e2e8f0">
-          <button id="secRutas" class="sec-tab sec-activo" onclick="cambiarSeccion('rutas')">Trazar Rutas</button>
-          <button id="secDespiece" class="sec-tab" onclick="cambiarSeccion('despiece')">Despiece x Articulo</button>
+          <button id="secRutas" class="sec-tab" onclick="cambiarSeccion('rutas')" style="display:none">Trazar Rutas</button>
+          <button id="secDespiece" class="sec-tab sec-activo" onclick="cambiarSeccion('despiece')">Despiece x Articulo</button>
+          <button id="secDespieceInv" class="sec-tab" onclick="cambiarSeccion('despiece-inv')">Despiece x Articulo (inverso)</button>
         </div>
 
-        <div id="seccionRutas">
+        <div id="seccionRutas" style="display:none">
           <p class="subtitulo">
             Para cada Fleje sigue: <b>Causa-Efecto</b> (matrices) → <b>Partes x PS</b> (mando SC/ST, devuelve SP) → <b>Partes x Tallerista</b> (mando a taller).
           </p>
@@ -55,8 +56,12 @@
           <div id="panelRutas" style="display:none"></div>
         </div>
 
-        <div id="seccionDespiece" style="display:none">
-          <iframe id="despieceFrame" style="width:100%;height:80vh;border:1px solid #e2e8f0;border-radius:8px;background:#fff"></iframe>
+        <div id="seccionDespiece">
+          <iframe id="despieceFrame" src="../Despiece x Articulo/index.html" data-loaded="1" style="width:100%;height:80vh;border:1px solid #e2e8f0;border-radius:8px;background:#fff"></iframe>
+        </div>
+
+        <div id="seccionDespieceInv" style="display:none">
+          <iframe id="despieceInvFrame" style="width:100%;height:80vh;border:1px solid #e2e8f0;border-radius:8px;background:#fff"></iframe>
         </div>
       </div>
     </div>

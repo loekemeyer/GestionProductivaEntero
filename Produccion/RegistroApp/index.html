@@ -3,17 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Registro" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1e40af" />
   <title>Registro Produccion</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=1.8.44" />
   <link rel="icon" href="data:,">
+  <link rel="manifest" href="manifest.json" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
+  <div id="syncBadge" title="Tocar para forzar envio" style="position:fixed;bottom:6px;left:8px;font-size:12px;font-weight:800;z-index:100;cursor:pointer;padding:4px 10px;border-radius:999px;user-select:none;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;">v1.8.45 &#10003;</div>
+
   <!-- LEGAJO -->
   <div id="legajoScreen">
-    <button id="btnVolver" class="btn-volver hidden">&#8592; Volver</button>
-    <button id="btnHistDias" style="position:fixed;top:12px;right:12px;width:44px;height:44px;border-radius:50%;border:2px solid #cbd5e1;background:#f8fafc;font-size:20px;cursor:pointer;z-index:100;display:flex;align-items:center;justify-content:center;" title="Historial dias anteriores">&#128197;</button>
+    <button id="btnHistDias" style="position:fixed;top:12px;right:12px;width:44px;height:44px;border-radius:50%;border:2px solid #cbd5e1;background:#f8fafc;font-size:20px;cursor:pointer;z-index:100;display:flex;align-items:center;justify-content:center;" title="Historial dias anteriores">📅</button>
     <h1>Ingresa tu numero de Operario</h1>
     <input id="legajoInput" type="number" inputmode="numeric">
     <button id="btnContinuar" class="primary-btn">Continuar</button>
@@ -26,10 +33,12 @@
       <div class="pending-title">Pendientes en cola (este dispositivo)</div>
       <div id="pendingList" class="pending-list"></div>
     </div>
+
   </div>
 
   <!-- OPCIONES -->
   <div id="optionsScreen" class="hidden">
+    <button id="btnTerminarDia" style="position:fixed;top:10px;right:10px;width:auto;padding:8px 14px;font-size:14px;font-weight:bold;background:#dc2626;color:#fff;border:2px solid #991b1b;border-radius:8px;cursor:pointer;margin:0;line-height:1;z-index:50;">Terminar Día</button>
     <div class="top-bar">
       <div id="btnBackTop" class="back-top">&larr;</div>
       <div id="btnBackLabel" class="back-label">Volver a pantalla inicial</div>
@@ -53,6 +62,13 @@
       </div>
 
       <div id="matrizInfo" class="matriz-info hidden"></div>
+
+      <div id="cajonCompletoWrap" class="hidden" style="margin:8px 0;padding:10px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:#9a3412;cursor:pointer;">
+          <input type="checkbox" id="cajonCompletoChk" style="width:20px;height:20px;">
+          Cerrar caj&oacute;n como <b>completo</b> (no hay m&aacute;s material para esta matriz)
+        </label>
+      </div>
 
       <button id="btnEnviar" class="primary-btn">Enviar</button>
       <div id="error" class="error"></div>
@@ -88,25 +104,20 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
-  <script>
-    // Registrar Service Worker para sincronización en background
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
-        console.log("Service Worker registrado OK");
-        // Chequear update cada 60s para detectar nueva version
-        setInterval(() => { reg.update().catch(() => {}); }, 60000);
-      }).catch(err => {
-        console.error("Error registrando Service Worker:", err);
-      });
-      // Fallback: si SW manda mensaje SW_UPDATED, recargar
-      navigator.serviceWorker.addEventListener("message", (event) => {
-        if (event.data && event.data.type === "SW_UPDATED") {
-          console.log("[SW] Nueva version - recargando...");
-          window.location.reload();
-        }
-      });
-    }
-  </script>
+  <!-- MODAL TERMINAR DIA -->
+  <div id="terminarDiaModal" class="td-modal hidden">
+    <div class="td-modal-card">
+      <div class="td-modal-header">
+        <span class="td-modal-title">Terminar día</span>
+        <button class="td-modal-close" id="btnCancelTD">Cancelar</button>
+      </div>
+      <div class="td-modal-body" id="terminarDiaContent"></div>
+      <div class="td-modal-footer">
+        <button id="btnConfirmTD" class="td-confirm-btn">Sí, terminar día</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=1.8.44"></script>
 </body>
 </html>

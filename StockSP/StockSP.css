@@ -140,34 +140,37 @@ h1 {
 }
 
 /* =========================================================
-   BLOQUE: COLUMNAS MOVIMIENTOS - ANCHO FIJO (5 chars + botón)
+   BLOQUE: COLUMNAS MOVIMIENTOS - ANCHO FIJO (6,7,8)
 ========================================================= */
 .table th:nth-child(6),
 .table th:nth-child(7),
+.table th:nth-child(8),
 .table td:nth-child(6),
-.table td:nth-child(7) {
-  width: 88px;
-  max-width: 88px;
-  min-width: 88px;
+.table td:nth-child(7),
+.table td:nth-child(8) {
+  width: 100px;
+  max-width: 100px;
+  min-width: 100px;
 }
 
 .table th:nth-child(6),
-.table th:nth-child(7) {
+.table th:nth-child(7),
+.table th:nth-child(8) {
   white-space: normal;
   word-break: break-word;
 }
 
 /* =========================================================
-   BLOQUE: COLUMNAS INFO - COMPACTAS CON HEADER WRAP
+   BLOQUE: COLUMNAS INFO - COMPACTAS CON HEADER WRAP (9-13)
 ========================================================= */
-.table thead tr:nth-child(2) th:nth-child(n+8):nth-child(-n+12) {
+.table thead tr:nth-child(2) th:nth-child(n+9):nth-child(-n+13) {
   white-space: normal;
   word-break: break-word;
   width: 58px;
   max-width: 58px;
 }
 
-.table td:nth-child(n+8):nth-child(-n+12) {
+.table td:nth-child(n+9):nth-child(-n+13) {
   width: 58px;
   max-width: 58px;
 }

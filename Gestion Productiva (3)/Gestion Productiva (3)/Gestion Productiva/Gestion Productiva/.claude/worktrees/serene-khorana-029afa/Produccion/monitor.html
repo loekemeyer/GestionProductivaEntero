@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <script src="../auth-guard.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitor en Vivo</title>
+  <link rel="icon" href="data:," />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', Arial, sans-serif; background: #d9d9de; margin: 0; padding: 16px; color: #222; }
+
+    .top-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+    .btn-back { background: #f5f5f5; border: 2px solid #ccc; border-radius: 999px; padding: 8px 18px; font-size: 14px; color: #555; cursor: pointer; text-decoration: none; font-weight: 600; }
+    .btn-back:hover { border-color: #888; }
+    .top-bar h1 { font-size: 22px; color: #111; }
+    .live-dot { display: inline-block; width: 10px; height: 10px; background: #f44336; border-radius: 50%; animation: pulse 1.5s infinite; margin-left: 8px; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .update-info { font-size: 12px; color: #888; margin-left: auto; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+
+    .op-card {
+      background: #fff; border: 1px solid #cfcfcf; border-radius: 14px; overflow: hidden;
+      transition: box-shadow 0.2s;
+    }
+    .op-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+    .op-header {
+      padding: 12px 16px; font-weight: 700; font-size: 15px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .op-header .legajo { color: #888; font-size: 13px; font-weight: 400; }
+    .op-body { padding: 12px 16px; }
+
+    .op-status { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .status-badge {
+      display: inline-block; padding: 4px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #fff;
+    }
+    .badge-produccion { background: #2e7d32; }
+    .badge-tm { background: #f57c00; }
+    .badge-tm-danger { background: #c62828; }
+    .badge-issue { background: #c62828; animation: pulse-badge 1s infinite; }
+    .badge-idle { background: #9e9e9e; }
+    .badge-inicio { background: #1565c0; }
+    @keyframes pulse-badge { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+    .op-detail { font-size: 13px; color: #555; line-height: 1.6; }
+    .op-detail strong { color: #222; }
+    .timer { font-size: 20px; font-weight: 700; font-family: monospace; color: #2e7d32; }
+    .timer-warn { color: #f57c00 !important; }
+    .timer-danger { color: #c62828 !important; }
+
+    .op-matriz { font-size: 12px; color: #888; margin-top: 4px; padding-top: 6px; border-top: 1px solid #eee; }
+
+    .sin-actividad { text-align: center; padding: 20px; color: #999; font-size: 14px; }
+
+    /* Estado del header segun tipo */
+    .op-card.produccion .op-header { background: #e8f5e9; }
+    .op-card.tm .op-header { background: #fff3e0; }
+    .op-card.tm-danger .op-header { background: #ffcdd2; }
+    .op-card.issue { border: 3px solid #c62828; animation: shake 0.5s ease-in-out; box-shadow: 0 0 16px rgba(198,40,40,0.3); }
+    .op-card.issue .op-header { background: #c62828; color: #fff; }
+    .op-card.issue .op-header .legajo { color: #ffcdd2; }
+    .op-card.issue .op-detail { color: #b71c1c; }
+    .op-card.issue .op-detail strong { color: #c62828; }
+    .op-card.issue .op-matriz { color: #c62828; border-top-color: #ffcdd2; }
+    .op-card.idle .op-header { background: #f5f5f5; }
+    .op-card.inicio .op-header { background: #e3f2fd; }
+    @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+  </style>
+</head>
+<body>
+
+  <div class="top-bar">
+    <a href="../Inicio/" class="btn-back">&#8592; Volver</a>
+    <h1>Monitor en Vivo <span class="live-dot"></span></h1>
+    <span class="update-info" id="updateInfo"></span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+<script>
+(function() {
+  'use strict';
+
+  const SUPABASE_URL = 'https://hrxfctzncixxqmpfhskv.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs';
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const grid = document.getElementById('grid');
+  const updateInfo = document.getElementById('updateInfo');
+
+  const TM_CODES = new Set(['PB','BC','MOV','LIMP','Perm','AL','PR','PC','CM','MOV P']);
+  const ISSUE_CODES = new Set(['RM','PM','RD','REM']);
+  const NON_DOWNTIME = new Set(['E','C','RM','PM','RD','LT']);
+
+  let empleados = [];
+  let matricesMap = {};
+
+  function esc(v) { return v == null ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function formatTimer(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  async function init() {
+    // Cargar empleados activos y matrices
+    const [empRes, matRes] = await Promise.all([
+      sb.from('Empleados').select('Legajo, Empleado, Activo').eq('Activo', 'SI'),
+      sb.from('Matrices').select('N_Matriz, Matriz')
+    ]);
+    empleados = (empRes.data || []).sort((a, b) =>
+      parseInt(String(a.Legajo).replace(/\D/g, '')) - parseInt(String(b.Legajo).replace(/\D/g, ''))
+    );
+    (matRes.data || []).forEach(m => { matricesMap[String(m.N_Matriz).trim()] = m.Matriz; });
+
+    await refresh();
+    // Auto-refresh cada 60 segundos
+    setInterval(refresh, 60000);
+    // Actualizar timers cada segundo
+    setInterval(updateTimers, 1000);
+  }
+
+  let operarioStates = []; // Array de { legajo, nombre, type, action, desc, inicio, matriz, matrizNombre, elapsed }
+
+  async function refresh() {
+    const hoy = new Date().toISOString().slice(0, 10);
+
+    // Traer todos los registros de hoy de Registros Produccion Cervantes
+    const { data: registros } = await sb.from('Registros Produccion Cervantes')
+      .select('legajo, opcion, descripcion, ts_event, hs_inicio, matriz, texto')
+      .gte('ts_event', hoy + 'T00:00:00')
+      .lte('ts_event', hoy + 'T23:59:59')
+      .order('ts_event', { ascending: true });
+
+    const regs = registros || [];
+
+    // Procesar estado actual de cada operario activo
+    operarioStates = [];
+    const now = new Date();
+
+    empleados.forEach(emp => {
+      const leg = String(emp.Legajo).trim();
+      const empRegs = regs.filter(r => String(r.legajo).trim() === leg);
+
+      if (empRegs.length === 0) {
+        operarioStates.push({
+          legajo: leg, nombre: emp.Empleado,
+          type: 'idle', action: '-', desc: 'Sin actividad',
+          inicio: null, matriz: null, matrizNombre: null, elapsed: 0
+        });
+        return;
+      }
+
+      // Reconstruir estado
+      let currentMatriz = null;
+      let currentMatrizNombre = null;
+      let pendingTM = null; // { opcion, ts_event }
+      let lastAction = null;
+
+      empRegs.forEach(r => {
+        const op = r.opcion;
+
+        if (op === 'E') {
+          currentMatriz = r.texto || r.matriz || null;
+          currentMatrizNombre = currentMatriz ? (matricesMap[currentMatriz] || '') : '';
+          lastAction = r;
+        } else if (op === 'C') {
+          lastAction = r;
+        } else if (!NON_DOWNTIME.has(op)) {
+          // TM toggle
+          if (pendingTM && pendingTM.opcion === op) {
+            pendingTM = null; // cerrado
+            lastAction = r;
+          } else if (!pendingTM) {
+            pendingTM = r; // abrir
+          }
+          // Si era otro TM distinto, se ignora (no deberia pasar)
+        } else {
+          lastAction = r;
+        }
+      });
+
+      // Determinar estado actual
+      if (pendingTM) {
+        // TM abierto
+        const ts = new Date(pendingTM.ts_event);
+        const elapsed = (now - ts) / 1000;
+        const isTM = TM_CODES.has(pendingTM.opcion);
+        const isIssue = ISSUE_CODES.has(pendingTM.opcion);
+        operarioStates.push({
+          legajo: leg, nombre: emp.Empleado,
+          type: isIssue ? 'issue' : 'tm',
+          action: pendingTM.opcion, desc: pendingTM.descripcion,
+          inicio: pendingTM.ts_event,
+          matriz: currentMatriz, matrizNombre: currentMatrizNombre,
+          elapsed: elapsed
+        });
+      } else if (lastAction) {
+        // Ultima accion completada
+        const op = lastAction.opcion;
+        const ts = new Date(lastAction.ts_event);
+        const elapsed = (now - ts) / 1000;
+        let type = 'produccion';
+        if (op === 'E') type = 'inicio';
+        else if (op === 'C') type = 'produccion';
+
+        operarioStates.push({
+          legajo: leg, nombre: emp.Empleado,
+          type: type,
+          action: op, desc: lastAction.descripcion,
+          inicio: lastAction.ts_event,
+          matriz: currentMatriz, matrizNombre: currentMatrizNombre,
+          elapsed: elapsed
+        });
+      }
+    });
+
+    renderGrid();
+    updateInfo.textContent = 'Actualizado: ' + now.toLocaleTimeString('es-AR');
+  }
+
+  function renderGrid() {
+    // Ordenar: TM/Issues primero, luego produccion, luego idle
+    const order = { issue: 0, tm: 1, inicio: 2, produccion: 3, idle: 4 };
+    const sorted = [...operarioStates].sort((a, b) => (order[a.type] || 9) - (order[b.type] || 9));
+
+    grid.innerHTML = sorted.map(op => {
+      // TM: naranja 0-10min, rojo >10min
+      let cardType = op.type;
+      let badgeClass, badgeText;
+      if (op.type === 'tm') {
+        const isDanger = op.elapsed > 600; // >10 min
+        cardType = isDanger ? 'tm-danger' : 'tm';
+        badgeClass = isDanger ? 'badge-tm-danger' : 'badge-tm';
+        badgeText = 'Tiempo Muerto';
+      } else if (op.type === 'issue') {
+        badgeClass = 'badge-issue';
+        badgeText = 'PROBLEMA';
+      } else if (op.type === 'produccion') {
+        badgeClass = 'badge-produccion';
+        badgeText = 'Produciendo';
+      } else if (op.type === 'inicio') {
+        badgeClass = 'badge-inicio';
+        badgeText = 'Inicio Matriz';
+      } else {
+        badgeClass = 'badge-idle';
+        badgeText = 'Sin actividad';
+      }
+
+      // Timer color: TM naranja->rojo, issue siempre rojo, produccion verde
+      let timerClass = '';
+      if (op.type === 'tm') {
+        timerClass = op.elapsed > 600 ? 'timer-danger' : 'timer-warn';
+      } else if (op.type === 'issue') {
+        timerClass = 'timer-danger';
+      }
+
+      let detail = '';
+      if (op.type !== 'idle') {
+        const horaIni = op.inicio ? new Date(op.inicio).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-';
+        detail = `
+          <div class="op-detail">
+            <strong>${esc(op.action)}</strong> - ${esc(op.desc)}<br>
+            Inicio: <strong>${horaIni}</strong>
+            <span class="timer ${timerClass}" data-inicio="${op.inicio || ''}" data-type="${op.type}">${formatTimer(op.elapsed)}</span>
+          </div>`;
+      }
+
+      let matrizInfo = '';
+      if (op.matriz) {
+        const label = (op.type === 'tm' || cardType === 'tm-danger' || op.type === 'issue') ? 'Matriz activa' : 'Matriz';
+        matrizInfo = `<div class="op-matriz">${label}: <strong>${esc(op.matriz)}</strong> - ${esc(op.matrizNombre || '')}</div>`;
+      }
+
+      return `
+        <div class="op-card ${cardType}">
+          <div class="op-header">
+            <span>${esc(op.nombre)} <span class="legajo">#${esc(op.legajo)}</span></span>
+            <span class="status-badge ${badgeClass}">${badgeText}</span>
+          </div>
+          <div class="op-body">
+            ${op.type === 'idle' ? '<div class="sin-actividad">Sin actividad registrada hoy</div>' : ''}
+            ${detail}
+            ${matrizInfo}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  function updateTimers() {
+    const now = Date.now();
+    document.querySelectorAll('.timer[data-inicio]').forEach(el => {
+      const inicio = el.dataset.inicio;
+      if (!inicio) return;
+      const elapsed = (now - new Date(inicio).getTime()) / 1000;
+      el.textContent = formatTimer(elapsed);
+      const type = el.dataset.type;
+
+      el.classList.remove('timer-warn', 'timer-danger');
+      if (type === 'issue') {
+        el.classList.add('timer-danger');
+      } else if (type === 'tm') {
+        // TM: naranja 0-10min, rojo >10min
+        el.classList.add(elapsed > 600 ? 'timer-danger' : 'timer-warn');
+        // Actualizar tarjeta tambien
+        const card = el.closest('.op-card');
+        if (card) {
+          card.classList.remove('tm', 'tm-danger');
+          card.classList.add(elapsed > 600 ? 'tm-danger' : 'tm');
+          const badge = card.querySelector('.status-badge');
+          if (badge) {
+            badge.classList.remove('badge-tm', 'badge-tm-danger');
+            badge.classList.add(elapsed > 600 ? 'badge-tm-danger' : 'badge-tm');
+          }
+        }
+      }
+    });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

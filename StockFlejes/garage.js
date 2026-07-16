@@ -37,15 +37,24 @@ async function fetchAll(tabla) {
 async function init() {
   statusEl.textContent = "Cargando datos...";
   try {
-    const [garageRes, compRes, entregasVirg, enviosTall] = await Promise.all([
+    const [garageRes, compRes, entregasVirg, enviosTall, spKgRes] = await Promise.all([
       sb.from("Garage").select("*").order("Cod_GRJ"),
       sb.from("GRJ_Componentes").select("cod_grj, componente, orden").order("cod_grj").order("orden"),
-      fetchAll("Entregas Tallerista Virgilio"),
-      fetchAll("Envios a Talleristas")
+      fetchAll("Entregas_Tall_Todas"),
+      fetchAll("Envios a Talleristas"),
+      sb.from("SP Kg").select('"Sp", "Kg X Uni"')
     ]);
     if (garageRes.error) throw garageRes.error;
     if (compRes.error) throw compRes.error;
     garageData = garageRes.data || [];
+
+    // Mapa GRJ → Kg X Uni (para convertir envíos KG→uni cuando Unidades=0)
+    const kgXUniMap = new Map();
+    (spKgRes.data || []).forEach(r => {
+      const sp = String(r["Sp"] || "").trim();
+      const kxu = parseFloat(r["Kg X Uni"]) || 0;
+      if (sp && kxu > 0) kgXUniMap.set(sp, kxu);
+    });
 
     const grjsValidos = new Set(garageData.map(g => g["Cod_GRJ"]));
 
@@ -72,8 +81,9 @@ async function init() {
       const cg = String(e["Cod_GRJ"] || "").trim();
       const cod = String(e["Cod"] || "").trim();
       if (!grjsValidos.has(cg)) continue;
-      // Solo contar el componente marker para evitar duplicacion
-      if (cod !== markerByGRJ.get(cg)) continue;
+      // Contar si Cod es el marker (evita duplicar componentes)
+      // O si Cod === Cod_GRJ (entrega directa del GRJ armado, ej. Carlos entrega GRJ7)
+      if (cod !== cg && cod !== markerByGRJ.get(cg)) continue;
       if (!entregasPorGRJ.has(cg)) entregasPorGRJ.set(cg, { uni: 0, kg: 0, detalle: [] });
       const m = entregasPorGRJ.get(cg);
       m.uni += n(e["Cajas"]);
@@ -82,15 +92,22 @@ async function init() {
     }
 
     // Envios: Sector matches Cod_GRJ
+    // Nota: Unidades suele ser 0 para GRJ. Cuando es 0, convertir KG → uni via Kg X Uni de SP Kg.
     enviosPorGRJ = new Map();
     for (const e of enviosTall) {
       const sec = String(e["Sector"] || "").trim();
       if (!grjsValidos.has(sec)) continue;
       if (!enviosPorGRJ.has(sec)) enviosPorGRJ.set(sec, { uni: 0, kg: 0, detalle: [] });
       const m = enviosPorGRJ.get(sec);
-      m.uni += n(e["Unidades"]);
-      m.kg += n(e["KG"]);
-      m.detalle.push({ tall: e["Tallerista"], fecha: e["Dia-mes"], uni: n(e["Unidades"]), kg: n(e["KG"]), cajones: n(e["Cajones"]) });
+      const kg = n(e["KG"]);
+      let uni = n(e["Unidades"]);
+      if (!uni && kg > 0) {
+        const kxu = kgXUniMap.get(sec) || 0;
+        if (kxu > 0) uni = Math.round(kg / kxu);
+      }
+      m.uni += uni;
+      m.kg += kg;
+      m.detalle.push({ tall: e["Tallerista"], fecha: e["Dia-mes"], uni, kg, cajones: n(e["Cajones"]) });
     }
 
     procesarRows();

@@ -298,11 +298,17 @@
               <th>Legajo</th>
               <th>Nombre</th>
               <th>Sede</th>
+              <th>Activo</th>
+              <th>Tipo</th>
+              <th>Tel</th>
+              <th>Entrada</th>
+              <th>Salida</th>
+              <th>Email</th>
               <th>Acciones</th>
             </tr>
           </thead>
           <tbody id="tbodyOperarios">
-            <tr><td colspan="4" class="loading-msg">Cargando...</td></tr>
+            <tr><td colspan="10" class="loading-msg">Cargando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -324,7 +330,38 @@
         </div>
         <div class="modal-field">
           <label>Sede</label>
-          <input type="text" id="oSede" />
+          <select id="oSede">
+            <option value="">(sin sede)</option>
+            <option value="C">C — Cervantes</option>
+            <option value="V">V — Virgilio</option>
+          </select>
+        </div>
+        <div class="modal-field">
+          <label>Activo</label>
+          <select id="oActivo">
+            <option value="SI">SI</option>
+            <option value="NO">NO</option>
+          </select>
+        </div>
+        <div class="modal-field">
+          <label>Tipo</label>
+          <input type="text" id="oTipo" placeholder="ej. Operario, Encargado..." />
+        </div>
+        <div class="modal-field">
+          <label>Teléfono</label>
+          <input type="text" id="oTel" />
+        </div>
+        <div class="modal-field">
+          <label>Hora entrada</label>
+          <input type="time" id="oEntrada" />
+        </div>
+        <div class="modal-field">
+          <label>Hora salida</label>
+          <input type="time" id="oSalida" />
+        </div>
+        <div class="modal-field">
+          <label>Email</label>
+          <input type="email" id="oEmail" />
         </div>
       </div>
       <div class="modal-footer">
@@ -393,27 +430,44 @@ function renderOperarios() {
   $('countOperarios').textContent = filtered.length + ' registro' + (filtered.length !== 1 ? 's' : '');
 
   if (!filtered.length) {
-    $('tbodyOperarios').innerHTML = '<tr><td colspan="4" class="loading-msg">Sin resultados</td></tr>';
+    $('tbodyOperarios').innerHTML = '<tr><td colspan="10" class="loading-msg">Sin resultados</td></tr>';
     return;
   }
   $('tbodyOperarios').innerHTML = filtered.map(o => `
-    <tr>
+    <tr${String(o.Activo).toUpperCase() === 'NO' ? ' class="row-disc"' : ''}>
       <td>${esc(o.Legajo)}</td>
       <td>${esc(o.Empleado)}</td>
       <td>${esc(o.Sede)}</td>
+      <td>${esc(o.Activo)}</td>
+      <td>${esc(o.tipo)}</td>
+      <td>${esc(o.Num_Tel)}</td>
+      <td>${esc(o.hora_entrada)}</td>
+      <td>${esc(o.hora_salida)}</td>
+      <td>${esc(o.email)}</td>
       <td><button class="btn-action btn-edit" onclick="editOperario(${o.id})">Editar</button></td>
     </tr>`).join('');
 }
 
 $('searchOperario').addEventListener('input', renderOperarios);
 
+function resetModalOperario() {
+  $('oLegajo').value = '';
+  $('oNombre').value = '';
+  $('oSede').value = '';
+  $('oActivo').value = 'SI';
+  $('oTipo').value = '';
+  $('oTel').value = '';
+  // Defaults sede C (horario standard 8:30-17:30, editable despues)
+  $('oEntrada').value = '08:30';
+  $('oSalida').value = '17:30';
+  $('oEmail').value = '';
+}
+
 $('btnNuevoOperario').addEventListener('click', () => {
   editingOperarioId = null;
   $('modalOperarioTitle').textContent = 'Nuevo Operario';
-  $('oLegajo').value = '';
+  resetModalOperario();
   $('oLegajo').disabled = false;
-  $('oNombre').value = '';
-  $('oSede').value = '';
   show($('modalOperario'));
 });
 
@@ -426,6 +480,12 @@ window.editOperario = function(id) {
   $('oLegajo').disabled = true;
   $('oNombre').value = o.Empleado || '';
   $('oSede').value = o.Sede || '';
+  $('oActivo').value = (String(o.Activo || '').toUpperCase() === 'NO') ? 'NO' : 'SI';
+  $('oTipo').value = o.tipo || '';
+  $('oTel').value = o.Num_Tel || '';
+  $('oEntrada').value = o.hora_entrada || '';
+  $('oSalida').value = o.hora_salida || '';
+  $('oEmail').value = o.email || '';
   show($('modalOperario'));
 };
 
@@ -436,25 +496,44 @@ $('btnSaveOperario').addEventListener('click', async () => {
   const legajo = $('oLegajo').value.trim();
   const nombre = $('oNombre').value.trim();
   const sede = $('oSede').value.trim();
+  const activo = $('oActivo').value.trim() || 'SI';
+  const tipo = $('oTipo').value.trim();
+  const tel = $('oTel').value.trim();
+  const entrada = $('oEntrada').value.trim();
+  const salida = $('oSalida').value.trim();
+  const email = $('oEmail').value.trim();
 
   if (!legajo) { toast('Ingresa el legajo'); return; }
+
+  const payload = {
+    Empleado: nombre,
+    Sede: sede,
+    Activo: activo,
+    tipo: tipo || null,
+    Num_Tel: tel || null,
+    hora_entrada: entrada || null,
+    hora_salida: salida || null,
+    email: email || null
+  };
 
   $('btnSaveOperario').disabled = true;
 
   if (editingOperarioId) {
-    const { error } = await sb.from('Empleados').update({
-      Empleado: nombre,
-      Sede: sede
-    }).eq('id', editingOperarioId);
-
+    const { data, error } = await sb.from('Empleados').update(payload).eq('id', editingOperarioId).select();
     if (error) { toast('Error: ' + error.message); $('btnSaveOperario').disabled = false; return; }
+    if (!data || data.length === 0) {
+      toast('No se modifico ninguna fila. Sesion expirada? Reingresa con Google.', 6000);
+      $('btnSaveOperario').disabled = false;
+      return;
+    }
   } else {
-    const { error } = await sb.from('Empleados').insert({
-      Legajo: legajo,
-      Empleado: nombre,
-      Sede: sede
-    });
+    const { data, error } = await sb.from('Empleados').insert({ Legajo: legajo, ...payload }).select();
     if (error) { toast('Error: ' + error.message); $('btnSaveOperario').disabled = false; return; }
+    if (!data || data.length === 0) {
+      toast('No se creo ninguna fila. Sesion expirada? Reingresa con Google.', 6000);
+      $('btnSaveOperario').disabled = false;
+      return;
+    }
   }
 
   $('btnSaveOperario').disabled = false;
@@ -464,7 +543,18 @@ $('btnSaveOperario').addEventListener('click', async () => {
 });
 
 /* ---------- INIT ---------- */
-loadOperarios();
+(async function init() {
+  // Verificar sesion auth real (no solo sessionStorage). Si no hay JWT vigente,
+  // las escrituras van como anon y RLS las bloquea silenciosamente.
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    toast('Sesion expirada. Redirigiendo a login...', 4000);
+    sessionStorage.clear();
+    setTimeout(() => { window.location.href = '../login.html?logout=1'; }, 1200);
+    return;
+  }
+  await loadOperarios();
+})();
 </script>
 </body>
 </html>

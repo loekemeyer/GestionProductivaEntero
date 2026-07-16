@@ -53,23 +53,29 @@ let renderItemFn = null;             // función que renderiza un item según ta
 function cambiarSeccion(sec) {
   const secRutasBtn = $("secRutas");
   const secDespieceBtn = $("secDespiece");
+  const secDespieceInvBtn = $("secDespieceInv");
   const seccionRutas = $("seccionRutas");
   const seccionDespiece = $("seccionDespiece");
+  const seccionDespieceInv = $("seccionDespieceInv");
   const frame = $("despieceFrame");
+  const frameInv = $("despieceInvFrame");
 
   if (secRutasBtn) secRutasBtn.classList.toggle("sec-activo", sec === "rutas");
   if (secDespieceBtn) secDespieceBtn.classList.toggle("sec-activo", sec === "despiece");
+  if (secDespieceInvBtn) secDespieceInvBtn.classList.toggle("sec-activo", sec === "despiece-inv");
 
-  if (sec === "despiece") {
-    if (seccionRutas) seccionRutas.style.display = "none";
-    if (seccionDespiece) seccionDespiece.style.display = "";
-    if (frame && !frame.dataset.loaded) {
-      frame.src = "../Despiece x Articulo/index.html";
-      frame.dataset.loaded = "1";
-    }
-  } else {
-    if (seccionRutas) seccionRutas.style.display = "";
-    if (seccionDespiece) seccionDespiece.style.display = "none";
+  // Ocultar todas las secciones y mostrar sólo la elegida
+  if (seccionRutas) seccionRutas.style.display = sec === "rutas" ? "" : "none";
+  if (seccionDespiece) seccionDespiece.style.display = sec === "despiece" ? "" : "none";
+  if (seccionDespieceInv) seccionDespieceInv.style.display = sec === "despiece-inv" ? "" : "none";
+
+  if (sec === "despiece" && frame && !frame.dataset.loaded) {
+    frame.src = "../Despiece x Articulo/index.html";
+    frame.dataset.loaded = "1";
+  }
+  if (sec === "despiece-inv" && frameInv && !frameInv.dataset.loaded) {
+    frameInv.src = "../Despiece x Articulo/index-inverso.html";
+    frameInv.dataset.loaded = "1";
   }
 }
 
