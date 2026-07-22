@@ -754,11 +754,13 @@ function filtrarItemsEnt(q){
   if (vacio) vacio.classList.toggle("hidden", visibles > 0);
 }
 
-// Verde = item con cajones/kg cargados en el buffer
+// Verde = item con algo cargado en el buffer (cajones, kg o unidades)
+function tieneCargaEnt(b){
+  return !!b && (Number(b.cajones) > 0 || parseDecimal(b.kg) > 0 || Number(b.unidades) > 0);
+}
 function refreshItemPillsEnt(){
   psGrid.querySelectorAll(".item-cod-pill").forEach(btn => {
-    const b = entregaBuf[btn.dataset.key];
-    btn.classList.toggle("cargado", !!b && (Number(b.cajones) > 0 || parseDecimal(b.kg) > 0));
+    btn.classList.toggle("cargado", tieneCargaEnt(entregaBuf[btn.dataset.key]));
   });
 }
 
@@ -799,6 +801,11 @@ function renderGrupoPopupBodyEnt(grupo){
   const ov = document.getElementById("popupGrupoEntOverlay");
   if (!ov) return;
   const abrevPS = (selectedPS||"").trim().slice(0,5);
+  // PS con sin_cajones (AJ Adhesivos: uni / Charcas: kg): una sola columna de carga, sin Cajón ni Tandas
+  const flags = getPSFlags(selectedPS);
+  const isSinCaj = flags.sinCajones;
+  const isUni = flags.cargaPorUnidades;
+  if (isSinCaj) { renderGrupoPopupBodySinCajEnt(grupo, isUni, abrevPS); return; }
   const rows = grupo.map((item,i) => {
     const spKey = normalizeText(item.sp);
     const mv = stockDataCache ? stockDataCache.mvBySP.get(spKey) : null;
@@ -818,8 +825,8 @@ function renderGrupoPopupBodyEnt(grupo){
     return `<tr data-i="${i}">
       <td class="pg-desc">${escapeHtml(item.parte)}</td>
       <td>${escapeHtml(codMostrarEnt(item))}</td>
-      <td><input type="text" inputmode="numeric" class="${cajCls}" value="${cajVal}" ${ro}></td>
       <td><input type="text" inputmode="decimal" class="${kgCls}" value="${kgVal}" placeholder="0,0" ${ro}></td>
+      <td><input type="text" inputmode="numeric" class="${cajCls}" value="${cajVal}" ${ro}></td>
       <td><button type="button" class="tanda-trigger ${hayTandas?'has-tandas':''}" data-action="tandas-grupo-ent" title="Cargar por tandas">${hayTandas?tandasArr.length:'+'}</button></td>
       <td class="pg-sep"></td>
       <td class="right ${negSP}"><b>${onlineSP}</b></td>
@@ -830,7 +837,7 @@ function renderGrupoPopupBodyEnt(grupo){
   ov.querySelector("#popupGrupoEntBody").innerHTML = `
     <table class="pg-table">
       <thead><tr>
-        <th>Desc</th><th>Cód</th><th>Cajón</th><th>KG</th><th title="Tandas">T</th><th class="pg-sep"></th>
+        <th>Desc</th><th>Cód</th><th>KG</th><th>Cajón</th><th title="Tandas">T</th><th class="pg-sep"></th>
         <th>Online<br>SP</th><th>SP</th><th>Online<br>${escapeHtml(abrevPS)}</th>
       </tr></thead><tbody>${rows}</tbody>
     </table>`;
@@ -843,6 +850,58 @@ function renderGrupoPopupBodyEnt(grupo){
     const tBtn = tr.querySelector('[data-action="tandas-grupo-ent"]');
     if (tBtn) tBtn.addEventListener("click", () => abrirTandasGrupoEnt(item, grupo));
   });
+}
+
+// PS con sin_cajones: una sola columna de carga (Uni para AJ Adhesivos, Kg para Charcas). Sin Cajón ni Tandas.
+function renderGrupoPopupBodySinCajEnt(grupo, isUni, abrevPS){
+  const ov = document.getElementById("popupGrupoEntOverlay");
+  if (!ov) return;
+  const label = isUni ? "Uni" : "KG";
+  const rows = grupo.map((item,i) => {
+    const spKey = normalizeText(item.sp);
+    const mv = stockDataCache ? stockDataCache.mvBySP.get(spKey) : null;
+    const onlineSP = mv ? Math.round(mv.onlineCaj) : "…";
+    const onlinePS = stockDataCache ? Math.round(stockDataCache.onlinePSCajGlobalBySP.get(spKey) || 0) : "…";
+    const negSP = (mv && mv.onlineCaj < 0) ? "pg-neg" : "";
+    const b = entregaBuf[`${item.sc}__${item.parte}`];
+    const val = b ? (isUni ? (b.unidades || "") : (b.kg || "")) : "";
+    return `<tr data-i="${i}">
+      <td class="pg-desc">${escapeHtml(item.parte)}</td>
+      <td>${escapeHtml(codMostrarEnt(item))}</td>
+      <td><input type="text" inputmode="${isUni?'numeric':'decimal'}" class="pg-directo" value="${val}" placeholder="${isUni?'0':'0,0'}"></td>
+      <td class="pg-sep"></td>
+      <td class="right ${negSP}"><b>${onlineSP}</b></td>
+      <td>${escapeHtml(item.sp||"—")}</td>
+      <td class="right"><b>${onlinePS}</b></td>
+    </tr>`;
+  }).join("");
+  ov.querySelector("#popupGrupoEntBody").innerHTML = `
+    <table class="pg-table">
+      <thead><tr>
+        <th>Desc</th><th>Cód</th><th>${label}</th><th class="pg-sep"></th>
+        <th>Online<br>SP</th><th>SP</th><th>Online<br>${escapeHtml(abrevPS)}</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table>`;
+  ov.querySelectorAll("#popupGrupoEntBody tr[data-i]").forEach(tr => {
+    const item = grupo[Number(tr.dataset.i)];
+    const inp = tr.querySelector(".pg-directo");
+    if (!inp) return;
+    inp.addEventListener("input", () => {
+      inp.value = isUni ? inp.value.replace(/\D/g,"") : inp.value.replace(/[^0-9,.]/g,"");
+      upsertEntregaBufDirecto(item, inp.value, isUni);
+    });
+  });
+}
+
+// Buffer para PS sin_cajones: guarda unidades (AJ) o kg (Charcas); cajones siempre 0.
+function upsertEntregaBufDirecto(item, valor, isUni){
+  const key = `${item.sc}__${item.parte}`;
+  if (!entregaBuf[key]) entregaBuf[key] = { sc:item.sc, parte:item.parte, sp:item.sp, proceso:item.proceso, cajones:0, kg:"", unidades:0, tandas:[] };
+  const b = entregaBuf[key];
+  b.sp = item.sp; b.proceso = item.proceso; b.cajones = 0;
+  if (isUni) { b.unidades = parseInt(valor,10) || 0; b.kg = ""; }
+  else { b.kg = valor; b.unidades = 0; }
+  refreshItemPillsEnt();
 }
 
 function abrirTandasGrupoEnt(item, grupo){
@@ -871,21 +930,29 @@ function abrirTandasGrupoEnt(item, grupo){
 }
 
 async function ejecutarEntregaGrupo(fecha){
-  const items = Object.values(entregaBuf).filter(b => (Number(b.cajones)>0 || parseDecimal(b.kg)>0));
-  if (!items.length){ alert("Cargá al menos un cajón"); return false; }
+  const items = Object.values(entregaBuf).filter(tieneCargaEnt);
+  if (!items.length){
+    alert(getPSFlags(selectedPS).cargaPorUnidades ? "Cargá al menos una unidad" : "Cargá al menos un cajón");
+    return false;
+  }
   const ok = await mostrarConfirmacionEntregaPS(items);
   if (!ok) return false;
-  const rows = items.map(b => ({
-    "Dia-mes": fecha,
-    "Prov_Serv": selectedPS,
-    "Sector SC": b.sc,
-    "Parte": b.parte,
-    "KG": parseDecimal(b.kg) > 0 ? parseDecimal(b.kg) : null,
-    "Cajones": parseInt(b.cajones) || 0,
-    "Sector SP": b.sp,
-    "Proceso": b.proceso,
-    "Faltante": false
-  }));
+  const rows = items.map(b => {
+    const base = {
+      "Dia-mes": fecha,
+      "Prov_Serv": selectedPS,
+      "Sector SC": b.sc,
+      "Parte": b.parte,
+      "KG": parseDecimal(b.kg) > 0 ? parseDecimal(b.kg) : null,
+      "Cajones": parseInt(b.cajones) || 0,
+      "Sector SP": b.sp,
+      "Proceso": b.proceso,
+      "Faltante": false
+    };
+    // AJ Adhesivos (carga_por_unidades): la cantidad va en Unidades, igual que el flujo viejo
+    if (Number(b.unidades) > 0) base["Unidades"] = Number(b.unidades);
+    return base;
+  });
   const { error } = await sb.from("Entregas PS").insert(rows);
   if (error){ console.error(error); alert("Error al guardar: " + (error.message || "")); return false; }
   clearEntregaBuf();

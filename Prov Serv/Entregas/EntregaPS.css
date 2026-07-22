@@ -470,17 +470,19 @@ body {
 
 /* ===== Popup de entrega por grupo de código ===== */
 .popup-grupo { max-width: 940px !important; width: 96vw; max-height: 92vh; }
-.pg-table { width:100%; border-collapse:collapse; font-size:16px; }
-.pg-table th, .pg-table td { border:1px solid #d0d7de; padding:8px 6px; text-align:center; vertical-align:middle; }
-.pg-table th { background:#f3f5f8; font-size:14px; line-height:1.1; }
+.popup-grupo .popup-title { font-size:22px; }
+.pg-table { width:100%; border-collapse:collapse; font-size:20px; }
+.pg-table th, .pg-table td { border:1px solid #d0d7de; padding:10px 8px; text-align:center; vertical-align:middle; }
+.pg-table th { background:#f3f5f8; font-size:18px; line-height:1.15; }
 .pg-table .pg-desc { text-align:left; }
 .pg-table .pg-neg { color:#b42318; }
 .pg-table .pg-sep { border:none !important; background:transparent !important; width:16px; padding:0; }
-.pg-caj, .pg-kg { width:70px; height:38px; border:1px solid #8f8f8f; border-radius:6px; font-size:16px; text-align:center; box-sizing:border-box; }
-.pg-kg { width:84px; }
+.pg-caj, .pg-kg, .pg-directo { width:84px; height:46px; border:1px solid #8f8f8f; border-radius:6px; font-size:20px; text-align:center; box-sizing:border-box; }
+.pg-kg { width:98px; }
+.pg-directo { width:110px; } /* PS sin_cajones (AJ uni / Charcas kg): unica columna de carga */
 .popup-grupo-actions { display:flex; justify-content:flex-end; padding:14px 16px; border-top:1px solid #e5e5e5; }
 /* Listo siempre clickable: .btn-enviar nace pointer-events:none hasta .enabled, que este boton no recibe */
-.popup-grupo-actions .btn-enviar { min-height:52px; padding:0 30px; font-size:20px; opacity:1; pointer-events:auto; }
+.popup-grupo-actions .btn-enviar { min-height:52px; padding:0 30px; font-size:22px; opacity:1; pointer-events:auto; }
 
 /* Barra superior: buscador (por código o descripción) + fecha */
 .item-buscador { grid-column:1 / -1; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
