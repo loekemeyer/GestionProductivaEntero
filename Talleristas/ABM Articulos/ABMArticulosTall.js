@@ -192,10 +192,63 @@ function abrirModalAgregar(){
   inpDesc.value = "";
   inpUniCaja.value = "12";
   inpCodTall.value = "";
+  ultimoCodLookup = "";
+  autocompletarCodTall(inpLinea.value);   // precarga el cod del tallerista para la linea
   btnGuardarAgregar.disabled = false;
   modalAgregar.classList.remove("hidden");
   inpCodArt.focus();
 }
+
+/* ── Autocompletado: Cod_Tallerista por linea + Descripcion por codigo ── */
+let ultimoCodLookup = "";
+
+// Cod_Tallerista mas usado por el tallerista activo en esa linea (ignora null/"0001"/"0")
+function autocompletarCodTall(linea){
+  const cont = {};
+  articulosTall.forEach(r => {
+    if(String(r.Linea) !== String(linea)) return;
+    const c = String(r.Cod_Tallerista || "").trim();
+    if(!c || c === "0001" || c === "0") return;
+    cont[c] = (cont[c] || 0) + 1;
+  });
+  let best = "", bestN = 0;
+  for(const [c,n] of Object.entries(cont)){ if(n > bestN){ best = c; bestN = n; } }
+  if(!best){
+    // fallback: si en esa linea solo hay "0001" (generico), usarlo
+    const tiene0001 = articulosTall.some(r =>
+      String(r.Linea) === String(linea) && String(r.Cod_Tallerista||"").trim() === "0001");
+    if(tiene0001) best = "0001";
+  }
+  inpCodTall.value = best;
+}
+
+// Descripcion por codigo: 1) Despiece x Articulo (maestra) 2) misma tabla misma linea 3) sin linea
+async function lookupDescripcion(cod, linea){
+  if(!cod) return null;
+  let r = await sb.from("Despiece x Articulo").select("ARTICULO").eq("COD", cod).not("ARTICULO","is",null).limit(1);
+  if(r.data && r.data.length && r.data[0].ARTICULO) return String(r.data[0].ARTICULO).trim();
+  r = await sb.from(TABLA).select("Desc").eq("Cod_Art", cod).eq("Linea", linea).not("Desc","is",null).limit(1);
+  if(r.data && r.data.length && r.data[0].Desc) return String(r.data[0].Desc).trim();
+  r = await sb.from(TABLA).select("Desc").eq("Cod_Art", cod).not("Desc","is",null).limit(1);
+  if(r.data && r.data.length && r.data[0].Desc) return String(r.data[0].Desc).trim();
+  return null;
+}
+
+async function autocompletarDesc(){
+  const cod = inpCodArt.value.trim();
+  if(!cod || cod === ultimoCodLookup) return;   // no re-consultar mismo cod (no pisa edicion manual)
+  ultimoCodLookup = cod;
+  const desc = await lookupDescripcion(cod, inpLinea.value.trim());
+  if(desc) inpDesc.value = desc;
+}
+
+inpCodArt.addEventListener("change", autocompletarDesc);
+inpCodArt.addEventListener("blur", autocompletarDesc);
+inpLinea.addEventListener("change", () => {
+  autocompletarCodTall(inpLinea.value.trim());
+  ultimoCodLookup = "";
+  autocompletarDesc();
+});
 
 function cerrarModalAgregar(){
   modalAgregar.classList.add("hidden");
