@@ -44,7 +44,7 @@
     cartones:  [["cod", "Cód"], ["linea", "L"], ["uni_x_paq", "Uni x Paq"]],
     plasticos: [["nuevo_sector", "Sector N"], ["uni_x_bolsa", "Uni x Bolsa"]],
     remaches:  [["sector_crudo", "S.Crudo"], ["kg_x_bolsa", "Kg x Bolsa"]],
-    bombillas: [["cod_isis", "ISIS"], ["proveedor", "Prov"], ["uni_x_bc", "Uni x B/C"]],
+    bombillas: [],
     garage:    [["taller_prov", "Taller"], ["cod_art", "Cód Art"]],
   };
 
