@@ -226,14 +226,19 @@
           <span class="lc-info"><b>${esc(r.planta)}</b> <span class="cnt">${r.cargados}/${r.items}</span>
             <span class="lc-fecha">${fmtFecha(r.fecha)}${r.encargado ? " · " + esc(r.encargado) : ""}</span></span>
           <span class="lc-acts">
-            <button class="btn btn-dark sm" data-act="cargar" data-id="${r.id}">Cargar</button>
+            <button class="btn btn-ghost sm" data-act="ver-lugar" data-id="${r.id}">Ver</button>
             <button class="btn btn-red sm" data-act="borrar" data-id="${r.id}" title="Borrar este lugar">✕</button>
           </span>
         </div>`;
       }).join("");
-      const cargarBtns = faltan.map(p =>
-        `<button class="btn btn-green sm" data-act="cargar-falta" data-grupo="${grp.g}" data-tipo="${grp.tipo}" data-planta="${esc(p)}">Cargar ${esc(p)}</button>`
-      ).join("");
+      // Botón "Cargar <lugar>" por cada planta que falta cargar (no existe, o existe pero incompleta)
+      const pendientes = (PLANTAS_TIPO[grp.tipo] || []).map(p => {
+        const rel = grp.rels.find(r => r.planta === p);
+        const completo = rel && rel.items > 0 && rel.cargados >= rel.items;
+        if (completo) return "";
+        if (rel) return `<button class="btn btn-green sm" data-act="editar" data-id="${rel.id}">Cargar ${esc(p)}</button>`;
+        return `<button class="btn btn-green sm" data-act="cargar-falta" data-grupo="${grp.g}" data-tipo="${grp.tipo}" data-planta="${esc(p)}">Cargar ${esc(p)}</button>`;
+      }).join("");
       return `<div class="grupo ${grp.completo ? "" : "incompleto"}" data-grupo="${grp.g}">
         <div class="grupo-head">
           <span class="tag">${esc(TIPO_LABEL[grp.tipo] || grp.tipo)}</span>
@@ -241,8 +246,8 @@
           <span class="bar"><i style="width:${pct}%"></i></span>
           <span class="prog">${grp.cargados}/${grp.items}${grp.completo ? "" : ` · <b style="color:#c00">incompleto</b>`}</span>
           <span class="rel-actions">
-            <button class="btn btn-dark sm" data-act="ver" data-grupo="${grp.g}">Ver</button>
-            ${cargarBtns}
+            <button class="btn btn-ghost sm" data-act="ver" data-grupo="${grp.g}">Ver</button>
+            ${pendientes}
           </span>
         </div>
         <div class="grupo-lugares" data-grupo="${grp.g}" style="display:none">${chips}</div>
@@ -294,14 +299,15 @@
     if (act === "ver") {
       const g = Number(b.dataset.grupo);
       const rels = RELS.filter(r => (r.grupo_id || r.id) === g);
-      if (rels.length === 1) { abrirDetalle(rels[0].id); return; }
+      if (rels.length === 1) { abrirDetalle(rels[0].id, true); return; } // solo lectura
       const box = document.querySelector(`.grupo-lugares[data-grupo="${g}"]`);
       if (box) box.style.display = box.style.display === "none" ? "" : "none";
       return;
     }
     if (act === "cargar-falta") { abrirAgregar(Number(b.dataset.grupo), b.dataset.tipo, b.dataset.planta); return; }
     const id = Number(b.dataset.id);
-    if (act === "cargar") { abrirDetalle(id); return; }
+    if (act === "ver-lugar") { abrirDetalle(id, true); return; }   // solo lectura
+    if (act === "editar") { abrirDetalle(id, false); return; }     // editable
     if (act === "borrar") {
       const r = RELS.find(x => x.id === id);
       if (!confirm(`¿Borrar el lugar ${r.planta} del relevamiento de ${TIPO_LABEL[r.tipo]} (${fmtFecha(r.fecha)})? Se pierde su conteo.`)) return;
@@ -349,7 +355,7 @@
   // ---------------------------------------------------------------------------
   let DET = { rel: null, rows: [], cols: [], dirty: new Set() };
 
-  async function abrirDetalle(relId) {
+  async function abrirDetalle(relId, readonly) {
     const rel = RELS.find(x => x.id === relId) || (await refetchRel(relId));
     if (!rel) { showMsg("No se encontró el relevamiento.", "err"); return; }
     const { data, error } = await sb
@@ -357,10 +363,12 @@
       .eq("relevamiento_id", relId)
       .order("orden", { ascending: true });
     if (error) { showMsg("Error leyendo detalle: " + error.message, "err"); return; }
-    DET = { rel, rows: data || [], cols: colsFor(rel.tipo, rel.planta), dirty: new Set() };
+    DET = { rel, rows: data || [], cols: colsFor(rel.tipo, rel.planta), dirty: new Set(), readonly: !!readonly };
     $("vistaLista").style.display = "none";
     $("vistaDetalle").style.display = "";
-    $("detTitulo").textContent = `${TIPO_LABEL[rel.tipo]} · ${rel.planta} · ${fmtFecha(rel.fecha)}${rel.encargado ? " · " + rel.encargado : ""}`;
+    $("detTitulo").textContent = `${TIPO_LABEL[rel.tipo]} · ${rel.planta} · ${fmtFecha(rel.fecha)}${rel.encargado ? " · " + rel.encargado : ""}${readonly ? " · (solo ver)" : ""}`;
+    $("btnGuardar").style.display = readonly ? "none" : "";
+    $("detUnsaved").style.display = readonly ? "none" : "";
     renderDetalle();
     updateGuardarState();
   }
@@ -407,8 +415,8 @@
       let froz = fcols.map((f, i) => `<td class="${f.cls || ""}" style="${fz(f, i, false)}">${f.val(r)}</td>`).join("");
       const inputs = cols.map(c => {
         const v = r.conteo && r.conteo[c.key] != null ? r.conteo[c.key] : "";
-        const tb = c.tandas ? `<button class="ci-tandas" data-det="${r.det_id}" data-key="${c.key}" type="button" title="Cargar por tandas">T</button>` : "";
-        return `<td style="text-align:center;white-space:nowrap"><input class="ci" data-det="${r.det_id}" data-key="${c.key}" type="number" inputmode="decimal" step="any" value="${esc(v)}">${tb}</td>`;
+        const tb = (c.tandas && !DET.readonly) ? `<button class="ci-tandas" data-det="${r.det_id}" data-key="${c.key}" type="button" title="Cargar por tandas">T</button>` : "";
+        return `<td style="text-align:center;white-space:nowrap"><input class="ci" data-det="${r.det_id}" data-key="${c.key}" type="number" inputmode="decimal" step="any" value="${esc(v)}"${DET.readonly ? " disabled" : ""}>${tb}</td>`;
       }).join("");
       const compCells = comps.map(c =>
         `<td class="computed" data-key="${c.key}" style="text-align:center;font-weight:800;color:#0a7a2f">${esc(c.compute(r.conteo || {}))}</td>`
@@ -518,10 +526,10 @@
 
   $("btnGuardar").addEventListener("click", guardarTodo);
 
-  // Clic en una celda de "Último Relevamiento" -> abre ese relevamiento
+  // Clic en una celda de "Último Relevamiento" -> abre ese relevamiento en SOLO LECTURA
   $("resumenBox").addEventListener("click", (e) => {
     const td = e.target.closest("td[data-relid]"); if (!td) return;
-    abrirDetalle(Number(td.dataset.relid));
+    abrirDetalle(Number(td.dataset.relid), true);
   });
 
   // Modal Agregar lugar
