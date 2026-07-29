@@ -42,7 +42,7 @@
     cajas:     [["n_caja", "N° Caja"]],
     flejes:    [["n_fleje", "N° Fleje"]],
     cartones:  [["cod", "Cód"], ["linea", "Linea"]],
-    plasticos: [["nuevo_sector", "Sector N"]],
+    plasticos: [],
     remaches:  [["sector_crudo", "S.Crudo"]],
     bombillas: [],
     garage:    [],
