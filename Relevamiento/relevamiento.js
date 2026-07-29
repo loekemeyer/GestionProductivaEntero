@@ -37,6 +37,9 @@
     garage: ["Cervantes"],
   };
 
+  // Tipos donde NO se muestra la columna Descripción (cajas: "Caja N" redundante; cartones: no se necesita)
+  const HIDE_DESC = { cajas: true, cartones: true };
+
   // Columnas de INFO a mostrar (claves del jsonb "info")
   const INFO_COLS = {
     cajas:     [["n_caja", "N° Caja"]],
@@ -342,33 +345,31 @@
     const secLens = rows.map(r => String(r.sector == null ? "" : r.sector).length);
     const maxSec = Math.max(5, secLens.length ? Math.max.apply(null, secLens) : 5);
     const W_DESC = 165, W_SECTOR = Math.min(190, maxSec * 15 + 20), W_INFO = 92;
-    const frozen = [{ w: W_DESC }, { w: W_SECTOR }].concat(info.map(() => ({ w: W_INFO })));
-    let accL = 0; frozen.forEach(f => { f.left = accL; accL += f.w; });
-    const lastFz = frozen.length - 1;
-    const fz = (i, head) => {
-      const f = frozen[i];
+
+    // Columnas congeladas lateralmente (identificadores). Descripción es opcional (se oculta en cajas).
+    const fcols = [];
+    if (!HIDE_DESC[rel.tipo]) fcols.push({ w: W_DESC, head: "Descripción", cls: "desc", val: r => esc(r.descripcion) });
+    fcols.push({ w: W_SECTOR, head: "Sector", big: true, val: r => esc(r.sector) });
+    info.forEach(([k, lbl]) => fcols.push({ w: W_INFO, head: lbl, big: true, val: r => (k === "cod") ? dashBreak(r.info ? r.info[k] : "") : esc(r.info ? r.info[k] : "") }));
+    let accL = 0; fcols.forEach(f => { f.left = accL; accL += f.w; });
+    const lastFz = fcols.length - 1;
+    const fz = (f, i, head) => {
       let s = `position:sticky;left:${f.left}px;width:${f.w}px;min-width:${f.w}px;max-width:${f.w}px;white-space:normal;word-break:break-word;line-height:1.15;background:${head ? "#e9eef3" : "#fff"};z-index:${head ? 6 : 2};`;
       if (head) s += "top:0;";
-      // contenido (valores) de Sector y de las columnas de info: texto mas grande
-      if (!head && i >= 1) s += "font-size:22px;font-weight:700;";
+      if (!head && f.big) s += "font-size:22px;font-weight:700;";
       if (i === lastFz) s += "border-right:2px solid #6b7885;";
       return s;
     };
 
-    let head = `<tr><th style="${fz(0, true)}">Descripción</th><th style="${fz(1, true)}">Sector</th>`;
-    info.forEach(([, lbl], i) => head += `<th style="${fz(2 + i, true)}">${titleBreak(lbl)}</th>`);
+    let head = "<tr>";
+    fcols.forEach((f, i) => head += `<th style="${fz(f, i, true)}">${titleBreak(f.head)}</th>`);
     for (const c of cols) head += `<th style="text-align:center">${titleBreak(c.label)}</th>`;
     for (const c of comps) head += `<th style="text-align:center">${titleBreak(c.label)}</th>`;
     head += `</tr>`;
     $("detHead").innerHTML = head;
 
     $("detBody").innerHTML = rows.map(r => {
-      let froz = `<td class="desc" style="${fz(0, false)}">${esc(r.descripcion)}</td>`;
-      froz += `<td style="${fz(1, false)}">${esc(r.sector)}</td>`;
-      info.forEach(([k], i) => {
-        const raw = r.info ? r.info[k] : "";
-        froz += `<td style="${fz(2 + i, false)}">${k === "cod" ? dashBreak(raw) : esc(raw)}</td>`;
-      });
+      let froz = fcols.map((f, i) => `<td class="${f.cls || ""}" style="${fz(f, i, false)}">${f.val(r)}</td>`).join("");
       const inputs = cols.map(c => {
         const v = r.conteo && r.conteo[c.key] != null ? r.conteo[c.key] : "";
         const tb = c.tandas ? `<button class="ci-tandas" data-det="${r.det_id}" data-key="${c.key}" type="button" title="Cargar por tandas">T</button>` : "";
