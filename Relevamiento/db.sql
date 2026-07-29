@@ -44,9 +44,13 @@ create table if not exists relevamiento_cervantes.relevamientos (
   planta    text not null default 'Cervantes' check (planta in ('Cervantes','Virgilio','San Roque')),
   fecha       date not null,
   encargado   text,        -- obligatorio desde el modulo (no en DB)
-  dispositivo text,        -- SO + id estable del equipo + email logueado (desde que PC/tablet se genero)
+  dispositivo text,        -- (no se usa; el modulo no lo envia)
+  grupo_id    bigint,      -- une los lugares de un mismo relevamiento (principal: grupo_id = id propio)
   estado      text not null default 'abierto' check (estado in ('abierto','cerrado')),
   creado_en   timestamptz not null default now());
+-- rc_generar(tipo,planta,fecha,encargado) abre un grupo nuevo (grupo_id = id).
+-- rc_agregar_lugar(grupo_id,planta,fecha,encargado) agrega OTRO lugar al mismo grupo (con su propio encargado/fecha).
+-- El modulo agrupa por grupo_id: 1 relevamiento = varios lugares; el total = suma de los lugares.
 
 -- ---------- DETALLES (conteo) ----------
 create table if not exists relevamiento_cervantes.det_cajas (
