@@ -52,7 +52,7 @@
   const CONTEO_COLS = {
     cajas: [
       { key: "conteo_paq", label: "Paquetes", plantas: ["Cervantes"] },
-      { key: "uni_suelta", label: "Uni sueltas", plantas: ["Cervantes"] },
+      { key: "uni_suelta", label: "Uni sueltas", plantas: ["Cervantes"], tandas: true },
       { key: "uni", label: "Unidades", plantas: ["Virgilio"] },
     ],
     flejes: [
@@ -66,7 +66,7 @@
     ],
     cartones: [
       { key: "conteo_paquete", label: "Paquetes" },
-      { key: "uni_suelta", label: "Uni sueltas" },
+      { key: "uni_suelta", label: "Uni sueltas", tandas: true },
     ],
     plasticos: [
       { key: "stock_relev_bolsa", label: "Bolsas" },
@@ -368,7 +368,8 @@
       });
       const inputs = cols.map(c => {
         const v = r.conteo && r.conteo[c.key] != null ? r.conteo[c.key] : "";
-        return `<td style="text-align:center"><input class="ci" data-det="${r.det_id}" data-key="${c.key}" type="number" inputmode="decimal" step="any" value="${esc(v)}"></td>`;
+        const tb = c.tandas ? `<button class="ci-tandas" data-det="${r.det_id}" data-key="${c.key}" type="button" title="Cargar por tandas">T</button>` : "";
+        return `<td style="text-align:center;white-space:nowrap"><input class="ci" data-det="${r.det_id}" data-key="${c.key}" type="number" inputmode="decimal" step="any" value="${esc(v)}">${tb}</td>`;
       }).join("");
       const compCells = comps.map(c =>
         `<td class="computed" data-key="${c.key}" style="text-align:center;font-weight:800;color:#0a7a2f">${esc(c.compute(r.conteo || {}))}</td>`
@@ -397,6 +398,24 @@
       comps.forEach(c => { const cell = tr.querySelector(`td.computed[data-key="${c.key}"]`); if (cell) cell.textContent = c.compute(vals); });
     }
     updateGuardarState();
+  });
+
+  // Botón "T": cargar por tandas (uni sueltas de cartones/cajas). La suma cae en el input.
+  $("detBody").addEventListener("click", (e) => {
+    const b = e.target.closest(".ci-tandas"); if (!b) return;
+    const detId = b.dataset.det, key = b.dataset.key;
+    const inp = document.querySelector(`#detBody input.ci[data-det="${detId}"][data-key="${key}"]`);
+    if (!inp || !window.tandasPopup) return;
+    const cur = parseFloat(String(inp.value).replace(",", ".")) || 0;
+    window.tandasPopup.open({
+      titulo: "Tandas — Uni sueltas",
+      pedirCaj: false, pedirKg: false, pedirUni: true, unidadUni: "uni",
+      initial: cur > 0 ? [{ uni: cur }] : [],
+      onConfirm: (t, totales) => {
+        inp.value = totales.uni || "";
+        inp.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
   });
 
   function updateGuardarState() {
