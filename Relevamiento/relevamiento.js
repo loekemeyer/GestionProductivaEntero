@@ -40,7 +40,7 @@
   // Columnas de INFO a mostrar (claves del jsonb "info")
   const INFO_COLS = {
     cajas:     [["n_caja", "N° Caja"], ["cod_isis_lk", "ISIS LK"], ["uni_x_paq", "Uni x Paq"]],
-    flejes:    [["n_fleje", "N° Fleje"], ["medida_mm", "Medida"], ["prov", "Prov"]],
+    flejes:    [["n_fleje", "N° Fleje"]],
     cartones:  [["cod", "Cód"], ["linea", "L"], ["uni_x_paq", "Uni x Paq"]],
     plasticos: [["nuevo_sector", "Sector N"], ["uni_x_bolsa", "Uni x Bolsa"]],
     remaches:  [["cod_isis", "ISIS"], ["sector_crudo", "S.Crudo"], ["proveedor", "Prov"], ["kg_x_bolsa", "Kg x Bolsa"]],
@@ -62,7 +62,6 @@
       { key: "rollo2_kg", label: "Rollo 2 Kg", plantas: ["Cervantes"] },
       { key: "rollo3_nro", label: "Rollo 3 N°", text: true, plantas: ["Cervantes"] },
       { key: "rollo3_kg", label: "Rollo 3 Kg", plantas: ["Cervantes"] },
-      { key: "total_kg", label: "Total Kg", plantas: ["Cervantes"] },
       { key: "stock_kg", label: "Stock Kg", plantas: ["Virgilio", "San Roque"] },
     ],
     cartones: [
@@ -85,6 +84,20 @@
       { key: "stock_actual_cajon", label: "Cajones" },
     ],
   };
+
+  // Columnas CALCULADAS (no editables; se guardan solas). Flejes Cervantes: Total Kg = suma de los kg de rollos.
+  const COMPUTED = {
+    flejes: [{
+      key: "total_kg", label: "Total Kg", plantas: ["Cervantes"],
+      compute: (v) => {
+        const nums = ["rollo1_kg", "rollo2_kg", "rollo3_kg"]
+          .map(k => parseFloat(String(v && v[k] != null ? v[k] : "").replace(",", ".")))
+          .filter(x => !isNaN(x));
+        return nums.length ? String(Math.round(nums.reduce((a, b) => a + b, 0) * 1000) / 1000) : "";
+      }
+    }],
+  };
+  const computedFor = (tipo, planta) => (COMPUTED[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; };
@@ -267,9 +280,11 @@
   function renderDetalle() {
     const { rel, rows, cols } = DET;
     const info = INFO_COLS[rel.tipo] || [];
+    const comps = computedFor(rel.tipo, rel.planta);
     let head = `<tr><th>Descripción</th><th>Sector</th>`;
     for (const [, lbl] of info) head += `<th>${esc(lbl)}</th>`;
     for (const c of cols) head += `<th style="text-align:center">${esc(c.label)}</th>`;
+    for (const c of comps) head += `<th style="text-align:center">${esc(c.label)}</th>`;
     head += `</tr>`;
     $("detHead").innerHTML = head;
 
@@ -280,10 +295,13 @@
         return `<td style="text-align:center"><input class="ci ${c.text ? "txt" : ""}" data-det="${r.det_id}" data-key="${c.key}"
           ${c.text ? 'type="text"' : 'type="number" inputmode="decimal" step="any"'} value="${esc(v)}"></td>`;
       }).join("");
+      const compCells = comps.map(c =>
+        `<td class="computed" data-key="${c.key}" style="text-align:center;font-weight:800;color:#0a7a2f">${esc(c.compute(r.conteo || {}))}</td>`
+      ).join("");
       return `<tr data-det="${r.det_id}" class="${r.cargado ? "loaded" : ""}">
         <td class="desc">${esc(r.descripcion)}</td>
         <td>${esc(r.sector)}</td>
-        ${infoCells}${inputs}</tr>`;
+        ${infoCells}${inputs}${compCells}</tr>`;
     }).join("");
     updateProg();
   }
@@ -302,15 +320,21 @@
     // Juntar todos los valores de conteo de esa fila
     const vals = {};
     tr.querySelectorAll("input.ci").forEach(i => { vals[i.dataset.key] = i.value.trim(); });
+    // Columnas calculadas (ej. flejes total_kg): se calculan y persisten solas
+    const comps = computedFor(DET.rel.tipo, DET.rel.planta);
+    comps.forEach(c => { vals[c.key] = c.compute(vals); });
     tr.classList.add("saving");
     const { error } = await sb.rpc("rc_set_conteo", { p_tipo: DET.rel.tipo, p_det_id: detId, p_vals: vals });
     tr.classList.remove("saving");
     if (error) { showMsg("No se pudo guardar (¿estás logueado?): " + error.message, "err"); return; }
+    // Reflejar las calculadas en su celda
+    comps.forEach(c => { const cell = tr.querySelector(`td.computed[data-key="${c.key}"]`); if (cell) cell.textContent = vals[c.key]; });
     // Actualizar estado local "cargado"
     const row = DET.rows.find(r => r.det_id === detId);
     if (row) {
       row.conteo = row.conteo || {};
       DET.cols.forEach(c => { row.conteo[c.key] = vals[c.key] === "" ? null : vals[c.key]; });
+      comps.forEach(c => { row.conteo[c.key] = vals[c.key] === "" ? null : vals[c.key]; });
       row.cargado = DET.cols.some(c => vals[c.key] !== "" && vals[c.key] != null);
       tr.classList.toggle("loaded", row.cargado);
     }
