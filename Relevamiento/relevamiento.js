@@ -39,7 +39,7 @@
 
   // Columnas de INFO a mostrar (claves del jsonb "info")
   const INFO_COLS = {
-    cajas:     [["n_caja", "N° Caja"], ["cod_isis_lk", "ISIS LK"], ["uni_x_paq", "Uni x Paq"]],
+    cajas:     [["n_caja", "N° Caja"], ["uni_x_paq", "Uni x Paq"]],
     flejes:    [["n_fleje", "N° Fleje"]],
     cartones:  [["cod", "Cód"], ["linea", "L"], ["uni_x_paq", "Uni x Paq"]],
     plasticos: [["nuevo_sector", "Sector N"], ["uni_x_bolsa", "Uni x Bolsa"]],
