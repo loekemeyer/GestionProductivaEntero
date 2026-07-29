@@ -467,12 +467,36 @@
     });
   });
 
+  // Cuenta renglones sin ningún dato y pares incompletos (flejes) en el estado actual de la tabla.
+  function estadoCarga() {
+    const trs = document.querySelectorAll("#detBody tr");
+    const checkPairs = !!PAIR_VALID[DET.rel && DET.rel.tipo];
+    let sinDato = 0, errPar = 0;
+    trs.forEach(tr => {
+      const algun = Array.from(tr.querySelectorAll("input.ci")).some(i => i.value.trim() !== "");
+      if (!algun) sinDato++;
+      if (checkPairs && marcarErroresPar(tr).length) errPar++;
+    });
+    return { sinDato, errPar };
+  }
+
+  // Guardar SOLO se habilita cuando el lugar está completo (todos los renglones con dato y sin pares a medias).
   function updateGuardarState() {
+    const btn = $("btnGuardar"), ind = $("detUnsaved");
+    if (DET.readonly) { if (btn) btn.disabled = true; if (ind) ind.textContent = ""; return; }
     const n = DET.dirty.size;
-    const btn = $("btnGuardar");
-    if (btn) { btn.disabled = n === 0; btn.textContent = n ? `Guardar (${n})` : "Guardar"; }
-    const ind = $("detUnsaved");
-    if (ind) ind.textContent = n ? `${n} sin guardar` : "";
+    const { sinDato, errPar } = estadoCarga();
+    const completo = sinDato === 0 && errPar === 0;
+    if (btn) {
+      btn.disabled = !(completo && n > 0);
+      btn.textContent = n ? `Guardar (${n})` : "Guardar";
+      btn.title = completo ? "" : "Completá todos los renglones para poder guardar";
+    }
+    if (ind) {
+      if (sinDato) ind.textContent = `Faltan ${sinDato} renglón${sinDato === 1 ? "" : "es"}`;
+      else if (errPar) ind.textContent = `${errPar} par${errPar === 1 ? "" : "es"} incompleto${errPar === 1 ? "" : "s"}`;
+      else ind.textContent = n ? `${n} sin guardar` : "";
+    }
   }
 
   async function guardarTodo() {
