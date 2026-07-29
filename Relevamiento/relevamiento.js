@@ -290,14 +290,16 @@
     const comps = computedFor(rel.tipo, rel.planta);
 
     // Columnas congeladas lateralmente (identificadores): Descripción + Sector + info
-    const W_DESC = 165, W_SECTOR = 76, W_INFO = 94;
+    const W_DESC = 165, W_SECTOR = 60, W_INFO = 92;
     const frozen = [{ w: W_DESC }, { w: W_SECTOR }].concat(info.map(() => ({ w: W_INFO })));
     let accL = 0; frozen.forEach(f => { f.left = accL; accL += f.w; });
     const lastFz = frozen.length - 1;
     const fz = (i, head) => {
       const f = frozen[i];
-      let s = `position:sticky;left:${f.left}px;width:${f.w}px;min-width:${f.w}px;max-width:${f.w}px;background:${head ? "#e9eef3" : "#fff"};z-index:${head ? 6 : 2};`;
+      let s = `position:sticky;left:${f.left}px;width:${f.w}px;min-width:${f.w}px;max-width:${f.w}px;white-space:normal;word-break:break-word;line-height:1.15;background:${head ? "#e9eef3" : "#fff"};z-index:${head ? 6 : 2};`;
       if (head) s += "top:0;";
+      // contenido (valores) de Sector y de las columnas de info: texto mas grande
+      if (!head && i >= 1) s += "font-size:22px;font-weight:700;";
       if (i === lastFz) s += "border-right:2px solid #6b7885;";
       return s;
     };
