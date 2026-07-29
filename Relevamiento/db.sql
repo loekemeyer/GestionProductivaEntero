@@ -42,10 +42,11 @@ create table if not exists relevamiento_cervantes.relevamientos (
   id        bigint generated always as identity primary key,
   tipo      text not null check (tipo in ('cajas','flejes','cartones','plasticos','remaches','bombillas','garage')),
   planta    text not null default 'Cervantes' check (planta in ('Cervantes','Virgilio','San Roque')),
-  fecha     date not null,
-  encargado text,
-  estado    text not null default 'abierto' check (estado in ('abierto','cerrado')),
-  creado_en timestamptz not null default now());
+  fecha       date not null,
+  encargado   text,        -- obligatorio desde el modulo (no en DB)
+  dispositivo text,        -- SO + id estable del equipo + email logueado (desde que PC/tablet se genero)
+  estado      text not null default 'abierto' check (estado in ('abierto','cerrado')),
+  creado_en   timestamptz not null default now());
 
 -- ---------- DETALLES (conteo) ----------
 create table if not exists relevamiento_cervantes.det_cajas (
@@ -86,12 +87,13 @@ create table if not exists relevamiento_cervantes.det_garage (
 
 -- ---------- GENERADOR ----------
 create or replace function relevamiento_cervantes.generar_relevamiento(
-  p_tipo text, p_planta text default 'Cervantes', p_fecha date default current_date, p_encargado text default null)
+  p_tipo text, p_planta text default 'Cervantes', p_fecha date default current_date,
+  p_encargado text default null, p_dispositivo text default null)
 returns bigint language plpgsql as $$
 declare v_id bigint;
 begin
-  insert into relevamiento_cervantes.relevamientos(tipo,planta,fecha,encargado)
-  values (p_tipo,p_planta,p_fecha,p_encargado) returning id into v_id;
+  insert into relevamiento_cervantes.relevamientos(tipo,planta,fecha,encargado,dispositivo)
+  values (p_tipo,p_planta,p_fecha,p_encargado,p_dispositivo) returning id into v_id;
   if p_tipo='cajas'     then insert into relevamiento_cervantes.det_cajas(relevamiento_id,caja_id)         select v_id,id from relevamiento_cervantes.cat_cajas;     end if;
   if p_tipo='flejes'    then insert into relevamiento_cervantes.det_flejes(relevamiento_id,fleje_id)       select v_id,id from relevamiento_cervantes.cat_flejes;    end if;
   if p_tipo='cartones'  then insert into relevamiento_cervantes.det_cartones(relevamiento_id,carton_id)    select v_id,id from relevamiento_cervantes.cat_cartones;  end if;

@@ -218,7 +218,8 @@
   async function generar() {
     const tipo = $("nvTipo").value, planta = $("nvPlanta").value;
     const fecha = $("nvFecha").value || new Date().toISOString().slice(0, 10);
-    const encargado = $("nvEncargado").value.trim() || null;
+    const encargado = $("nvEncargado").value.trim();
+    if (!encargado) { showMsg("El encargado es obligatorio.", "err"); $("nvEncargado").focus(); return; }
     // Evitar duplicado exacto (tipo+planta+fecha)
     if (RELS.some(r => r.tipo === tipo && r.planta === planta && r.fecha === fecha)) {
       if (!confirm("Ya existe un relevamiento de " + TIPO_LABEL[tipo] + " en " + planta + " para esa fecha. ¿Generar otro igual?")) return;
@@ -287,27 +288,39 @@
     const { rel, rows, cols } = DET;
     const info = INFO_COLS[rel.tipo] || [];
     const comps = computedFor(rel.tipo, rel.planta);
-    let head = `<tr><th>Descripción</th><th>Sector</th>`;
-    for (const [, lbl] of info) head += `<th>${titleBreak(lbl)}</th>`;
+
+    // Columnas congeladas lateralmente (identificadores): Descripción + Sector + info
+    const W_DESC = 165, W_SECTOR = 76, W_INFO = 94;
+    const frozen = [{ w: W_DESC }, { w: W_SECTOR }].concat(info.map(() => ({ w: W_INFO })));
+    let accL = 0; frozen.forEach(f => { f.left = accL; accL += f.w; });
+    const lastFz = frozen.length - 1;
+    const fz = (i, head) => {
+      const f = frozen[i];
+      let s = `position:sticky;left:${f.left}px;width:${f.w}px;min-width:${f.w}px;max-width:${f.w}px;background:${head ? "#e9eef3" : "#fff"};z-index:${head ? 6 : 2};`;
+      if (head) s += "top:0;";
+      if (i === lastFz) s += "border-right:2px solid #6b7885;";
+      return s;
+    };
+
+    let head = `<tr><th style="${fz(0, true)}">Descripción</th><th style="${fz(1, true)}">Sector</th>`;
+    info.forEach(([, lbl], i) => head += `<th style="${fz(2 + i, true)}">${titleBreak(lbl)}</th>`);
     for (const c of cols) head += `<th style="text-align:center">${titleBreak(c.label)}</th>`;
     for (const c of comps) head += `<th style="text-align:center">${titleBreak(c.label)}</th>`;
     head += `</tr>`;
     $("detHead").innerHTML = head;
 
     $("detBody").innerHTML = rows.map(r => {
-      const infoCells = info.map(([k]) => `<td>${esc(r.info ? r.info[k] : "")}</td>`).join("");
+      let froz = `<td class="desc" style="${fz(0, false)}">${esc(r.descripcion)}</td>`;
+      froz += `<td style="${fz(1, false)}">${esc(r.sector)}</td>`;
+      info.forEach(([k], i) => froz += `<td style="${fz(2 + i, false)}">${esc(r.info ? r.info[k] : "")}</td>`);
       const inputs = cols.map(c => {
         const v = r.conteo && r.conteo[c.key] != null ? r.conteo[c.key] : "";
-        return `<td style="text-align:center"><input class="ci ${c.text ? "txt" : ""}" data-det="${r.det_id}" data-key="${c.key}"
-          ${c.text ? 'type="text"' : 'type="number" inputmode="decimal" step="any"'} value="${esc(v)}"></td>`;
+        return `<td style="text-align:center"><input class="ci" data-det="${r.det_id}" data-key="${c.key}" type="number" inputmode="decimal" step="any" value="${esc(v)}"></td>`;
       }).join("");
       const compCells = comps.map(c =>
         `<td class="computed" data-key="${c.key}" style="text-align:center;font-weight:800;color:#0a7a2f">${esc(c.compute(r.conteo || {}))}</td>`
       ).join("");
-      return `<tr data-det="${r.det_id}" class="${r.cargado ? "loaded" : ""}">
-        <td class="desc">${esc(r.descripcion)}</td>
-        <td>${esc(r.sector)}</td>
-        ${infoCells}${inputs}${compCells}</tr>`;
+      return `<tr data-det="${r.det_id}" class="${r.cargado ? "loaded" : ""}">${froz}${inputs}${compCells}</tr>`;
     }).join("");
     updateProg();
   }
