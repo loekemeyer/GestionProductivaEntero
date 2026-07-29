@@ -101,6 +101,8 @@
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; };
+  // Titulo de columna: si tiene un espacio, se parte en dos lineas (en el primer espacio)
+  const titleBreak = (s) => { s = String(s == null ? "" : s); const i = s.indexOf(" "); return i < 0 ? esc(s) : esc(s.slice(0, i)) + "<br>" + esc(s.slice(i + 1)); };
   const norm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const fmtFecha = (f) => { if (!f) return ""; const [y, m, d] = String(f).slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
 
@@ -282,9 +284,9 @@
     const info = INFO_COLS[rel.tipo] || [];
     const comps = computedFor(rel.tipo, rel.planta);
     let head = `<tr><th>Descripción</th><th>Sector</th>`;
-    for (const [, lbl] of info) head += `<th>${esc(lbl)}</th>`;
-    for (const c of cols) head += `<th style="text-align:center">${esc(c.label)}</th>`;
-    for (const c of comps) head += `<th style="text-align:center">${esc(c.label)}</th>`;
+    for (const [, lbl] of info) head += `<th>${titleBreak(lbl)}</th>`;
+    for (const c of cols) head += `<th style="text-align:center">${titleBreak(c.label)}</th>`;
+    for (const c of comps) head += `<th style="text-align:center">${titleBreak(c.label)}</th>`;
     head += `</tr>`;
     $("detHead").innerHTML = head;
 
