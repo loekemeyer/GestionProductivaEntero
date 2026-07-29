@@ -171,7 +171,7 @@
     for (const r of RELS) {
       if (!last[r.tipo]) continue;
       const cur = last[r.tipo][r.planta];
-      if (!cur || r.fecha > cur.fecha) last[r.tipo][r.planta] = { fecha: r.fecha, encargado: r.encargado }; // 'YYYY-MM-DD' compara bien
+      if (!cur || r.fecha > cur.fecha) last[r.tipo][r.planta] = { fecha: r.fecha, encargado: r.encargado, id: r.id }; // 'YYYY-MM-DD' compara bien
     }
     let html = `<table><thead><tr><th>Tipo</th>`;
     for (const p of PLANTAS) html += `<th>${p}</th>`;
@@ -181,11 +181,14 @@
       for (const p of PLANTAS) {
         const aplica = (PLANTAS_TIPO[t.key] || []).includes(p);
         const f = last[t.key][p];
-        let cell = `<span class="muted" title="No aplica">·</span>`;
-        if (aplica) cell = f
-          ? `${fmtFecha(f.fecha)}${f.encargado ? `<div class="muted" style="font-size:14px">${esc(f.encargado)}</div>` : ""}`
-          : `<span class="muted">—</span>`;
-        html += `<td class="cell">${cell}</td>`;
+        let cell = `<span class="muted" title="No aplica">·</span>`, attr = "";
+        if (aplica) {
+          if (f) {
+            cell = `${fmtFecha(f.fecha)}${f.encargado ? `<div class="enc">${esc(f.encargado)}</div>` : ""}`;
+            attr = ` data-relid="${f.id}" style="cursor:pointer" title="Ver este relevamiento"`;
+          } else cell = `<span class="muted">—</span>`;
+        }
+        html += `<td class="cell"${attr}>${cell}</td>`;
       }
       html += `</tr>`;
     }
@@ -228,6 +231,9 @@
           </span>
         </div>`;
       }).join("");
+      const cargarBtns = faltan.map(p =>
+        `<button class="btn btn-green sm" data-act="cargar-falta" data-grupo="${grp.g}" data-tipo="${grp.tipo}" data-planta="${esc(p)}">Cargar ${esc(p)}</button>`
+      ).join("");
       return `<div class="grupo ${grp.completo ? "" : "incompleto"}" data-grupo="${grp.g}">
         <div class="grupo-head">
           <span class="tag">${esc(TIPO_LABEL[grp.tipo] || grp.tipo)}</span>
@@ -235,10 +241,11 @@
           <span class="bar"><i style="width:${pct}%"></i></span>
           <span class="prog">${grp.cargados}/${grp.items}${grp.completo ? "" : ` · <b style="color:#c00">incompleto</b>`}</span>
           <span class="rel-actions">
-            ${faltan.length ? `<button class="btn btn-green sm" data-act="agregar" data-grupo="${grp.g}" data-tipo="${grp.tipo}">+ Agregar lugar</button>` : ""}
+            <button class="btn btn-dark sm" data-act="ver" data-grupo="${grp.g}">Ver</button>
+            ${cargarBtns}
           </span>
         </div>
-        <div class="grupo-lugares">${chips}</div>
+        <div class="grupo-lugares" data-grupo="${grp.g}" style="display:none">${chips}</div>
       </div>`;
     }).join("");
   }
@@ -284,7 +291,15 @@
   $("relList").addEventListener("click", async (e) => {
     const b = e.target.closest("button[data-act]"); if (!b) return;
     const act = b.dataset.act;
-    if (act === "agregar") { abrirAgregar(Number(b.dataset.grupo), b.dataset.tipo); return; }
+    if (act === "ver") {
+      const g = Number(b.dataset.grupo);
+      const rels = RELS.filter(r => (r.grupo_id || r.id) === g);
+      if (rels.length === 1) { abrirDetalle(rels[0].id); return; }
+      const box = document.querySelector(`.grupo-lugares[data-grupo="${g}"]`);
+      if (box) box.style.display = box.style.display === "none" ? "" : "none";
+      return;
+    }
+    if (act === "cargar-falta") { abrirAgregar(Number(b.dataset.grupo), b.dataset.tipo, b.dataset.planta); return; }
     const id = Number(b.dataset.id);
     if (act === "cargar") { abrirDetalle(id); return; }
     if (act === "borrar") {
@@ -300,13 +315,13 @@
   // AGREGAR LUGAR (otro lugar al mismo relevamiento, con su encargado y fecha)
   // ---------------------------------------------------------------------------
   let AG = { grupo: null, tipo: null };
-  function abrirAgregar(grupo, tipo) {
+  function abrirAgregar(grupo, tipo, prePlanta) {
     AG = { grupo, tipo };
     const enGrupo = RELS.filter(r => (r.grupo_id || r.id) === grupo).map(r => r.planta);
     const faltan = (PLANTAS_TIPO[tipo] || []).filter(p => !enGrupo.includes(p));
     if (!faltan.length) { showMsg("Ya están todos los lugares en ese relevamiento.", "ok"); return; }
-    $("agTitulo").textContent = `Agregar lugar — ${TIPO_LABEL[tipo] || tipo}`;
-    $("agPlanta").innerHTML = faltan.map(p => `<option value="${p}">${p}</option>`).join("");
+    $("agTitulo").textContent = `Cargar ${prePlanta || "lugar"} — ${TIPO_LABEL[tipo] || tipo}`;
+    $("agPlanta").innerHTML = faltan.map(p => `<option value="${p}"${p === prePlanta ? " selected" : ""}>${p}</option>`).join("");
     $("agFecha").value = new Date().toISOString().slice(0, 10);
     $("agEncargado").value = "";
     $("modalAgregar").style.display = "flex";
@@ -502,6 +517,12 @@
   });
 
   $("btnGuardar").addEventListener("click", guardarTodo);
+
+  // Clic en una celda de "Último Relevamiento" -> abre ese relevamiento
+  $("resumenBox").addEventListener("click", (e) => {
+    const td = e.target.closest("td[data-relid]"); if (!td) return;
+    abrirDetalle(Number(td.dataset.relid));
+  });
 
   // Modal Agregar lugar
   $("agConfirmar").addEventListener("click", confirmarAgregar);
