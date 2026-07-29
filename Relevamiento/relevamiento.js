@@ -39,13 +39,13 @@
 
   // Columnas de INFO a mostrar (claves del jsonb "info")
   const INFO_COLS = {
-    cajas:     [["n_caja", "N° Caja"], ["uni_x_paq", "Uni x Paq"]],
+    cajas:     [["n_caja", "N° Caja"]],
     flejes:    [["n_fleje", "N° Fleje"]],
-    cartones:  [["cod", "Cód"], ["linea", "L"], ["uni_x_paq", "Uni x Paq"]],
-    plasticos: [["nuevo_sector", "Sector N"], ["uni_x_bolsa", "Uni x Bolsa"]],
-    remaches:  [["sector_crudo", "S.Crudo"], ["kg_x_bolsa", "Kg x Bolsa"]],
+    cartones:  [["cod", "Cód"], ["linea", "L"]],
+    plasticos: [["nuevo_sector", "Sector N"]],
+    remaches:  [["sector_crudo", "S.Crudo"]],
     bombillas: [],
-    garage:    [["taller_prov", "Taller"], ["cod_art", "Cód Art"]],
+    garage:    [],
   };
 
   // Columnas de CONTEO (input). plantas => solo se muestra en esas plantas.

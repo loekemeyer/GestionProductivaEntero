@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-07-29 - Relevamiento/relevamiento.js (?v=20260729f): OCULTAR columnas x-unidad en info (solo front, datos intactos en DB): cajas saca uni_x_paq (revierte pedido previo) -> queda N° Caja; cartones saca uni_x_paq -> Cod + L; plasticos saca uni_x_bolsa -> Sector N; remaches saca kg_x_bolsa -> S.Crudo; garage saca taller_prov + cod_art -> info vacia (solo Descripcion + Sector). loekemeyer.
 2026-07-29 - Relevamiento/relevamiento.js (?v=20260729e): BOMBILLAS — INFO_COLS vacio (se OCULTAN cod_isis/ISIS, proveedor/Prov y uni_x_bc; solo se muestra Descripcion + Sector + conteo). Es ocultar en el front, NO borrar: los datos siguen en cat_bombillas y en v_rc_detalle.info. loekemeyer.
 2026-07-29 - Relevamiento/relevamiento.js (?v=20260729d): REMACHES — INFO_COLS ahora solo "S.Crudo" + "Kg x Bolsa" (se sacaron "ISIS" y "Prov"; el Sector proc ya es columna propia). loekemeyer.
 2026-07-29 - Relevamiento/relevamiento.js (?v=20260729c): CAJAS — INFO_COLS ahora solo "N° Caja" + "Uni x Paq" (se saco "ISIS LK"; el Sector ya es columna propia de la tabla). loekemeyer.
