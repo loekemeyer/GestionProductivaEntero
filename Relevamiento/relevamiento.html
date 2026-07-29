@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="es">
+<head>
+<script src="../auth-guard.js"></script>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Relevamiento</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;background:#f5f6f8;color:#111;padding:12px}
+  a{color:inherit}
+  .wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+
+  .topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .topbar h1{font-size:20px;font-weight:800}
+  .topbar .spacer{flex:1}
+  .btn{padding:10px 14px;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+  .btn-dark{background:#111;color:#fff}
+  .btn-ghost{background:#fff;border:2px solid #d0d7de;color:#111}
+  .btn-green{background:#0a7a2f;color:#fff}
+  .btn-red{background:#fff;border:2px solid #e11;color:#c00}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.sm{padding:6px 10px;font-size:12.5px;border-radius:8px}
+
+  .card{background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.07);overflow:hidden}
+  .card h2{background:#111;color:#fff;padding:12px 16px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .card .body{padding:14px 16px}
+
+  /* nuevo */
+  .form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:12px;color:#555;font-weight:700}
+  .field select,.field input{height:40px;border:2px solid #d0d7de;border-radius:8px;padding:0 10px;font-size:14px;background:#fff}
+  .field select:focus,.field input:focus{outline:none;border-color:#111}
+
+  /* resumen */
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  .tbl-scroll{overflow-x:auto}
+  th,td{border-bottom:1px solid #eef0f2;padding:7px 10px;text-align:left;white-space:nowrap}
+  thead th{background:#f3f6f8;color:#3a4653;font-weight:700;position:sticky;top:0}
+  .resumen td.cell{text-align:center;font-variant-numeric:tabular-nums}
+  .resumen .tipo{font-weight:700}
+  .pill{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;font-weight:700}
+  .pill.full{background:#e6f5ec;color:#0a7a2f}
+  .pill.part{background:#fdf3e2;color:#a8620b}
+  .pill.zero{background:#f0f2f4;color:#8a96a2}
+  .muted{color:#8a96a2}
+
+  /* lista relevamientos */
+  .rel-list{display:flex;flex-direction:column;gap:8px}
+  .rel{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid #e7ebef;border-radius:10px}
+  .rel .lugar{font-weight:800}
+  .rel .tag{font-size:11px;font-weight:800;padding:2px 8px;border-radius:6px;background:#eef2f6;color:#3a4653;text-transform:uppercase;letter-spacing:.04em}
+  .rel .fecha{font-size:12.5px;color:#5a6672}
+  .rel .prog{font-size:12.5px;font-weight:700}
+  .rel .rel-actions{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  .bar{height:6px;background:#eef0f2;border-radius:4px;overflow:hidden;min-width:120px;flex:0 0 120px}
+  .bar > i{display:block;height:100%;background:#0a7a2f}
+
+  /* detalle carga */
+  .det-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .det-head .search{height:38px;border:2px solid #d0d7de;border-radius:8px;padding:0 10px;font-size:14px;flex:1;min-width:180px}
+  .det-head .prog{font-weight:800}
+  td input.ci{width:92px;height:34px;border:2px solid #d0d7de;border-radius:7px;text-align:center;font-size:14px;font-weight:700}
+  td input.ci.txt{width:78px;font-weight:600}
+  td input.ci:focus{outline:none;border-color:#111}
+  tr.loaded td.desc{color:#0a7a2f}
+  tr.saving td.desc::after{content:" ·guardando";color:#a8620b;font-size:11px}
+  .hidden{display:none!important}
+
+  .msg{padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600}
+  .msg.ok{background:#e6f5ec;color:#0a7a2f}
+  .msg.err{background:#fdecec;color:#c00}
+  .empty{color:#8a96a2;font-size:14px;padding:8px 2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <h1>📋 Relevamiento</h1>
+    <span class="spacer"></span>
+    <a class="btn btn-ghost" href="../Inicio/index.html">← Inicio</a>
+  </div>
+
+  <div id="msg"></div>
+
+  <!-- ====== VISTA LISTA ====== -->
+  <div id="vistaLista" style="display:flex;flex-direction:column;gap:14px">
+
+    <div class="card">
+      <h2>Nuevo relevamiento</h2>
+      <div class="body">
+        <div class="form-row">
+          <div class="field">
+            <label>Tipo</label>
+            <select id="nvTipo"></select>
+          </div>
+          <div class="field">
+            <label>Lugar</label>
+            <select id="nvPlanta"></select>
+          </div>
+          <div class="field">
+            <label>Fecha</label>
+            <input type="date" id="nvFecha"/>
+          </div>
+          <div class="field" style="flex:1;min-width:160px">
+            <label>Encargado</label>
+            <input type="text" id="nvEncargado" placeholder="Quién releva"/>
+          </div>
+          <button class="btn btn-dark" id="btnGenerar">Generar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card resumen">
+      <h2>Totales y por lugar</h2>
+      <div class="body tbl-scroll" id="resumenBox">
+        <div class="empty">Cargando…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Relevamientos anteriores</h2>
+      <div class="body">
+        <div class="rel-list" id="relList"><div class="empty">Cargando…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== VISTA DETALLE (carga) ====== -->
+  <div id="vistaDetalle" class="card" style="display:none">
+    <h2 id="detTitulo">Cargar relevamiento</h2>
+    <div class="body">
+      <div class="det-head">
+        <button class="btn btn-ghost sm" id="btnVolver">← Volver</button>
+        <input class="search" id="detSearch" placeholder="Buscar por descripción, sector o código…"/>
+        <span class="prog" id="detProg"></span>
+      </div>
+      <div class="tbl-scroll">
+        <table id="detTable">
+          <thead id="detHead"></thead>
+          <tbody id="detBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="../version.js?v=20260617b"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="relevamiento.js?v=20260729a"></script>
+</body>
+</html>
