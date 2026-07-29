@@ -56,12 +56,12 @@
       { key: "uni", label: "Unidades", plantas: ["Virgilio"] },
     ],
     flejes: [
-      { key: "rollo1_nro", label: "Rollo 1 N°", plantas: ["Cervantes"] },
-      { key: "rollo1_kg", label: "Rollo 1 Kg", plantas: ["Cervantes"] },
-      { key: "rollo2_nro", label: "Rollo 2 N°", plantas: ["Cervantes"] },
-      { key: "rollo2_kg", label: "Rollo 2 Kg", plantas: ["Cervantes"] },
-      { key: "rollo3_nro", label: "Rollo 3 N°", plantas: ["Cervantes"] },
-      { key: "rollo3_kg", label: "Rollo 3 Kg", plantas: ["Cervantes"] },
+      { key: "rollo1_nro", label: "Cant Rollos 1", plantas: ["Cervantes"] },
+      { key: "rollo1_kg", label: "Kg c/u 1", plantas: ["Cervantes"] },
+      { key: "rollo2_nro", label: "Cant Rollos 2", plantas: ["Cervantes"] },
+      { key: "rollo2_kg", label: "Kg c/u 2", plantas: ["Cervantes"] },
+      { key: "rollo3_nro", label: "Cant Rollos 3", plantas: ["Cervantes"] },
+      { key: "rollo3_kg", label: "Kg c/u 3", plantas: ["Cervantes"] },
       { key: "stock_kg", label: "Stock Kg", plantas: ["Virgilio", "San Roque"] },
     ],
     cartones: [
@@ -88,12 +88,16 @@
   // Columnas CALCULADAS (no editables; se guardan solas). Flejes Cervantes: Total Kg = suma de los kg de rollos.
   const COMPUTED = {
     flejes: [{
+      // Total Kg = suma de (cantidad de rollos x kg por rollo) de los 3 slots.
+      // Varios slots porque puede haber rollos partidos (usados un poco) con pesos distintos.
       key: "total_kg", label: "Total Kg", plantas: ["Cervantes"],
       compute: (v) => {
-        const nums = ["rollo1_kg", "rollo2_kg", "rollo3_kg"]
-          .map(k => parseFloat(String(v && v[k] != null ? v[k] : "").replace(",", ".")))
-          .filter(x => !isNaN(x));
-        return nums.length ? String(Math.round(nums.reduce((a, b) => a + b, 0) * 1000) / 1000) : "";
+        const num = (k) => { const x = parseFloat(String(v && v[k] != null ? v[k] : "").replace(",", ".")); return isNaN(x) ? 0 : x; };
+        const pares = [["rollo1_nro", "rollo1_kg"], ["rollo2_nro", "rollo2_kg"], ["rollo3_nro", "rollo3_kg"]];
+        const hayAlgo = pares.some(([n, k]) => String(v && v[n] != null ? v[n] : "").trim() !== "" || String(v && v[k] != null ? v[k] : "").trim() !== "");
+        if (!hayAlgo) return "";
+        const total = pares.reduce((acc, [n, k]) => acc + num(n) * num(k), 0);
+        return String(Math.round(total * 1000) / 1000);
       }
     }],
   };
