@@ -41,7 +41,7 @@
   const INFO_COLS = {
     cajas:     [["n_caja", "N° Caja"]],
     flejes:    [["n_fleje", "N° Fleje"]],
-    cartones:  [["cod", "Cód"], ["linea", "L"]],
+    cartones:  [["cod", "Cód"], ["linea", "Linea"]],
     plasticos: [["nuevo_sector", "Sector N"]],
     remaches:  [["sector_crudo", "S.Crudo"]],
     bombillas: [],
@@ -107,6 +107,8 @@
   const esc = (s) => { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; };
   // Titulo de columna: si tiene un espacio, se parte en dos lineas (en el primer espacio)
   const titleBreak = (s) => { s = String(s == null ? "" : s); const i = s.indexOf(" "); return i < 0 ? esc(s) : esc(s.slice(0, i)) + "<br>" + esc(s.slice(i + 1)); };
+  // Parte un valor por "-" en varias lineas (ej. cod "Bomb-CH" -> "Bomb"/"CH")
+  const dashBreak = (s) => String(s == null ? "" : s).split("-").map(esc).join("<br>");
   const norm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const fmtFecha = (f) => { if (!f) return ""; const [y, m, d] = String(f).slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
 
@@ -314,7 +316,10 @@
     $("detBody").innerHTML = rows.map(r => {
       let froz = `<td class="desc" style="${fz(0, false)}">${esc(r.descripcion)}</td>`;
       froz += `<td style="${fz(1, false)}">${esc(r.sector)}</td>`;
-      info.forEach(([k], i) => froz += `<td style="${fz(2 + i, false)}">${esc(r.info ? r.info[k] : "")}</td>`);
+      info.forEach(([k], i) => {
+        const raw = r.info ? r.info[k] : "";
+        froz += `<td style="${fz(2 + i, false)}">${k === "cod" ? dashBreak(raw) : esc(raw)}</td>`;
+      });
       const inputs = cols.map(c => {
         const v = r.conteo && r.conteo[c.key] != null ? r.conteo[c.key] : "";
         return `<td style="text-align:center"><input class="ci" data-det="${r.det_id}" data-key="${c.key}" type="number" inputmode="decimal" step="any" value="${esc(v)}"></td>`;
