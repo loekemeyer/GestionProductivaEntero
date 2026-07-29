@@ -43,7 +43,7 @@
     flejes:    [["n_fleje", "N° Fleje"]],
     cartones:  [["cod", "Cód"], ["linea", "L"], ["uni_x_paq", "Uni x Paq"]],
     plasticos: [["nuevo_sector", "Sector N"], ["uni_x_bolsa", "Uni x Bolsa"]],
-    remaches:  [["cod_isis", "ISIS"], ["sector_crudo", "S.Crudo"], ["proveedor", "Prov"], ["kg_x_bolsa", "Kg x Bolsa"]],
+    remaches:  [["sector_crudo", "S.Crudo"], ["kg_x_bolsa", "Kg x Bolsa"]],
     bombillas: [["cod_isis", "ISIS"], ["proveedor", "Prov"], ["uni_x_bc", "Uni x B/C"]],
     garage:    [["taller_prov", "Taller"], ["cod_art", "Cód Art"]],
   };
