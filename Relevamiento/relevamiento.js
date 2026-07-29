@@ -148,17 +148,21 @@
     for (const r of RELS) {
       if (!last[r.tipo]) continue;
       const cur = last[r.tipo][r.planta];
-      if (!cur || r.fecha > cur) last[r.tipo][r.planta] = r.fecha; // 'YYYY-MM-DD' compara bien
+      if (!cur || r.fecha > cur.fecha) last[r.tipo][r.planta] = { fecha: r.fecha, encargado: r.encargado }; // 'YYYY-MM-DD' compara bien
     }
     let html = `<table><thead><tr><th>Tipo</th>`;
-    for (const p of PLANTAS) html += `<th style="text-align:center">${p}</th>`;
+    for (const p of PLANTAS) html += `<th>${p}</th>`;
     html += `</tr></thead><tbody>`;
     for (const t of TIPOS) {
       html += `<tr><td class="tipo">${t.label}</td>`;
       for (const p of PLANTAS) {
         const aplica = (PLANTAS_TIPO[t.key] || []).includes(p);
         const f = last[t.key][p];
-        html += `<td class="cell">${!aplica ? `<span class="muted" title="No aplica">·</span>` : (f ? fmtFecha(f) : `<span class="muted">—</span>`)}</td>`;
+        let cell = `<span class="muted" title="No aplica">·</span>`;
+        if (aplica) cell = f
+          ? `${fmtFecha(f.fecha)}${f.encargado ? `<div class="muted" style="font-size:14px">${esc(f.encargado)}</div>` : ""}`
+          : `<span class="muted">—</span>`;
+        html += `<td class="cell">${cell}</td>`;
       }
       html += `</tr>`;
     }
