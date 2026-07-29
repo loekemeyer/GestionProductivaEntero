@@ -338,7 +338,10 @@
     const comps = computedFor(rel.tipo, rel.planta);
 
     // Columnas congeladas lateralmente (identificadores): Descripción + Sector + info
-    const W_DESC = 165, W_SECTOR = 60, W_INFO = 92;
+    // Ancho de Sector = al máximo de caracteres del contenido (mín. 5), con la letra grande del contenido (22px).
+    const secLens = rows.map(r => String(r.sector == null ? "" : r.sector).length);
+    const maxSec = Math.max(5, secLens.length ? Math.max.apply(null, secLens) : 5);
+    const W_DESC = 165, W_SECTOR = Math.min(190, maxSec * 15 + 20), W_INFO = 92;
     const frozen = [{ w: W_DESC }, { w: W_SECTOR }].concat(info.map(() => ({ w: W_INFO })));
     let accL = 0; frozen.forEach(f => { f.left = accL; accL += f.w; });
     const lastFz = frozen.length - 1;
