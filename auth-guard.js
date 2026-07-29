@@ -29,6 +29,8 @@
       'prov serv/entregas/entregaps.html',
       // Recepción Insumos
       'stockflejes/recepcion.html',
+      // Relevamiento (insumos - logística)
+      'relevamiento/relevamiento.html',
       // Avanzado (solo pantalla grande, gated por CSS en envios-only.html)
       'produccion/monitor.html',
       'produccion/maestro.html',
