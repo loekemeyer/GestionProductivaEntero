@@ -57,6 +57,30 @@
   .bar{height:6px;background:#eef0f2;border-radius:4px;overflow:hidden;min-width:120px;flex:0 0 120px}
   .bar > i{display:block;height:100%;background:#0a7a2f}
 
+  /* grupos: 1 relevamiento = varios lugares */
+  .grupo{border:1px solid #e2e7ec;border-radius:10px;overflow:hidden}
+  .grupo.incompleto{border-color:#e6a2a2}
+  .grupo-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;background:#f4f7f9}
+  .grupo.incompleto .grupo-head{background:#fdf0f0}
+  .grupo-lugares{display:flex;flex-direction:column;gap:6px;padding:8px 12px}
+  .lugar-chip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border-radius:8px}
+  .lugar-chip.incompleto{background:#fdecec}
+  .lugar-chip.ok{background:#eef6f0}
+  .lugar-chip .lc-info{flex:1;min-width:170px;font-size:14px}
+  .lugar-chip .lc-info b{font-size:15px}
+  .lugar-chip .cnt{font-weight:800;margin:0 6px}
+  .lugar-chip .lc-fecha{color:#5a6672}
+  .lugar-chip .lc-acts{display:flex;gap:6px;margin-left:auto}
+  #detBody tr.dirty td.desc::after{content:" ●";color:#c00}
+
+  /* modal agregar lugar */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+  .modal{background:#fff;border-radius:14px;padding:18px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+  .modal h3{font-size:18px;font-weight:800}
+  .modal .field{width:100%}
+  .modal .field select,.modal .field input{width:100%}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:4px}
+
   /* detalle carga */
   .det-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
   .det-head .search{height:50px;border:2px solid #d0d7de;border-radius:8px;padding:0 12px;font-size:18px;flex:1;min-width:200px}
@@ -137,6 +161,8 @@
         <button class="btn btn-ghost sm" id="btnVolver">← Volver</button>
         <input class="search" id="detSearch" placeholder="Buscar por descripción, sector o código…"/>
         <span class="prog" id="detProg"></span>
+        <span class="prog" id="detUnsaved" style="color:#c00"></span>
+        <button class="btn btn-green" id="btnGuardar" disabled>Guardar</button>
       </div>
       <div class="tbl-scroll">
         <table id="detTable">
@@ -147,10 +173,24 @@
     </div>
   </div>
 
+  <!-- Modal: agregar otro lugar al mismo relevamiento -->
+  <div id="modalAgregar" class="modal-bg" style="display:none">
+    <div class="modal">
+      <h3 id="agTitulo">Agregar lugar</h3>
+      <div class="field"><label>Lugar</label><select id="agPlanta"></select></div>
+      <div class="field"><label>Fecha</label><input type="date" id="agFecha"/></div>
+      <div class="field"><label>Encargado <span style="color:#c00">*</span></label><input type="text" id="agEncargado" placeholder="Obligatorio — quién releva"/></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="agCancelar">Cancelar</button>
+        <button class="btn btn-dark" id="agConfirmar">Agregar</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script src="../version.js?v=20260617b"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="relevamiento.js?v=20260729n"></script>
+<script src="relevamiento.js?v=20260729o"></script>
 </body>
 </html>
