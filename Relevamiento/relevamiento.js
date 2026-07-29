@@ -119,6 +119,26 @@
     return (CONTEO_COLS[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
   }
 
+  // Pares que van juntos: si uno tiene valor, el otro también (flejes: cantidad + kg del mismo rollo).
+  const PAIR_VALID = {
+    flejes: [["rollo1_nro", "rollo1_kg"], ["rollo2_nro", "rollo2_kg"], ["rollo3_nro", "rollo3_kg"]],
+  };
+  // Marca en rojo el input que falta de un par y devuelve las claves con error de esa fila.
+  function marcarErroresPar(tr) {
+    tr.querySelectorAll("input.ci").forEach(i => i.classList.remove("ci-error"));
+    const pairs = PAIR_VALID[DET.rel && DET.rel.tipo]; if (!pairs) return [];
+    const get = k => tr.querySelector(`input.ci[data-key="${k}"]`);
+    const errs = [];
+    for (const [a, b] of pairs) {
+      const ia = get(a), ib = get(b);
+      if (!ia || !ib) continue; // el par no está en esta planta
+      const fa = ia.value.trim() !== "", fb = ib.value.trim() !== "";
+      if (fa !== fb) errs.push(fa ? b : a); // el que falta
+    }
+    errs.forEach(k => { const i = get(k); if (i) i.classList.add("ci-error"); });
+    return errs;
+  }
+
   function showMsg(text, kind) {
     const m = $("msg");
     if (!text) { m.innerHTML = ""; return; }
@@ -380,6 +400,7 @@
       ).join("");
       return `<tr data-det="${r.det_id}" class="${r.cargado ? "loaded" : ""}">${froz}${inputs}${compCells}</tr>`;
     }).join("");
+    if (PAIR_VALID[rel.tipo]) document.querySelectorAll("#detBody tr").forEach(marcarErroresPar);
     updateProg();
   }
 
@@ -401,6 +422,7 @@
       tr.querySelectorAll("input.ci").forEach(i => { vals[i.dataset.key] = i.value.trim(); });
       comps.forEach(c => { const cell = tr.querySelector(`td.computed[data-key="${c.key}"]`); if (cell) cell.textContent = c.compute(vals); });
     }
+    marcarErroresPar(tr);
     updateGuardarState();
   });
 
@@ -434,10 +456,11 @@
     if (!DET.dirty.size) return;
     const btn = $("btnGuardar"); btn.disabled = true;
     const comps = computedFor(DET.rel.tipo, DET.rel.planta);
-    let ok = 0, fail = 0;
+    let ok = 0, fail = 0, invalid = 0;
     for (const detId of [...DET.dirty]) {
       const tr = document.querySelector(`#detBody tr[data-det="${detId}"]`);
       if (!tr) { DET.dirty.delete(detId); continue; }
+      if (marcarErroresPar(tr).length) { invalid++; continue; } // par incompleto: no se guarda
       const vals = {};
       tr.querySelectorAll("input.ci").forEach(i => { vals[i.dataset.key] = i.value.trim(); });
       comps.forEach(c => { vals[c.key] = c.compute(vals); });
@@ -458,7 +481,8 @@
     }
     btn.disabled = false;
     updateProg(); updateGuardarState();
-    if (fail) showMsg(`Guardado con errores: ${ok} ok, ${fail} fallaron (¿estás logueado?).`, "err");
+    if (invalid) showMsg(`Guardado ${ok}. ${invalid} fila(s) con par incompleto (cargá cantidad Y kg) quedaron en rojo, sin guardar.`, "err");
+    else if (fail) showMsg(`Guardado con errores: ${ok} ok, ${fail} fallaron (¿estás logueado?).`, "err");
     else showMsg(`Guardado (${ok} fila${ok === 1 ? "" : "s"}).`, "ok");
   }
 
