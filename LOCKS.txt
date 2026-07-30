@@ -1,11 +1,11 @@
 [LOCKS]
-LockX | Relevamiento/relevamiento.js | loekemeyer | 2026-07-29 | vista combinada por lugar + total al Ver multi-lugar
-LockX | Relevamiento/relevamiento.html | loekemeyer | 2026-07-29 | contenedor detLugares + css + bump ?v
+(libre)
 
 [WAIT QUEUE]
 (vacío)
 
 [HISTORIAL]
+2026-07-29 - Relevamiento (?v=20260729x): VISTA COMBINADA al "Ver" un relevamiento con VARIOS lugares (solo lectura): tabla con cada pieza -> valor de cada lugar (aporteBase: flejes en kg = total_kg/stock_kg; cajas/plasticos en unidades = paq*uni_x_paq + sueltas, bolsas*uni_x_bolsa + sueltas) + columna TOTAL, y fila TOTAL general (suma por lugar + gran total). Barra #detLugares por lugar con "Detalle" (abre ese lugar solo-lectura) y ✕ borrar. "Ver" con 1 solo lugar abre directo ese lugar solo-lectura. Merge de lugares por posicion (mismo catalogo/orden). loekemeyer.
 2026-07-29 - Relevamiento (?v=20260729w): GUARDAR solo se habilita cuando el LUGAR esta COMPLETO (todos los renglones con al menos un dato y, en flejes, sin pares cant/kg a medias). estadoCarga() cuenta sinDato + errPar en vivo; el indicador muestra "Faltan N renglones" / "N pares incompletos". Decision del usuario: NO se guarda progreso parcial. loekemeyer.
 2026-07-29 - Relevamiento (?v=20260729v): VER = SOLO LECTURA. abrirDetalle(relId, readonly): en readonly los inputs van disabled, sin boton "T" de tandas, sin boton Guardar ni indicador sin-guardar, titulo "(solo ver)". "Ver" (grupo y chip ver-lugar) y el clic en una celda de "Ultimo Relevamiento" abren en solo lectura. Para MODIFICAR: boton "Cargar <lugar>" que aparece por cada planta que falta cargar -> si no existe abre el alta (cargar-falta), si existe pero incompleta abre editable (act editar). loekemeyer.
 2026-07-29 - Relevamiento (?v=20260729u): (1) "Ultimo Relevamiento": cada celda con dato es clickable (data-relid = id del ultimo relev de ese tipo+planta) -> abrirDetalle; el ENCARGADO se muestra mas grande y en negrita (.enc 18px bold). (2) "Anteriores": las acciones del grupo pasan a "Ver" + un boton "Cargar <lugar>" por cada planta que falte (data-act cargar-falta -> abrirAgregar con planta preseleccionada). "Ver": si el grupo tiene 1 solo lugar lo abre directo, si tiene varios despliega/oculta los chips de lugares (ocultos por defecto). Se saco el boton "+ Agregar lugar" generico. loekemeyer.
