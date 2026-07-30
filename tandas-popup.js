@@ -60,6 +60,7 @@
       unidadCaj: "caj",
       unidadKg: "kg",
       unidadUni: "uni",
+      multiplicar: false,   // si true, el total Kg = suma de (caj x kg) por tanda (ej. flejes: cant rollos x kg c/u)
       onConfirm: null
     }, opts || {});
     tandas = (config.initial || []).map(t => ({
@@ -84,7 +85,7 @@
     const validas = tandas.filter(t => t.caj > 0 || t.kg > 0 || t.uni > 0);
     const totales = {
       caj: validas.reduce((s, t) => s + (Number(t.caj) || 0), 0),
-      kg: validas.reduce((s, t) => s + (parseDecimal(t.kg) || 0), 0),
+      kg: validas.reduce((s, t) => s + kgDe(t), 0),
       uni: validas.reduce((s, t) => s + (Number(t.uni) || 0), 0)
     };
     if (typeof config.onConfirm === "function"){
@@ -104,6 +105,12 @@
       if (inputKg) tandas[i].kg = parseDecimal(inputKg.value);
       if (inputUni) tandas[i].uni = parseInt(inputUni.value, 10) || 0;
     });
+  }
+
+  // Kg que aporta una tanda: normal = su kg; con multiplicar = cant x kg (ej. flejes)
+  function kgDe(t){
+    const kg = parseDecimal(t.kg) || 0;
+    return (config && config.multiplicar) ? (Number(t.caj) || 0) * kg : kg;
   }
 
   function parseDecimal(v){
@@ -149,7 +156,7 @@
     const totales = { caj: 0, kg: 0, uni: 0 };
     tandas.forEach(t => {
       totales.caj += Number(t.caj) || 0;
-      totales.kg += parseDecimal(t.kg) || 0;
+      totales.kg += kgDe(t);
       totales.uni += Number(t.uni) || 0;
     });
     const totalCells = [`<div class="lbl">Total</div>`];
@@ -205,7 +212,7 @@
     const totales = { caj: 0, kg: 0, uni: 0 };
     tandas.forEach(t => {
       totales.caj += Number(t.caj) || 0;
-      totales.kg += parseDecimal(t.kg) || 0;
+      totales.kg += kgDe(t);
       totales.uni += Number(t.uni) || 0;
     });
     const cells = [`<div class="lbl">Total</div>`];

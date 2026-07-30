@@ -60,12 +60,9 @@
       { key: "uni", label: "Unidades", plantas: ["Virgilio"] },
     ],
     flejes: [
-      { key: "rollo1_nro", label: "Cant Rollos 1", plantas: ["Cervantes"] },
-      { key: "rollo1_kg", label: "Kg c/u 1", plantas: ["Cervantes"] },
-      { key: "rollo2_nro", label: "Cant Rollos 2", plantas: ["Cervantes"] },
-      { key: "rollo2_kg", label: "Kg c/u 2", plantas: ["Cervantes"] },
-      { key: "rollo3_nro", label: "Cant Rollos 3", plantas: ["Cervantes"] },
-      { key: "rollo3_kg", label: "Kg c/u 3", plantas: ["Cervantes"] },
+      // Cervantes: cada fleje puede tener varios rollos (algunos usados a distinto peso) -> se cargan POR TANDAS
+      // (Cant rollos x Kg c/u); el Total Kg = suma de (cant x kg) cae en esta celda. Boton "T" abre el popup.
+      { key: "total_kg", label: "Total Kg", plantas: ["Cervantes"], tandas: true, flejeTandas: true },
       { key: "stock_kg", label: "Stock Kg", plantas: ["Virgilio", "San Roque"] },
     ],
     cartones: [
@@ -89,22 +86,9 @@
     ],
   };
 
-  // Columnas CALCULADAS (no editables; se guardan solas). Flejes Cervantes: Total Kg = suma de los kg de rollos.
-  const COMPUTED = {
-    flejes: [{
-      // Total Kg = suma de (cantidad de rollos x kg por rollo) de los 3 slots.
-      // Varios slots porque puede haber rollos partidos (usados un poco) con pesos distintos.
-      key: "total_kg", label: "Total Kg", plantas: ["Cervantes"],
-      compute: (v) => {
-        const num = (k) => { const x = parseFloat(String(v && v[k] != null ? v[k] : "").replace(",", ".")); return isNaN(x) ? 0 : x; };
-        const pares = [["rollo1_nro", "rollo1_kg"], ["rollo2_nro", "rollo2_kg"], ["rollo3_nro", "rollo3_kg"]];
-        const hayAlgo = pares.some(([n, k]) => String(v && v[n] != null ? v[n] : "").trim() !== "" || String(v && v[k] != null ? v[k] : "").trim() !== "");
-        if (!hayAlgo) return "";
-        const total = pares.reduce((acc, [n, k]) => acc + num(n) * num(k), 0);
-        return String(Math.round(total * 1000) / 1000);
-      }
-    }],
-  };
+  // Columnas CALCULADAS (no editables; se guardan solas). Flejes Cervantes ya no calcula acá:
+  // el Total Kg se ingresa directo o por tandas (Cant rollos x Kg c/u) desde el popup.
+  const COMPUTED = {};
   const computedFor = (tipo, planta) => (COMPUTED[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
 
   // Unidad base para el TOTAL de la vista combinada, y aporte de cada lugar en esa unidad.
@@ -135,10 +119,8 @@
     return (CONTEO_COLS[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
   }
 
-  // Pares que van juntos: si uno tiene valor, el otro también (flejes: cantidad + kg del mismo rollo).
-  const PAIR_VALID = {
-    flejes: [["rollo1_nro", "rollo1_kg"], ["rollo2_nro", "rollo2_kg"], ["rollo3_nro", "rollo3_kg"]],
-  };
+  // Pares que van juntos: si uno tiene valor, el otro también. (Flejes ya no usa pares: carga por tandas.)
+  const PAIR_VALID = {};
   // Marca en rojo el input que falta de un par y devuelve las claves con error de esa fila.
   function marcarErroresPar(tr) {
     tr.querySelectorAll("input.ci").forEach(i => i.classList.remove("ci-error"));
@@ -554,13 +536,28 @@
     updateGuardarState();
   });
 
-  // Botón "T": cargar por tandas (uni sueltas de cartones/cajas). La suma cae en el input.
+  // Botón "T": cargar por tandas. Uni sueltas (cajas/cartones) -> suma de unidades.
+  // Flejes Cervantes (Total Kg) -> cada tanda es Cant rollos x Kg c/u; el total ponderado cae en el input.
   $("detBody").addEventListener("click", (e) => {
     const b = e.target.closest(".ci-tandas"); if (!b) return;
     const detId = b.dataset.det, key = b.dataset.key;
     const inp = document.querySelector(`#detBody input.ci[data-det="${detId}"][data-key="${key}"]`);
     if (!inp || !window.tandasPopup) return;
+    const col = (DET.cols || []).find(c => c.key === key) || {};
     const cur = parseFloat(String(inp.value).replace(",", ".")) || 0;
+    if (col.flejeTandas) {
+      window.tandasPopup.open({
+        titulo: "Tandas — Rollos (Cant × Kg c/u)",
+        pedirCaj: true, pedirKg: true, pedirUni: false, multiplicar: true,
+        unidadCaj: "Cant rollos", unidadKg: "Kg c/u",
+        initial: cur > 0 ? [{ caj: 1, kg: cur }] : [],
+        onConfirm: (t, totales) => {
+          inp.value = totales.kg ? (Math.round(totales.kg * 1000) / 1000) : "";
+          inp.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      });
+      return;
+    }
     window.tandasPopup.open({
       titulo: "Tandas — Uni sueltas",
       pedirCaj: false, pedirKg: false, pedirUni: true, unidadUni: "uni",
