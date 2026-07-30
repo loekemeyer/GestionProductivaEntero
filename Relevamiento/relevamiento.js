@@ -555,6 +555,17 @@
     }).join("");
     // Sin fila de TOTAL general: sumar piezas distintas no tiene sentido. El "Total" por fila = misma pieza entre lugares.
     $("detBody").innerHTML = body;
+    ajustarAnchoTabla();
+  }
+
+  // Ajusta la tabla para que ENTRE COMPLETA a lo ancho del contenedor (sin scroll horizontal),
+  // en cualquier resolucion. Si es mas ancha que el contenedor, la achica con zoom.
+  function ajustarAnchoTabla() {
+    const t = $("detTable"); if (!t) return;
+    const wrap = t.closest(".tbl-scroll"); if (!wrap) return;
+    t.style.zoom = "1";
+    const avail = wrap.clientWidth, need = t.scrollWidth;
+    if (need > 0 && avail > 0 && need > avail) t.style.zoom = String(Math.max(0.4, (avail - 1) / need));
   }
 
   function renderDetalle() {
@@ -627,7 +638,15 @@
     }).join("");
     if (PAIR_VALID[rel.tipo]) document.querySelectorAll("#detBody tr").forEach(marcarErroresPar);
     updateProg();
+    ajustarAnchoTabla();
   }
+
+  // Al cambiar el tamaño de la ventana, reajustar la tabla si el detalle está visible.
+  let _rzT = null;
+  window.addEventListener("resize", () => {
+    if ($("vistaDetalle").style.display === "none") return;
+    clearTimeout(_rzT); _rzT = setTimeout(ajustarAnchoTabla, 120);
+  });
 
   function updateProg() {
     const total = DET.rows.length;
