@@ -161,19 +161,25 @@
     renderList();
   }
 
-  // Totales y por lugar: por cada tipo x planta muestra la FECHA del último relevamiento (sin columna Total)
-  function renderResumen() {
-    const box = $("resumenBox");
-    // Agrupar por tanda (grupo_id) y quedarse con la ÚLTIMA tanda de cada tipo (mayor fecha).
+  // Última tanda (grupo) de cada tipo: tipo -> { g, rels, maxFecha }. Es el "relevamiento actual" de cada tipo.
+  function ultimasTandasPorTipo() {
     const groups = new Map();
     for (const r of RELS) { const g = r.grupo_id || r.id; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); }
-    const ultima = {}; // tipo -> { g, rels, maxFecha }
+    const ultima = {};
     for (const [g, rels] of groups) {
       const tipo = rels[0].tipo;
       const maxFecha = rels.reduce((m, r) => (r.fecha > m ? r.fecha : m), rels[0].fecha);
       const cur = ultima[tipo];
       if (!cur || maxFecha > cur.maxFecha || (maxFecha === cur.maxFecha && g > cur.g)) ultima[tipo] = { g, rels, maxFecha };
     }
+    return ultima;
+  }
+
+  // Totales y por lugar: por cada tipo x planta muestra la FECHA del último relevamiento (sin columna Total)
+  function renderResumen() {
+    const box = $("resumenBox");
+    // Quedarse con la ÚLTIMA tanda de cada tipo (mayor fecha).
+    const ultima = ultimasTandasPorTipo();
 
     let html = `<table><thead><tr><th>Tipo</th>`;
     for (const p of PLANTAS) html += `<th>${p}</th>`;
@@ -216,9 +222,52 @@
     return { rels, tipo: rels[0].tipo, items, cargados, maxFecha, completo: items > 0 && cargados >= items };
   }
 
+  // HTML de una tarjeta de grupo (relevamiento = varios lugares). Se usa en "actual" y en "anteriores".
+  function renderGrupoCard(grp) {
+    const pct = grp.items ? Math.round((grp.cargados / grp.items) * 100) : 0;
+    const chips = grp.rels.slice().sort((a, b) => PLANTAS.indexOf(a.planta) - PLANTAS.indexOf(b.planta)).map(r => {
+      const rojo = !(r.items > 0 && r.cargados >= r.items);
+      return `<div class="lugar-chip ${rojo ? "incompleto" : "ok"}">
+        <span class="lc-info"><b>${esc(r.planta)}</b> <span class="cnt">${r.cargados}/${r.items}</span>
+          <span class="lc-fecha">${fmtFecha(r.fecha)}${r.encargado ? " · " + esc(r.encargado) : ""}</span></span>
+        <span class="lc-acts">
+          <button class="btn btn-ghost sm" data-act="ver-lugar" data-id="${r.id}">Ver</button>
+          <button class="btn btn-red sm" data-act="borrar" data-id="${r.id}" title="Borrar este lugar">✕</button>
+        </span>
+      </div>`;
+    }).join("");
+    // Botón "Cargar <lugar>" por cada planta que falta cargar (no existe, o existe pero incompleta)
+    const pendientes = (PLANTAS_TIPO[grp.tipo] || []).map(p => {
+      const rel = grp.rels.find(r => r.planta === p);
+      const completo = rel && rel.items > 0 && rel.cargados >= rel.items;
+      if (completo) return "";
+      if (rel) return `<button class="btn btn-green sm" data-act="editar" data-id="${rel.id}">Cargar ${esc(p)}</button>`;
+      return `<button class="btn btn-green sm" data-act="cargar-falta" data-grupo="${grp.g}" data-tipo="${grp.tipo}" data-planta="${esc(p)}">Cargar ${esc(p)}</button>`;
+    }).join("");
+    return `<div class="grupo ${grp.completo ? "" : "incompleto"}" data-grupo="${grp.g}">
+      <div class="grupo-head">
+        <span class="tag">${esc(TIPO_LABEL[grp.tipo] || grp.tipo)}</span>
+        <span class="fecha">${fmtFecha(grp.maxFecha)}</span>
+        <span class="bar"><i style="width:${pct}%"></i></span>
+        <span class="prog">${grp.cargados}/${grp.items}${grp.completo ? "" : ` · <b style="color:#c00">incompleto</b>`}</span>
+        <span class="rel-actions">
+          <button class="btn btn-ghost sm" data-act="ver" data-grupo="${grp.g}">Ver</button>
+          ${pendientes}
+        </span>
+      </div>
+      <div class="grupo-lugares" data-grupo="${grp.g}" style="display:none">${chips}</div>
+    </div>`;
+  }
+
   function renderList() {
-    const box = $("relList");
-    if (!RELS.length) { box.innerHTML = `<div class="empty">Todavía no hay relevamientos. Generá uno arriba.</div>`; return; }
+    const boxAct = $("relActual"), boxAnt = $("relList");
+    if (!RELS.length) {
+      boxAct.innerHTML = `<div class="empty">Todavía no hay relevamientos. Generá uno arriba.</div>`;
+      boxAnt.innerHTML = `<div class="empty">No hay relevamientos anteriores.</div>`;
+      return;
+    }
+    // "Actual" = la última tanda de cada tipo (lo mismo que muestra "Último Relevamiento").
+    const actualSet = new Set(Object.values(ultimasTandasPorTipo()).map(u => u.g));
     const groups = new Map();
     for (const r of RELS) {
       const g = r.grupo_id || r.id;
@@ -228,43 +277,10 @@
     const arr = [...groups.entries()].map(([g, rels]) => Object.assign({ g }, grupoDeRels(rels)));
     arr.sort((a, b) => (a.maxFecha < b.maxFecha ? 1 : a.maxFecha > b.maxFecha ? -1 : b.g - a.g));
 
-    box.innerHTML = arr.map(grp => {
-      const pct = grp.items ? Math.round((grp.cargados / grp.items) * 100) : 0;
-      const plantasEn = grp.rels.map(r => r.planta);
-      const faltan = (PLANTAS_TIPO[grp.tipo] || []).filter(p => !plantasEn.includes(p));
-      const chips = grp.rels.slice().sort((a, b) => PLANTAS.indexOf(a.planta) - PLANTAS.indexOf(b.planta)).map(r => {
-        const rojo = !(r.items > 0 && r.cargados >= r.items);
-        return `<div class="lugar-chip ${rojo ? "incompleto" : "ok"}">
-          <span class="lc-info"><b>${esc(r.planta)}</b> <span class="cnt">${r.cargados}/${r.items}</span>
-            <span class="lc-fecha">${fmtFecha(r.fecha)}${r.encargado ? " · " + esc(r.encargado) : ""}</span></span>
-          <span class="lc-acts">
-            <button class="btn btn-ghost sm" data-act="ver-lugar" data-id="${r.id}">Ver</button>
-            <button class="btn btn-red sm" data-act="borrar" data-id="${r.id}" title="Borrar este lugar">✕</button>
-          </span>
-        </div>`;
-      }).join("");
-      // Botón "Cargar <lugar>" por cada planta que falta cargar (no existe, o existe pero incompleta)
-      const pendientes = (PLANTAS_TIPO[grp.tipo] || []).map(p => {
-        const rel = grp.rels.find(r => r.planta === p);
-        const completo = rel && rel.items > 0 && rel.cargados >= rel.items;
-        if (completo) return "";
-        if (rel) return `<button class="btn btn-green sm" data-act="editar" data-id="${rel.id}">Cargar ${esc(p)}</button>`;
-        return `<button class="btn btn-green sm" data-act="cargar-falta" data-grupo="${grp.g}" data-tipo="${grp.tipo}" data-planta="${esc(p)}">Cargar ${esc(p)}</button>`;
-      }).join("");
-      return `<div class="grupo ${grp.completo ? "" : "incompleto"}" data-grupo="${grp.g}">
-        <div class="grupo-head">
-          <span class="tag">${esc(TIPO_LABEL[grp.tipo] || grp.tipo)}</span>
-          <span class="fecha">${fmtFecha(grp.maxFecha)}</span>
-          <span class="bar"><i style="width:${pct}%"></i></span>
-          <span class="prog">${grp.cargados}/${grp.items}${grp.completo ? "" : ` · <b style="color:#c00">incompleto</b>`}</span>
-          <span class="rel-actions">
-            <button class="btn btn-ghost sm" data-act="ver" data-grupo="${grp.g}">Ver</button>
-            ${pendientes}
-          </span>
-        </div>
-        <div class="grupo-lugares" data-grupo="${grp.g}" style="display:none">${chips}</div>
-      </div>`;
-    }).join("");
+    const actuales = arr.filter(grp => actualSet.has(grp.g));
+    const anteriores = arr.filter(grp => !actualSet.has(grp.g));
+    boxAct.innerHTML = actuales.length ? actuales.map(renderGrupoCard).join("") : `<div class="empty">No hay relevamiento actual.</div>`;
+    boxAnt.innerHTML = anteriores.length ? anteriores.map(renderGrupoCard).join("") : `<div class="empty">No hay relevamientos anteriores.</div>`;
   }
 
   // ---------------------------------------------------------------------------
@@ -305,7 +321,7 @@
   // ---------------------------------------------------------------------------
   // ACCIONES lista
   // ---------------------------------------------------------------------------
-  $("relList").addEventListener("click", async (e) => {
+  async function onListClick(e) {
     const b = e.target.closest("button[data-act]"); if (!b) return;
     const act = b.dataset.act;
     if (act === "ver") {
@@ -325,7 +341,9 @@
       if (error) { showMsg("No se pudo borrar: " + error.message, "err"); return; }
       showMsg("Lugar borrado.", "ok"); cargarLista(); return;
     }
-  });
+  }
+  $("relActual").addEventListener("click", onListClick);
+  $("relList").addEventListener("click", onListClick);
 
   // ---------------------------------------------------------------------------
   // AGREGAR LUGAR (otro lugar al mismo relevamiento, con su encargado y fecha)
