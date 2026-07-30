@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-07-31 - Relevamiento (?v=20260731b): bordes de las tablas en NEGRO — th,td border #9aa6b2 -> #111; separador de las columnas fijas (fz border-right) #6b7885 -> #111. loekemeyer.
 2026-07-31 - Relevamiento (?v=20260731a): FIX "Relevamiento actual" — se elegia la tanda de MAYOR FECHA, asi una tanda vieja con un lugar post-fechado (ej. cajas grupo 51 con Virgilio 31/07) le ganaba a una tanda NUEVA recien creada (grupo 62, 30/07), que caia en "anteriores". Ahora ultimasTandasPorTipo elige la tanda CREADA MAS RECIENTE (mayor grupo_id): una tanda nueva siempre "pisa" a las anteriores. Afecta tambien la tabla "Último Relevamiento" (usa la misma func). loekemeyer.
 2026-07-30 - Relevamiento (?v=20260730z): el relevamiento se ORDENA POR SECTOR (orden natural: A1<A2<A10<B1, via cmpNat/cmpSector, desempate por orden del catalogo). Aplica en la tabla de carga (abrirDetalle ordena DET.rows) y en la combinada (se ordena cada lugar con el mismo criterio para mantener alineadas las filas por indice). loekemeyer.
 2026-07-30 - Relevamiento (?v=20260730y): en el popup de composicion de FLEJES se saca el prefijo "Rollo N:"; cada rollo se muestra solo como "N rollo(s) × K kg". loekemeyer.
