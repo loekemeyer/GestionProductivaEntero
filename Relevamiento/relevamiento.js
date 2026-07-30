@@ -240,7 +240,6 @@
     if (error) { showMsg("Error leyendo relevamientos: " + error.message, "err"); return; }
     RELS = data || [];
     renderCronograma();
-    renderList();
   }
 
   // Última tanda (grupo) de cada tipo: tipo -> { g, rels, maxFecha }. Es el "relevamiento actual" de cada tipo.
@@ -350,9 +349,12 @@
   // y la fecha VIBRA si faltan ≤3 días hábiles (o ya venció) y no se completó.
   function renderCronograma() {
     const box = $("cronoBox"); if (!box) return;
-    const lineas = TIPOS.map(t => {
-      const cfg = CRONOGRAMA[t.key]; if (!cfg) return "";
-      const px = proximaCervantes(t.key);
+    // Ordenar por FECHA a realizar: más cercana primero.
+    const orden = TIPOS.filter(t => CRONOGRAMA[t.key])
+      .map(t => ({ t, px: proximaCervantes(t.key) }))
+      .sort((a, b) => a.px.adj - b.px.adj);
+    const lineas = orden.map(({ t, px }) => {
+      const cfg = CRONOGRAMA[t.key];
       const plantas = PLANTAS_TIPO[t.key] || ["Cervantes"];
       const estados = plantas.map(p => Object.assign({ p }, estadoLugar(t.key, p, px.cicloInicio)));
       const cervHecho = (estados.find(e => e.p === "Cervantes") || {}).hecho;
@@ -576,8 +578,7 @@
       showMsg("Lugar borrado.", "ok"); cargarLista(); return;
     }
   }
-  $("relActual").addEventListener("click", onListClick);
-  $("relList").addEventListener("click", onListClick);
+  // (Listas "actual"/"anteriores" removidas: el cronograma es la vista única.)
 
   // ---------------------------------------------------------------------------
   // AGREGAR LUGAR (otro lugar al mismo relevamiento, con su encargado y fecha)
