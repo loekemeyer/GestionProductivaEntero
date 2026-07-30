@@ -329,38 +329,47 @@
     return { raw, adj: proxHabil(raw), cicloInicio: addDias(ancla, (k - 1) * X) };
   }
 
-  // Estado de un lugar para el ciclo actual (¿se hizo desde cicloInicio?)
-  function estadoLugar(tipo, planta, cicloInicio, ancla) {
+  // Estado de un lugar para el ciclo actual. HECHO solo si se COMPLETÓ el relevamiento de este ciclo
+  // (fecha estrictamente posterior al inicio del ciclo). El ancla NO cuenta como hecho para la fecha que viene.
+  function estadoLugar(tipo, planta, cicloInicio) {
     const done = ultimaCompletada(tipo, planta);
-    let last = done ? parseYmd(done.fecha) : null;
-    if (planta === "Cervantes" && (!last || ancla > last)) last = ancla; // el ancla es el último manual de Cervantes
-    return { hecho: !!(last && last >= cicloInicio), encargado: done ? done.encargado : null };
+    const last = done ? parseYmd(done.fecha) : null;
+    return { hecho: !!(last && last > cicloInicio), encargado: done ? done.encargado : null };
   }
 
+  // Días HÁBILES desde hoy hasta target (0 si es hoy o ya pasó -> urgente).
+  function bizDiasHasta(target) {
+    const hoy = hoyDate();
+    if (target <= hoy) return 0;
+    let n = 0, d = hoy, g = 0;
+    while (d < target && g++ < 999) { d = addDias(d, 1); if (!esNoHabil(d)) n++; }
+    return n;
+  }
+
+  // Cronograma LÍNEA POR LÍNEA (no tabla). Cada línea muestra la próxima fecha, el estado por lugar,
+  // y la fecha VIBRA si faltan ≤3 días hábiles (o ya venció) y no se completó.
   function renderCronograma() {
     const box = $("cronoBox"); if (!box) return;
-    const hoy = hoyDate();
-    let html = `<table><thead><tr><th>Relevamiento</th><th>Fecha a<br>realizar</th><th>Estado por lugar</th><th>Realizar</th></tr></thead><tbody>`;
-    for (const t of TIPOS) {
-      const cfg = CRONOGRAMA[t.key]; if (!cfg) continue;
+    const lineas = TIPOS.map(t => {
+      const cfg = CRONOGRAMA[t.key]; if (!cfg) return "";
       const px = proximaCervantes(t.key);
-      const ancla = parseYmd(cfg.ancla);
       const plantas = PLANTAS_TIPO[t.key] || ["Cervantes"];
-      const chips = plantas.map(p => {
-        const st = estadoLugar(t.key, p, px.cicloInicio, ancla);
-        const extra = t.key === "plasticos" ? " " + (PLASTICO_LUGAR[p] || "") : "";
-        return `<span class="crono-chip ${st.hecho ? "ok" : "falta"}">${esc((ABREV_PLANTA[p] || p) + extra)} ${st.hecho ? "✓" : "✗"}${st.encargado ? `<span class="crono-enc">${esc(st.encargado)}</span>` : ""}</span>`;
+      const estados = plantas.map(p => Object.assign({ p }, estadoLugar(t.key, p, px.cicloInicio)));
+      const cervHecho = (estados.find(e => e.p === "Cervantes") || {}).hecho;
+      const todosHechos = estados.every(e => e.hecho);
+      const vibra = !cervHecho && bizDiasHasta(px.adj) <= 3;
+      const chips = estados.map(e => {
+        const extra = t.key === "plasticos" ? " " + (PLASTICO_LUGAR[e.p] || "") : "";
+        return `<span class="crono-chip ${e.hecho ? "ok" : "falta"}">${esc((ABREV_PLANTA[e.p] || e.p) + extra)} ${e.hecho ? "✓" : "✗"}${e.encargado ? `<span class="crono-enc">${esc(e.encargado)}</span>` : ""}</span>`;
       }).join("");
-      const vencido = px.adj <= hoy;
-      html += `<tr>
-        <td class="crono-tipo">${esc(t.label)}</td>
-        <td class="crono-fecha${vencido ? " vencido" : ""}">${fmtFecha(toYmd(px.adj))}</td>
-        <td class="crono-estado">${chips}</td>
-        <td><button class="btn btn-green sm" data-realizar="${t.key}">Realizar</button></td>
-      </tr>`;
-    }
-    html += `</tbody></table>`;
-    box.innerHTML = html;
+      return `<div class="crono-linea${todosHechos ? " completo" : ""}">
+        <div class="cl-tipo">${esc(t.label)}</div>
+        <div class="cl-fecha${vibra ? " vibra" : ""}"><span class="cl-lbl">${cervHecho ? "Próximo" : "A realizar"}</span>${fmtFecha(toYmd(px.adj))}</div>
+        <div class="cl-chips">${chips}</div>
+        <button class="btn btn-green sm cl-btn" data-realizar="${t.key}">Realizar</button>
+      </div>`;
+    }).join("");
+    box.innerHTML = lineas || `<div class="empty">Sin cronograma.</div>`;
   }
 
   // Flujo "Realizar": elegir lugar + encargado -> crea (o retoma) el relevamiento y abre la carga.
