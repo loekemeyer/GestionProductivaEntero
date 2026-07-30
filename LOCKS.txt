@@ -1,10 +1,11 @@
 [LOCKS]
-(libre)
+(vacío)
 
 [WAIT QUEUE]
 (vacío)
 
 [HISTORIAL]
+2026-07-31 - Relevamiento (?v=20260731h): CLICK en una línea del cronograma abre el TOTAL de la última tanda de ese tipo (abrirCombinado si tiene varios lugares, abrirDetalle solo-lectura si es 1). El botón "Realizar" sigue funcionando aparte (return antes). La línea es .crono-linea[data-tipo] con cursor:pointer + hover. Así los ya hechos siguen siendo líneas y se ve su total al clickear (excepto el botón Realizar). loekemeyer.
 2026-07-31 - Relevamiento (?v=20260731g): (1) el Cronograma se ORDENA por fecha a realizar (más cercana primero: orden = TIPOS -> proximaCervantes, sort por px.adj asc). (2) Se SACAN las cards "Relevamiento actual" y "Relevamientos anteriores" (relActual/relList) del HTML — el cronograma es la vista única. En JS: cargarLista ya no llama renderList; se quitan los addEventListener de relActual/relList (renderList/onListClick/renderGrupoCard quedan sin usar). loekemeyer.
 2026-07-31 - Supabase (DATOS): REVERTIDO + RECONSTRUIDO el sector de cat_cartones desde la hoja "Conteo VACIO" del Excel que paso el usuario (Conteo_Pedido_Cartones_VACIO.xlsx). El fill anterior desde "Sector Carton" estaba MAL (los cartones sin sector son DESCONTINUADOS, deben quedar en blanco). Rebuild por (cod + descripcion normalizada + ocurrencia): cat_cartones queda 243 = 186 con sector / 57 sin (identico al conteo). Las 2 filas extra del conteo (245) son separadores "Pliegos Adhesivado/SIN Adhesivar" (cod='Cod'), no se cargan. Nota: usuario cuenta 181/64 = excluye 5 accesorios con sector al final (Corbatas LK/CH, Banditas LK/CH, Colador Ø7cm); total 245 coincide. Excepciones Virgilio: fleje polipropileno (cod 0507) y film strech (cod 0497) -> quedan sin sector en Cervantes. loekemeyer.
 2026-07-31 - Supabase (DATOS, sin cambio de codigo): cat_cartones tenia 57 filas SIN sector (venian en blanco de la planilla). Se completaron 51 desde public."Sector Carton" (tabla madre de cartones, match por descripcion normalizada -> sector unico; los ambiguos tambien por descripcion+cod). Solo se llenaron blancos (reversible: set sector=null). Quedan 6 sin resolver (cartones en varios sectores o inexistentes en Sector Carton: 506 Abrelatas Uña V2A/V3A, 706 Abrelatas Uña 706 CH V2C/V2D x2, Bomb-CH Bombilla Chef A1D/A2C, 715 Bolsa Cierra Bolsa s/dato, 0497 Film Strecht Virgen s/dato) + 1 remache "Tornillo Sacafuente" (Imel) sin sector_proc. Pendiente que el usuario confirme esos. loekemeyer.

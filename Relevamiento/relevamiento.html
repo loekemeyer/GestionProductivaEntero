@@ -146,8 +146,10 @@
 
   /* cronograma (línea por línea, NO tabla) */
   #cronoBox{display:flex;flex-direction:column;gap:10px}
-  .crono-linea{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 14px;border:1px solid #111;border-radius:10px;background:#fff}
+  .crono-linea{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 14px;border:1px solid #111;border-radius:10px;background:#fff;cursor:pointer}
+  .crono-linea:hover{background:#f4f7fb}
   .crono-linea.completo{background:#f2faf5;border-color:#bfe3cd}
+  .crono-linea.completo:hover{background:#e8f5ee}
   .cl-tipo{font-size:19px;font-weight:800;min-width:120px}
   .cl-fecha{font-size:20px;font-weight:800;display:flex;flex-direction:column;line-height:1.05;min-width:130px}
   .cl-fecha .cl-lbl{font-size:11px;font-weight:700;color:#5a6672;text-transform:uppercase;letter-spacing:.04em}
@@ -251,6 +253,6 @@
 <script src="../version.js?v=20260617b"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../tandas-popup.js?v=20260730i"></script>
-<script src="relevamiento.js?v=20260731g"></script>
+<script src="relevamiento.js?v=20260731h"></script>
 </body>
 </html>
