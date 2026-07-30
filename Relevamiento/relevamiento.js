@@ -450,7 +450,6 @@
     head += `<th>Total${unit ? ` (${unit})` : ""}</th></tr>`;
     $("detHead").innerHTML = head;
 
-    const totLugar = {}; rels.forEach(r => totLugar[r.planta] = 0); let totGrand = 0;
     const body = items.map(it => {
       let tds = "";
       if (showDesc) tds += `<td>${esc(it.ident.descripcion)}</td>`;
@@ -459,19 +458,14 @@
       let sum = 0;
       rels.forEach(r => {
         const v = aporteBase(tipo, r.planta, it.porLugar[r.planta], it.ident.info);
-        sum += v; totLugar[r.planta] += v;
+        sum += v;
         tds += `<td class="num">${fmtNum(v, tipo)}</td>`;
       });
-      totGrand += sum;
       tds += `<td class="num" style="font-weight:800">${fmtNum(sum, tipo)}</td>`;
       return `<tr>${tds}</tr>`;
     }).join("");
-
-    const identCols = (showDesc ? 1 : 0) + 1 + info.length;
-    let foot = `<tr class="tot-row"><td colspan="${identCols}" style="text-align:center;font-weight:800">TOTAL</td>`;
-    rels.forEach(r => foot += `<td class="num" style="font-weight:800">${fmtNum(totLugar[r.planta], tipo)}</td>`);
-    foot += `<td class="num" style="font-weight:900">${fmtNum(totGrand, tipo)}</td></tr>`;
-    $("detBody").innerHTML = body + foot;
+    // Sin fila de TOTAL general: sumar piezas distintas no tiene sentido. El "Total" por fila = misma pieza entre lugares.
+    $("detBody").innerHTML = body;
   }
 
   function renderDetalle() {
