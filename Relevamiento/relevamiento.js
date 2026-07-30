@@ -239,7 +239,7 @@
       .order("id", { ascending: false });
     if (error) { showMsg("Error leyendo relevamientos: " + error.message, "err"); return; }
     RELS = data || [];
-    renderResumen();
+    renderCronograma();
     renderList();
   }
 
@@ -257,6 +257,146 @@
       if (!cur || g > cur.g) ultima[tipo] = { g, rels, maxFecha };
     }
     return ultima;
+  }
+
+  // ===========================================================================
+  // CRONOGRAMA — cada relevamiento se hace cada X días, contando desde una fecha
+  // ancla (grilla fija). Si la fecha cae sábado/domingo/feriado, se corre al
+  // próximo día hábil. Los feriados se traen por API (con cache y fallback).
+  // ===========================================================================
+  const CRONOGRAMA = {
+    garage:    { frecuencia: 7,  ancla: "2026-07-24" },
+    remaches:  { frecuencia: 40, ancla: "2026-06-25" }, // ancla + 40 = 04/08 (próximo, aún sin hacer)
+    bombillas: { frecuencia: 30, ancla: "2026-07-16" },
+    cajas:     { frecuencia: 40, ancla: "2026-07-13" },
+    flejes:    { frecuencia: 40, ancla: "2026-07-08" },
+    plasticos: { frecuencia: 30, ancla: "2026-07-28" },
+    cartones:  { frecuencia: 40, ancla: "2026-07-23" },
+  };
+  const PLASTICO_LUGAR = { Cervantes: "partes", Virgilio: "bolsas" };
+
+  let FERIADOS = new Set();
+  // Fallback (nacionales AR, trasladables ya corridos) por si la API/CORS falla:
+  const FERIADOS_FALLBACK = [
+    "2026-01-01","2026-02-16","2026-02-17","2026-03-24","2026-04-02","2026-05-01",
+    "2026-05-25","2026-06-15","2026-06-20","2026-07-09","2026-08-17","2026-10-12",
+    "2026-11-23","2026-12-08","2026-12-25",
+    "2027-01-01","2027-02-15","2027-02-16","2027-03-24","2027-04-02","2027-05-01",
+    "2027-05-25","2027-06-21","2027-07-09","2027-08-16","2027-10-11","2027-11-22",
+    "2027-12-08","2027-12-25",
+  ];
+  async function cargarFeriados() {
+    FERIADOS = new Set(FERIADOS_FALLBACK);
+    const hoy = new Date();
+    for (const y of [hoy.getFullYear(), hoy.getFullYear() + 1]) {
+      try {
+        const ck = "rc_feriados_" + y;
+        let arr = null;
+        try { const c = localStorage.getItem(ck); if (c) arr = JSON.parse(c); } catch (e) {}
+        if (!arr) {
+          const resp = await fetch("https://api.argentinadatos.com/v1/feriados/" + y);
+          if (resp.ok) { arr = await resp.json(); try { localStorage.setItem(ck, JSON.stringify(arr)); } catch (e) {} }
+        }
+        if (Array.isArray(arr)) arr.forEach(f => { if (f && f.fecha) FERIADOS.add(String(f.fecha).slice(0, 10)); });
+      } catch (e) { /* queda el fallback */ }
+    }
+  }
+
+  // Utils de fecha (sin hora)
+  const parseYmd = (s) => { const [y, m, d] = String(s).slice(0, 10).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+  const toYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const addDias = (d, n) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() + n); return x; };
+  const esNoHabil = (d) => { const w = d.getDay(); return w === 0 || w === 6 || FERIADOS.has(toYmd(d)); };
+  const proxHabil = (d) => { let x = d, g = 0; while (esNoHabil(x) && g++ < 40) x = addDias(x, 1); return x; };
+  const hoyDate = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+
+  // Último relevamiento COMPLETADO (cargados>=items) de un tipo+lugar
+  function ultimaCompletada(tipo, planta) {
+    const done = RELS.filter(r => r.tipo === tipo && r.planta === planta && r.items > 0 && r.cargados >= r.items);
+    return done.length ? done.reduce((a, b) => (a.fecha > b.fecha ? a : b)) : null;
+  }
+
+  // Próxima fecha a realizar (grilla fija desde ancla) tomando Cervantes como referencia
+  function proximaCervantes(tipo) {
+    const cfg = CRONOGRAMA[tipo]; if (!cfg) return null;
+    const ancla = parseYmd(cfg.ancla), X = cfg.frecuencia, MS = 86400000;
+    let ref = ancla;
+    const doneCerv = ultimaCompletada(tipo, "Cervantes");
+    if (doneCerv) { const fd = parseYmd(doneCerv.fecha); if (fd > ref) ref = fd; }
+    let k = Math.floor((ref - ancla) / (X * MS)) + 1; if (k < 1) k = 1;
+    let raw = addDias(ancla, k * X);
+    while (raw <= ref) { k++; raw = addDias(ancla, k * X); }
+    return { raw, adj: proxHabil(raw), cicloInicio: addDias(ancla, (k - 1) * X) };
+  }
+
+  // Estado de un lugar para el ciclo actual (¿se hizo desde cicloInicio?)
+  function estadoLugar(tipo, planta, cicloInicio, ancla) {
+    const done = ultimaCompletada(tipo, planta);
+    let last = done ? parseYmd(done.fecha) : null;
+    if (planta === "Cervantes" && (!last || ancla > last)) last = ancla; // el ancla es el último manual de Cervantes
+    return { hecho: !!(last && last >= cicloInicio), encargado: done ? done.encargado : null };
+  }
+
+  function renderCronograma() {
+    const box = $("cronoBox"); if (!box) return;
+    const hoy = hoyDate();
+    let html = `<table><thead><tr><th>Relevamiento</th><th>Fecha a<br>realizar</th><th>Estado por lugar</th><th>Realizar</th></tr></thead><tbody>`;
+    for (const t of TIPOS) {
+      const cfg = CRONOGRAMA[t.key]; if (!cfg) continue;
+      const px = proximaCervantes(t.key);
+      const ancla = parseYmd(cfg.ancla);
+      const plantas = PLANTAS_TIPO[t.key] || ["Cervantes"];
+      const chips = plantas.map(p => {
+        const st = estadoLugar(t.key, p, px.cicloInicio, ancla);
+        const extra = t.key === "plasticos" ? " " + (PLASTICO_LUGAR[p] || "") : "";
+        return `<span class="crono-chip ${st.hecho ? "ok" : "falta"}">${esc((ABREV_PLANTA[p] || p) + extra)} ${st.hecho ? "✓" : "✗"}${st.encargado ? `<span class="crono-enc">${esc(st.encargado)}</span>` : ""}</span>`;
+      }).join("");
+      const vencido = px.adj <= hoy;
+      html += `<tr>
+        <td class="crono-tipo">${esc(t.label)}</td>
+        <td class="crono-fecha${vencido ? " vencido" : ""}">${fmtFecha(toYmd(px.adj))}</td>
+        <td class="crono-estado">${chips}</td>
+        <td><button class="btn btn-green sm" data-realizar="${t.key}">Realizar</button></td>
+      </tr>`;
+    }
+    html += `</tbody></table>`;
+    box.innerHTML = html;
+  }
+
+  // Flujo "Realizar": elegir lugar + encargado -> crea (o retoma) el relevamiento y abre la carga.
+  let RZ = { tipo: null };
+  function abrirRealizar(tipo) {
+    RZ = { tipo };
+    $("rzTitulo").textContent = "Realizar — " + (TIPO_LABEL[tipo] || tipo);
+    const ps = PLANTAS_TIPO[tipo] || ["Cervantes"];
+    $("rzPlanta").innerHTML = ps.map(p => `<option value="${p}">${p}${tipo === "plasticos" ? " (" + (PLASTICO_LUGAR[p] || "") + ")" : ""}</option>`).join("");
+    $("rzFecha").value = toYmd(hoyDate());
+    $("rzEncargado").value = "";
+    $("rzEncargado").style.borderColor = "";
+    $("modalRealizar").style.display = "flex";
+    setTimeout(() => $("rzEncargado").focus(), 50);
+  }
+  function cerrarRealizar() { $("modalRealizar").style.display = "none"; }
+  async function confirmarRealizar() {
+    const tipo = RZ.tipo, planta = $("rzPlanta").value;
+    const fecha = $("rzFecha").value || toYmd(hoyDate());
+    const encargado = $("rzEncargado").value.trim();
+    if (!encargado) { $("rzEncargado").style.borderColor = "#c00"; $("rzEncargado").focus(); return; }
+    // Si ya hay un relevamiento de este tipo+lugar SIN completar, lo retomamos (no duplicar).
+    const pendiente = RELS.find(r => r.tipo === tipo && r.planta === planta && !(r.items > 0 && r.cargados >= r.items));
+    if (pendiente) { cerrarRealizar(); abrirDetalle(pendiente.id, false); return; }
+    const btn = $("rzConfirmar"); btn.disabled = true;
+    // Si la tanda actual del tipo está en progreso y le falta este lugar, sumamos el lugar; si no, tanda nueva.
+    const ult = ultimasTandasPorTipo()[tipo];
+    const enProgreso = ult && !ult.rels.every(r => r.items > 0 && r.cargados >= r.items) && !ult.rels.some(r => r.planta === planta);
+    let data, error;
+    if (enProgreso) ({ data, error } = await sb.rpc("rc_agregar_lugar", { p_grupo_id: ult.g, p_planta: planta, p_fecha: fecha, p_encargado: encargado }));
+    else ({ data, error } = await sb.rpc("rc_generar", { p_tipo: tipo, p_planta: planta, p_fecha: fecha, p_encargado: encargado }));
+    btn.disabled = false;
+    if (error) { showMsg("No se pudo iniciar (¿estás logueado?): " + error.message, "err"); return; }
+    cerrarRealizar();
+    await cargarLista();
+    abrirDetalle(data, false);
   }
 
   // Totales y por lugar: por cada tipo x planta muestra la FECHA del último relevamiento (sin columna Total)
@@ -911,18 +1051,15 @@
   $("btnGuardar").addEventListener("click", guardarTodo);
   $("btnGuardarBottom").addEventListener("click", guardarTodo);
 
-  // "Último Relevamiento": clic en el TIPO -> resumen del relevamiento; clic en una celda -> ese lugar. (solo lectura)
-  $("resumenBox").addEventListener("click", (e) => {
-    const tipoTd = e.target.closest("td[data-grupo]");
-    if (tipoTd) {
-      const g = Number(tipoTd.dataset.grupo);
-      const rels = RELS.filter(r => (r.grupo_id || r.id) === g);
-      if (rels.length === 1) abrirDetalle(rels[0].id, true); else abrirCombinado(g);
-      return;
-    }
-    const td = e.target.closest("td[data-relid]");
-    if (td) abrirDetalle(Number(td.dataset.relid), true);
+  // Cronograma: botón "Realizar" -> elegir lugar + encargado y abrir la carga.
+  $("cronoBox").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-realizar]");
+    if (b) abrirRealizar(b.dataset.realizar);
   });
+  $("rzConfirmar").addEventListener("click", confirmarRealizar);
+  $("rzCancelar").addEventListener("click", cerrarRealizar);
+  $("modalRealizar").addEventListener("click", (e) => { if (e.target.id === "modalRealizar") cerrarRealizar(); });
+  $("rzEncargado").addEventListener("input", () => { $("rzEncargado").style.borderColor = ""; });
 
   // Barra por-lugar de la vista combinada: Detalle (solo lectura) / borrar lugar
   $("detLugares").addEventListener("click", async (e) => {
@@ -958,6 +1095,5 @@
   });
 
   // ---------------------------------------------------------------------------
-  initNuevo();
-  cargarLista();
+  cargarFeriados().then(cargarLista);
 })();
