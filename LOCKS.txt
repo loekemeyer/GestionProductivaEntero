@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-07-30 - Relevamiento (?v=20260730d): vista combinada — encabezados de lugar ABREVIADOS (Cerv./Virg./San R. via ABREV_PLANTA) y "Total (uni)" en 2 lineas (titleBreak), padding de celdas 7/12 (antes 8/18) para ajustar mejor al contenido. loekemeyer.
 2026-07-30 - Relevamiento (?v=20260730c): vista combinada optimizada — #detTable.combined width:auto (antes 100% estiraba las columnas dejando huecos) + margin auto (centrada) + padding 8/18. Las columnas se ajustan al contenido. Se agrega/quita la clase 'combined' al #detTable en renderCombinado/renderDetalle. loekemeyer.
 2026-07-30 - Relevamiento (?v=20260730b): vista combinada — se SACA la fila "TOTAL" general (sumaba piezas distintas, sin sentido). Queda la columna "Total" por fila (misma pieza entre lugares). loekemeyer.
 2026-07-30 - Relevamiento (?v=20260730a): "Ultimo Relevamiento" ahora muestra la ULTIMA TANDA por tipo (agrupa por grupo_id, toma el grupo con mayor fecha) -> ya NO mezcla lugares de tandas/meses distintos en una fila (antes tomaba el ultimo por lugar suelto). Ademas, clic en el NOMBRE del tipo (columna Tipo, subrayado) abre el RESUMEN de esa tanda: vista combinada por lugar+total si tiene varios lugares, o el detalle solo-lectura si tiene uno. Las celdas por lugar siguen abriendo ese lugar solo-lectura. loekemeyer.

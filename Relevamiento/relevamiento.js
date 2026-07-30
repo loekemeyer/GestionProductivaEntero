@@ -25,6 +25,7 @@
   ];
   const TIPO_LABEL = Object.fromEntries(TIPOS.map(t => [t.key, t.label]));
   const PLANTAS = ["Cervantes", "Virgilio", "San Roque"];
+  const ABREV_PLANTA = { "Cervantes": "Cerv.", "Virgilio": "Virg.", "San Roque": "San R." };
 
   // Plantas donde aplica cada tipo (espejo de rc_plantas_tipo)
   const PLANTAS_TIPO = {
@@ -447,8 +448,8 @@
     if (showDesc) head += "<th>Descripción</th>";
     head += "<th>Sector</th>";
     info.forEach(([, lbl]) => head += `<th>${titleBreak(lbl)}</th>`);
-    rels.forEach(r => head += `<th>${esc(r.planta)}</th>`);
-    head += `<th>Total${unit ? ` (${unit})` : ""}</th></tr>`;
+    rels.forEach(r => head += `<th>${esc(ABREV_PLANTA[r.planta] || r.planta)}</th>`);
+    head += `<th>${titleBreak(`Total${unit ? ` (${unit})` : ""}`)}</th></tr>`;
     $("detHead").innerHTML = head;
 
     const body = items.map(it => {
