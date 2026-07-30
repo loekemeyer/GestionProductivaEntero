@@ -531,7 +531,7 @@
     const showDesc = !HIDE_DESC[tipo];
     const unit = BASE_UNIT[tipo] || "";
     let head = "<tr>";
-    if (showDesc) head += "<th>Descripción</th>";
+    if (showDesc) head += '<th class="desc-col">Descripción</th>';
     head += "<th>Sector</th>";
     info.forEach(([, lbl]) => head += `<th>${titleBreak(lbl)}</th>`);
     rels.forEach(r => head += `<th>${esc(ABREV_PLANTA[r.planta] || r.planta)}</th>`);
@@ -540,7 +540,7 @@
 
     const body = items.map((it, idx) => {
       let tds = "";
-      if (showDesc) tds += `<td>${tipo === "plasticos" ? wrapBreak(it.ident.descripcion, 10) : esc(it.ident.descripcion)}</td>`;
+      if (showDesc) tds += `<td class="desc-col">${tipo === "plasticos" ? wrapBreak(it.ident.descripcion, 10) : esc(it.ident.descripcion)}</td>`;
       tds += `<td style="font-weight:800;font-size:22px">${esc(it.ident.sector)}</td>`;
       info.forEach(([k]) => { const raw = it.ident.info ? it.ident.info[k] : ""; tds += `<td style="font-weight:800;font-size:22px">${k === "cod" ? dashBreak(raw) : titleBreak(raw)}</td>`; });
       let sum = 0;
@@ -555,17 +555,38 @@
     }).join("");
     // Sin fila de TOTAL general: sumar piezas distintas no tiene sentido. El "Total" por fila = misma pieza entre lugares.
     $("detBody").innerHTML = body;
+    fitDescCombinada();
     ajustarAnchoTabla();
   }
 
+  // Zoom minimo: la letra no se achica por debajo de esto. Si la tabla no entra a este tamaño,
+  // primero se ENVUELVE la descripcion (columna flexible); el zoom es el ultimo recurso.
+  const MIN_ZOOM = 0.72;
+
   // Ajusta la tabla para que ENTRE COMPLETA a lo ancho del contenedor (sin scroll horizontal),
-  // en cualquier resolucion. Si es mas ancha que el contenedor, la achica con zoom.
+  // sin bajar la letra de MIN_ZOOM (para eso la descripcion ya se angosto antes).
   function ajustarAnchoTabla() {
     const t = $("detTable"); if (!t) return;
     const wrap = t.closest(".tbl-scroll"); if (!wrap) return;
     t.style.zoom = "1";
     const avail = wrap.clientWidth, need = t.scrollWidth;
-    if (need > 0 && avail > 0 && need > avail) t.style.zoom = String(Math.max(0.4, (avail - 1) / need));
+    if (need > 0 && avail > 0 && need > avail) t.style.zoom = String(Math.max(MIN_ZOOM, (avail - 1) / need));
+  }
+
+  // Vista combinada: angosta la columna Descripcion (envolviendo el texto) hasta que la tabla
+  // entre a lo ancho, para no tener que achicar la letra. Minimo 90px de ancho de descripcion.
+  function fitDescCombinada() {
+    const t = $("detTable"); const wrap = t && t.closest(".tbl-scroll"); if (!wrap) return;
+    const cells = t.querySelectorAll(".desc-col"); if (!cells.length) return;
+    const avail = wrap.clientWidth; if (!avail) return;
+    const setW = w => cells.forEach(el => {
+      el.style.whiteSpace = "normal"; el.style.wordBreak = "break-word";
+      el.style.width = w == null ? "" : (w + "px"); el.style.maxWidth = w == null ? "" : (w + "px");
+    });
+    setW(null);
+    if (t.scrollWidth <= avail) return; // ya entra
+    let w = 300, guard = 0; setW(w);
+    while (t.scrollWidth > avail && w > 90 && guard++ < 60) { w -= 10; setW(w); }
   }
 
   function renderDetalle() {
@@ -578,12 +599,12 @@
     // Ancho de Sector = al máximo de caracteres del contenido (mín. 5), con la letra grande del contenido (22px).
     const secLens = rows.map(r => String(r.sector == null ? "" : r.sector).length);
     const maxSec = Math.max(5, secLens.length ? Math.max.apply(null, secLens) : 5);
-    // Plasticos: la descripcion se corta por palabra al pasar 10 chars -> ancho = a la linea mas larga.
+    // Plasticos: la descripcion se corta por palabra al pasar 10 chars -> ancho natural = a la linea mas larga.
     const descChunk = rel.tipo === "plasticos";
-    let W_DESC = 165;
+    let W_DESC_NAT = 165;
     if (descChunk) {
       const maxLine = rows.reduce((m, r) => { const ls = wrapLines(r.descripcion, 10); return ls.reduce((mm, l) => Math.max(mm, l.length), m); }, 8);
-      W_DESC = Math.min(210, Math.max(90, maxLine * 10 + 18));
+      W_DESC_NAT = Math.min(210, Math.max(90, maxLine * 10 + 18));
     }
     const W_SECTOR = Math.min(190, maxSec * 15 + 20);
     // Ancho de cada columna de info = al token mas largo (tras partir en espacio/guion, ya que el contenido va en doble linea).
@@ -594,6 +615,20 @@
       const max = Math.max(3, toks.length ? Math.max.apply(null, toks) : 3);
       return Math.min(140, max * 14 + 18);
     };
+    // Anchos de columnas de conteo/calculadas (input 82 + padding; +tandas).
+    const cW = c => (c.tandas ? 150 : 104);
+    const compW = 104;
+
+    // La DESCRIPCION es la columna FLEXIBLE: toma el ancho que sobra para que la tabla entre a lo
+    // ancho SIN achicar la letra (envuelve el texto en mas lineas). Minimo legible 90px.
+    const otrasW = W_SECTOR + info.reduce((a, [k, lbl]) => a + wInfo(k, lbl), 0) + cols.reduce((a, c) => a + cW(c), 0) + comps.length * compW;
+    const wrapEl0 = $("detTable").closest(".tbl-scroll");
+    const avail0 = wrapEl0 ? wrapEl0.clientWidth : 0;
+    let W_DESC = W_DESC_NAT;
+    if (!HIDE_DESC[rel.tipo] && avail0 > 0) {
+      const sobra = avail0 - otrasW - 8;
+      W_DESC = Math.max(90, Math.min(W_DESC_NAT, sobra));
+    }
 
     // Columnas congeladas lateralmente (identificadores). Descripción es opcional (se oculta en cajas).
     const fcols = [];
@@ -609,10 +644,6 @@
       if (i === lastFz) s += "border-right:2px solid #6b7885;";
       return s;
     };
-
-    // Ancho ajustado de las columnas de conteo: input (82px) + padding, y espacio extra si tiene botón "T" de tandas.
-    const cW = c => (c.tandas ? 150 : 104);
-    const compW = 104;
 
     let head = "<tr>";
     fcols.forEach((f, i) => head += `<th style="${fz(f, i, true)}">${titleBreak(f.head)}</th>`);
@@ -645,7 +676,7 @@
   let _rzT = null;
   window.addEventListener("resize", () => {
     if ($("vistaDetalle").style.display === "none") return;
-    clearTimeout(_rzT); _rzT = setTimeout(ajustarAnchoTabla, 120);
+    clearTimeout(_rzT); _rzT = setTimeout(() => { if (DET.combined) fitDescCombinada(); ajustarAnchoTabla(); }, 120);
   });
 
   function updateProg() {
