@@ -446,8 +446,8 @@
     const body = items.map(it => {
       let tds = "";
       if (showDesc) tds += `<td>${esc(it.ident.descripcion)}</td>`;
-      tds += `<td style="font-weight:700">${esc(it.ident.sector)}</td>`;
-      info.forEach(([k]) => { const raw = it.ident.info ? it.ident.info[k] : ""; tds += `<td style="font-weight:700">${k === "cod" ? dashBreak(raw) : esc(raw)}</td>`; });
+      tds += `<td style="font-weight:800;font-size:22px">${esc(it.ident.sector)}</td>`;
+      info.forEach(([k]) => { const raw = it.ident.info ? it.ident.info[k] : ""; tds += `<td style="font-weight:800;font-size:22px">${k === "cod" ? dashBreak(raw) : esc(raw)}</td>`; });
       let sum = 0;
       rels.forEach(r => {
         const v = aporteBase(tipo, r.planta, it.porLugar[r.planta], it.ident.info);
@@ -460,7 +460,7 @@
     }).join("");
 
     const identCols = (showDesc ? 1 : 0) + 1 + info.length;
-    let foot = `<tr class="tot-row"><td colspan="${identCols}" style="text-align:right;font-weight:800">TOTAL</td>`;
+    let foot = `<tr class="tot-row"><td colspan="${identCols}" style="text-align:center;font-weight:800">TOTAL</td>`;
     rels.forEach(r => foot += `<td class="num" style="font-weight:800">${fmtNum(totLugar[r.planta], tipo)}</td>`);
     foot += `<td class="num" style="font-weight:900">${fmtNum(totGrand, tipo)}</td></tr>`;
     $("detBody").innerHTML = body + foot;
