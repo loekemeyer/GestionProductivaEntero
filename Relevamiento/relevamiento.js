@@ -618,10 +618,13 @@
     // Anchos de columnas de conteo/calculadas (input 82 + padding; +tandas).
     const cW = c => (c.tandas ? 150 : 104);
     const compW = 104;
+    // Boton "0" (poner el renglon en cero) en relevamientos de mas de 1 input o por tandas.
+    const showZero = !DET.readonly && (cols.length > 1 || cols.some(c => c.tandas));
+    const W_ZERO = 60;
 
     // La DESCRIPCION es la columna FLEXIBLE: toma el ancho que sobra para que la tabla entre a lo
     // ancho SIN achicar la letra (envuelve el texto en mas lineas). Minimo legible 90px.
-    const otrasW = W_SECTOR + info.reduce((a, [k, lbl]) => a + wInfo(k, lbl), 0) + cols.reduce((a, c) => a + cW(c), 0) + comps.length * compW;
+    const otrasW = W_SECTOR + info.reduce((a, [k, lbl]) => a + wInfo(k, lbl), 0) + cols.reduce((a, c) => a + cW(c), 0) + comps.length * compW + (showZero ? W_ZERO : 0);
     const wrapEl0 = $("detTable").closest(".tbl-scroll");
     const avail0 = wrapEl0 ? wrapEl0.clientWidth : 0;
     let W_DESC = W_DESC_NAT;
@@ -649,6 +652,7 @@
     fcols.forEach((f, i) => head += `<th style="${fz(f, i, true)}">${titleBreak(f.head)}</th>`);
     for (const c of cols) head += `<th style="text-align:center;width:${cW(c)}px;min-width:${cW(c)}px">${titleBreak(c.label)}</th>`;
     for (const c of comps) head += `<th style="text-align:center;width:${compW}px;min-width:${compW}px">${titleBreak(c.label)}</th>`;
+    if (showZero) head += `<th style="text-align:center;width:${W_ZERO}px;min-width:${W_ZERO}px" title="Sin stock">0</th>`;
     head += `</tr>`;
     $("detHead").innerHTML = head;
 
@@ -664,8 +668,10 @@
       const compCells = comps.map(c =>
         `<td class="computed" data-key="${c.key}" style="text-align:center;font-weight:800;color:#0a7a2f;width:${compW}px;min-width:${compW}px">${esc(c.compute(r.conteo || {}))}</td>`
       ).join("");
+      // Boton "0": pone TODO el renglón en cero (sin stock). Solo cuando showZero.
+      const zeroCell = showZero ? `<td style="text-align:center;width:${W_ZERO}px;min-width:${W_ZERO}px"><button class="ci-zero" data-det="${r.det_id}" type="button" title="Sin stock (poner el renglón en 0)">0</button></td>` : "";
       // En solo-lectura la fila es clickable -> popup de composición de esa pieza.
-      return `<tr data-det="${r.det_id}" class="${r.cargado ? "loaded" : ""}${DET.readonly ? " ro-row" : ""}"${DET.readonly ? ' title="Ver composición"' : ""}>${froz}${inputs}${compCells}</tr>`;
+      return `<tr data-det="${r.det_id}" class="${r.cargado ? "loaded" : ""}${DET.readonly ? " ro-row" : ""}"${DET.readonly ? ' title="Ver composición"' : ""}>${froz}${inputs}${compCells}${zeroCell}</tr>`;
     }).join("");
     if (PAIR_VALID[rel.tipo]) document.querySelectorAll("#detBody tr").forEach(marcarErroresPar);
     updateProg();
@@ -743,6 +749,14 @@
 
   // "T" o clic sobre el input de solo-tandas (flejes) abren el popup.
   $("detBody").addEventListener("click", (e) => {
+    // Boton "0": poner TODO el renglón en cero (sin stock). Flejes: además limpia los rollos.
+    const z = e.target.closest(".ci-zero");
+    if (z) {
+      const tr = z.closest("tr"); if (!tr) return;
+      if (DET.rollos) DET.rollos[Number(z.dataset.det)] = [];
+      tr.querySelectorAll("input.ci").forEach(i => { i.value = "0"; i.dispatchEvent(new Event("input", { bubbles: true })); });
+      return;
+    }
     const b = e.target.closest(".ci-tandas");
     if (b) { abrirTandasDet(b.dataset.det, b.dataset.key); return; }
     const inp = e.target.closest("input.ci-tanda-only");
