@@ -505,10 +505,14 @@
       return s;
     };
 
+    // Ancho ajustado de las columnas de conteo: input (82px) + padding, y espacio extra si tiene botón "T" de tandas.
+    const cW = c => (c.tandas ? 150 : 104);
+    const compW = 104;
+
     let head = "<tr>";
     fcols.forEach((f, i) => head += `<th style="${fz(f, i, true)}">${titleBreak(f.head)}</th>`);
-    for (const c of cols) head += `<th style="text-align:center">${titleBreak(c.label)}</th>`;
-    for (const c of comps) head += `<th style="text-align:center">${titleBreak(c.label)}</th>`;
+    for (const c of cols) head += `<th style="text-align:center;width:${cW(c)}px;min-width:${cW(c)}px">${titleBreak(c.label)}</th>`;
+    for (const c of comps) head += `<th style="text-align:center;width:${compW}px;min-width:${compW}px">${titleBreak(c.label)}</th>`;
     head += `</tr>`;
     $("detHead").innerHTML = head;
 
@@ -517,10 +521,10 @@
       const inputs = cols.map(c => {
         const v = r.conteo && r.conteo[c.key] != null ? r.conteo[c.key] : "";
         const tb = (c.tandas && !DET.readonly) ? `<button class="ci-tandas" data-det="${r.det_id}" data-key="${c.key}" type="button" title="Cargar por tandas">T</button>` : "";
-        return `<td style="text-align:center;white-space:nowrap"><input class="ci" data-det="${r.det_id}" data-key="${c.key}" type="number" inputmode="decimal" step="any" value="${esc(v)}"${DET.readonly ? " disabled" : ""}>${tb}</td>`;
+        return `<td style="text-align:center;white-space:nowrap;width:${cW(c)}px;min-width:${cW(c)}px"><input class="ci" data-det="${r.det_id}" data-key="${c.key}" type="number" inputmode="decimal" step="any" value="${esc(v)}"${DET.readonly ? " disabled" : ""}>${tb}</td>`;
       }).join("");
       const compCells = comps.map(c =>
-        `<td class="computed" data-key="${c.key}" style="text-align:center;font-weight:800;color:#0a7a2f">${esc(c.compute(r.conteo || {}))}</td>`
+        `<td class="computed" data-key="${c.key}" style="text-align:center;font-weight:800;color:#0a7a2f;width:${compW}px;min-width:${compW}px">${esc(c.compute(r.conteo || {}))}</td>`
       ).join("");
       return `<tr data-det="${r.det_id}" class="${r.cargado ? "loaded" : ""}">${froz}${inputs}${compCells}</tr>`;
     }).join("");
