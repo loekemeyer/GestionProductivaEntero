@@ -56,7 +56,7 @@
   const CONTEO_COLS = {
     cajas: [
       { key: "conteo_paq", label: "Paquetes", plantas: ["Cervantes"] },
-      { key: "uni_suelta", label: "Uni sueltas", plantas: ["Cervantes"], tandas: true, tandasPaqKey: "conteo_paq", tandasPaqLabel: "Paquetes" },
+      { key: "uni_suelta", label: "Uni sueltas", plantas: ["Cervantes"], tandas: true },
       { key: "uni", label: "Unidades", plantas: ["Virgilio"] },
     ],
     flejes: [
@@ -67,7 +67,7 @@
     ],
     cartones: [
       { key: "conteo_paquete", label: "Paquetes" },
-      { key: "uni_suelta", label: "Uni sueltas", tandas: true, tandasPaqKey: "conteo_paquete", tandasPaqLabel: "Paquetes" },
+      { key: "uni_suelta", label: "Uni sueltas", tandas: true },
     ],
     plasticos: [
       { key: "stock_relev_bolsa", label: "Bolsas" },
@@ -749,23 +749,6 @@
           // Guardar el desglose (cada rollo con su cant y kg) para que no se combinen al reabrir.
           if (DET.rollos) DET.rollos[detNum] = tandas.map(t => ({ caj: Number(t.caj) || 0, kg: parseFloat(String(t.kg).replace(",", ".")) || 0 }));
           inp.value = totales.kg ? (Math.round(totales.kg * 1000) / 1000) : "";
-          inp.dispatchEvent(new Event("input", { bubbles: true }));
-        }
-      });
-      return;
-    }
-    // Cajas/Cartones: la tanda carga LOS 2 INPUTS (Paquetes + Uni sueltas); cada suma cae en su input.
-    if (col.tandasPaqKey) {
-      const inpPaq = document.querySelector(`#detBody input.ci[data-det="${detId}"][data-key="${col.tandasPaqKey}"]`);
-      const curPaq = inpPaq ? (parseFloat(String(inpPaq.value).replace(",", ".")) || 0) : 0;
-      window.tandasPopup.open({
-        titulo: `Tandas — ${col.tandasPaqLabel} + Uni sueltas`,
-        pedirCaj: true, pedirKg: false, pedirUni: true, grande: true,
-        unidadCaj: col.tandasPaqLabel, unidadUni: "Uni sueltas",
-        initial: (curPaq > 0 || cur > 0) ? [{ caj: curPaq, uni: cur }] : [],
-        onConfirm: (t, totales) => {
-          if (inpPaq) { inpPaq.value = totales.caj || ""; inpPaq.dispatchEvent(new Event("input", { bubbles: true })); }
-          inp.value = totales.uni || "";
           inp.dispatchEvent(new Event("input", { bubbles: true }));
         }
       });
