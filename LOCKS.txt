@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-07-30 - Relevamiento (?v=20260730a): "Ultimo Relevamiento" ahora muestra la ULTIMA TANDA por tipo (agrupa por grupo_id, toma el grupo con mayor fecha) -> ya NO mezcla lugares de tandas/meses distintos en una fila (antes tomaba el ultimo por lugar suelto). Ademas, clic en el NOMBRE del tipo (columna Tipo, subrayado) abre el RESUMEN de esa tanda: vista combinada por lugar+total si tiene varios lugares, o el detalle solo-lectura si tiene uno. Las celdas por lugar siguen abriendo ese lugar solo-lectura. loekemeyer.
 2026-07-29 - Relevamiento (?v=20260729z): segundo boton GUARDAR grande (.big-save) al FINAL de la tabla de carga, sincronizado con el de arriba (mismo estado/texto via updateGuardarState sobre ambos) y oculto en solo-lectura/combinada. loekemeyer.
 2026-07-29 - Relevamiento (?v=20260729y): vista combinada — contenido CENTRADO y letra grande: td.num center + 23px (antes right, chico); valores de Sector/info 22px bold; fila TOTAL 23px centrada. loekemeyer.
 2026-07-29 - Relevamiento (?v=20260729x): VISTA COMBINADA al "Ver" un relevamiento con VARIOS lugares (solo lectura): tabla con cada pieza -> valor de cada lugar (aporteBase: flejes en kg = total_kg/stock_kg; cajas/plasticos en unidades = paq*uni_x_paq + sueltas, bolsas*uni_x_bolsa + sueltas) + columna TOTAL, y fila TOTAL general (suma por lugar + gran total). Barra #detLugares por lugar con "Detalle" (abre ese lugar solo-lectura) y ✕ borrar. "Ver" con 1 solo lugar abre directo ese lugar solo-lectura. Merge de lugares por posicion (mismo catalogo/orden). loekemeyer.

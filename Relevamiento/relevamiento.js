@@ -181,26 +181,32 @@
   // Totales y por lugar: por cada tipo x planta muestra la FECHA del último relevamiento (sin columna Total)
   function renderResumen() {
     const box = $("resumenBox");
-    const last = {};
-    for (const t of TIPOS) last[t.key] = {};
-    for (const r of RELS) {
-      if (!last[r.tipo]) continue;
-      const cur = last[r.tipo][r.planta];
-      if (!cur || r.fecha > cur.fecha) last[r.tipo][r.planta] = { fecha: r.fecha, encargado: r.encargado, id: r.id }; // 'YYYY-MM-DD' compara bien
+    // Agrupar por tanda (grupo_id) y quedarse con la ÚLTIMA tanda de cada tipo (mayor fecha).
+    const groups = new Map();
+    for (const r of RELS) { const g = r.grupo_id || r.id; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); }
+    const ultima = {}; // tipo -> { g, rels, maxFecha }
+    for (const [g, rels] of groups) {
+      const tipo = rels[0].tipo;
+      const maxFecha = rels.reduce((m, r) => (r.fecha > m ? r.fecha : m), rels[0].fecha);
+      const cur = ultima[tipo];
+      if (!cur || maxFecha > cur.maxFecha || (maxFecha === cur.maxFecha && g > cur.g)) ultima[tipo] = { g, rels, maxFecha };
     }
+
     let html = `<table><thead><tr><th>Tipo</th>`;
     for (const p of PLANTAS) html += `<th>${p}</th>`;
     html += `</tr></thead><tbody>`;
     for (const t of TIPOS) {
-      html += `<tr><td class="tipo">${t.label}</td>`;
+      const u = ultima[t.key];
+      const grpAttr = u ? ` data-grupo="${u.g}" style="cursor:pointer" title="Ver resumen del relevamiento"` : "";
+      html += `<tr><td class="tipo"${grpAttr}>${t.label}</td>`;
       for (const p of PLANTAS) {
         const aplica = (PLANTAS_TIPO[t.key] || []).includes(p);
-        const f = last[t.key][p];
+        const rel = u ? u.rels.find(r => r.planta === p) : null;
         let cell = `<span class="muted" title="No aplica">·</span>`, attr = "";
         if (aplica) {
-          if (f) {
-            cell = `${fmtFecha(f.fecha)}${f.encargado ? `<div class="enc">${esc(f.encargado)}</div>` : ""}`;
-            attr = ` data-relid="${f.id}" style="cursor:pointer" title="Ver este relevamiento"`;
+          if (rel) {
+            cell = `${fmtFecha(rel.fecha)}${rel.encargado ? `<div class="enc">${esc(rel.encargado)}</div>` : ""}`;
+            attr = ` data-relid="${rel.id}" style="cursor:pointer" title="Ver este lugar"`;
           } else cell = `<span class="muted">—</span>`;
         }
         html += `<td class="cell"${attr}>${cell}</td>`;
@@ -642,10 +648,17 @@
   $("btnGuardar").addEventListener("click", guardarTodo);
   $("btnGuardarBottom").addEventListener("click", guardarTodo);
 
-  // Clic en una celda de "Último Relevamiento" -> abre ese relevamiento en SOLO LECTURA
+  // "Último Relevamiento": clic en el TIPO -> resumen del relevamiento; clic en una celda -> ese lugar. (solo lectura)
   $("resumenBox").addEventListener("click", (e) => {
-    const td = e.target.closest("td[data-relid]"); if (!td) return;
-    abrirDetalle(Number(td.dataset.relid), true);
+    const tipoTd = e.target.closest("td[data-grupo]");
+    if (tipoTd) {
+      const g = Number(tipoTd.dataset.grupo);
+      const rels = RELS.filter(r => (r.grupo_id || r.id) === g);
+      if (rels.length === 1) abrirDetalle(rels[0].id, true); else abrirCombinado(g);
+      return;
+    }
+    const td = e.target.closest("td[data-relid]");
+    if (td) abrirDetalle(Number(td.dataset.relid), true);
   });
 
   // Barra por-lugar de la vista combinada: Detalle (solo lectura) / borrar lugar
