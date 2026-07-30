@@ -661,16 +661,21 @@
     const { data, error } = await sb.from("v_rc_detalle").select("*")
       .in("relevamiento_id", ids).order("relevamiento_id", { ascending: true }).order("orden", { ascending: true });
     if (error) { showMsg("Error leyendo detalle: " + error.message, "err"); return; }
-    const byRel = {};
-    (data || []).forEach(d => { (byRel[d.relevamiento_id] = byRel[d.relevamiento_id] || []).push(d); });
-    // Ordenar cada lugar por SECTOR (mismo criterio) para que las filas queden alineadas por indice.
-    Object.values(byRel).forEach(arr => arr.sort(cmpSector));
-    const base = byRel[ids[0]] || [];
-    const items = base.map((row, idx) => {
-      const porLugar = {};
-      rels.forEach(rel => { const rows = byRel[rel.id] || []; porLugar[rel.planta] = rows[idx] ? rows[idx].conteo : {}; });
-      return { ident: { descripcion: row.descripcion, sector: row.sector, info: row.info }, porLugar };
+    // Alinear por ITEM del catálogo (cat_id), no por posición: en plásticos cada lugar
+    // (Cervantes=partes, Virgilio=bolsas) tiene su propia lista y no coinciden por índice.
+    const relPlanta = {}; rels.forEach(r => relPlanta[r.id] = r.planta);
+    const byItem = new Map(); const items = [];
+    (data || []).forEach(row => {
+      let it = byItem.get(row.cat_id);
+      if (!it) {
+        it = { cat_id: row.cat_id, ident: { descripcion: row.descripcion, sector: row.sector, info: row.info }, sort: { sector: row.sector, orden: row.orden }, porLugar: {} };
+        byItem.set(row.cat_id, it); items.push(it);
+      }
+      it.porLugar[relPlanta[row.relevamiento_id]] = row.conteo;
     });
+    // Cada item sin dato en algún lugar -> conteo vacío; ordenar por SECTOR (natural).
+    items.forEach(it => rels.forEach(rel => { if (!(rel.planta in it.porLugar)) it.porLugar[rel.planta] = {}; }));
+    items.sort((a, b) => cmpSector(a.sort, b.sort));
     DET = { rel: rels[0], rows: [], cols: [], dirty: new Set(), readonly: true, combined: true };
     $("vistaLista").style.display = "none";
     $("vistaDetalle").style.display = "";
