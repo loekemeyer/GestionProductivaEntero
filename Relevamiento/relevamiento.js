@@ -357,7 +357,7 @@
   // ---------------------------------------------------------------------------
   let DET = { rel: null, rows: [], cols: [], dirty: new Set() };
 
-  async function abrirDetalle(relId, readonly) {
+  async function abrirDetalle(relId, readonly, onBack) {
     const rel = RELS.find(x => x.id === relId) || (await refetchRel(relId));
     if (!rel) { showMsg("No se encontró el relevamiento.", "err"); return; }
     const { data, error } = await sb
@@ -365,7 +365,7 @@
       .eq("relevamiento_id", relId)
       .order("orden", { ascending: true });
     if (error) { showMsg("Error leyendo detalle: " + error.message, "err"); return; }
-    DET = { rel, rows: data || [], cols: colsFor(rel.tipo, rel.planta), dirty: new Set(), readonly: !!readonly };
+    DET = { rel, rows: data || [], cols: colsFor(rel.tipo, rel.planta), dirty: new Set(), readonly: !!readonly, onBack: onBack || null };
     $("vistaLista").style.display = "none";
     $("vistaDetalle").style.display = "";
     $("detTitulo").textContent = `${TIPO_LABEL[rel.tipo]} · ${rel.planta} · ${fmtFecha(rel.fecha)}${rel.encargado ? " · " + rel.encargado : ""}${readonly ? " · (solo ver)" : ""}`;
@@ -655,6 +655,8 @@
 
   $("btnVolver").addEventListener("click", () => {
     if (DET.dirty.size && !confirm(`Hay ${DET.dirty.size} fila(s) sin guardar. ¿Salir sin guardar?`)) return;
+    // Si venimos de la vista combinada (abrimos un lugar desde ahí), volver a ella; si no, a la lista.
+    if (typeof DET.onBack === "function") { const cb = DET.onBack; DET.onBack = null; cb(); return; }
     $("vistaDetalle").style.display = "none";
     $("vistaLista").style.display = "";
     cargarLista();
@@ -680,7 +682,13 @@
   $("detLugares").addEventListener("click", async (e) => {
     const b = e.target.closest("button[data-act]"); if (!b) return;
     const id = Number(b.dataset.id), act = b.dataset.act;
-    if (act === "ver-lugar") { abrirDetalle(id, true); return; }
+    if (act === "ver-lugar") {
+      // Volver desde este lugar debe regresar a la vista combinada de su grupo, no a la lista.
+      const r = RELS.find(x => x.id === id);
+      const g = r ? (r.grupo_id || r.id) : null;
+      abrirDetalle(id, true, g != null ? () => abrirCombinado(g) : null);
+      return;
+    }
     if (act === "borrar") {
       const r = RELS.find(x => x.id === id);
       if (!confirm(`¿Borrar el lugar ${r ? r.planta : ""}? Se pierde su conteo.`)) return;
