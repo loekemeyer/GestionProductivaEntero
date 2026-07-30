@@ -1,5 +1,6 @@
 [LOCKS]
-(libre)
+LockX | Relevamiento/relevamiento.js | loekemeyer | 2026-07-29 | vista combinada por lugar + total al Ver multi-lugar
+LockX | Relevamiento/relevamiento.html | loekemeyer | 2026-07-29 | contenedor detLugares + css + bump ?v
 
 [WAIT QUEUE]
 (vacío)
