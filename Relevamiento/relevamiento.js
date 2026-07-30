@@ -807,6 +807,9 @@
       btn.textContent = n ? `Guardar (${n})` : "Guardar";
       btn.title = completo ? "" : "Completá todos los renglones para poder guardar";
     });
+    // "Atrás" (abajo): se habilita solo cuando está todo guardado (completo y sin cambios pendientes).
+    const back = $("btnAtrasBottom");
+    if (back) { back.disabled = !(completo && n === 0); back.title = back.disabled ? "Guardá para poder salir" : ""; }
     if (ind) {
       if (sinDato) ind.textContent = `Faltan ${sinDato} renglón${sinDato === 1 ? "" : "es"}`;
       else if (errPar) ind.textContent = `${errPar} par${errPar === 1 ? "" : "es"} incompleto${errPar === 1 ? "" : "s"}`;
@@ -859,14 +862,16 @@
     });
   });
 
-  $("btnVolver").addEventListener("click", () => {
+  function volverAtras() {
     if (DET.dirty.size && !confirm(`Hay ${DET.dirty.size} fila(s) sin guardar. ¿Salir sin guardar?`)) return;
     // Si venimos de la vista combinada (abrimos un lugar desde ahí), volver a ella; si no, a la lista.
     if (typeof DET.onBack === "function") { const cb = DET.onBack; DET.onBack = null; cb(); return; }
     $("vistaDetalle").style.display = "none";
     $("vistaLista").style.display = "";
     cargarLista();
-  });
+  }
+  $("btnVolver").addEventListener("click", volverAtras);
+  $("btnAtrasBottom").addEventListener("click", volverAtras);
 
   $("btnGuardar").addEventListener("click", guardarTodo);
   $("btnGuardarBottom").addEventListener("click", guardarTodo);
