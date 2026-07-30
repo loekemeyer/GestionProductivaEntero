@@ -62,7 +62,8 @@ create table if not exists relevamiento_cervantes.det_flejes (
   id bigint generated always as identity primary key,
   relevamiento_id bigint not null references relevamiento_cervantes.relevamientos(id) on delete cascade,
   fleje_id bigint not null references relevamiento_cervantes.cat_flejes(id),
-  rollo1_nro text, rollo1_kg numeric, rollo2_nro text, rollo2_kg numeric, rollo3_nro text, rollo3_kg numeric, total_kg numeric, stock_kg numeric);
+  rollo1_nro text, rollo1_kg numeric, rollo2_nro text, rollo2_kg numeric, rollo3_nro text, rollo3_kg numeric, total_kg numeric, stock_kg numeric,
+  rollos_json jsonb);  -- Cervantes: desglose de rollos por tandas (array de {caj,kg}); total_kg = suma de caj*kg. Los rollo*_nro/kg quedan legacy.
 create table if not exists relevamiento_cervantes.det_cartones (
   id bigint generated always as identity primary key,
   relevamiento_id bigint not null references relevamiento_cervantes.relevamientos(id) on delete cascade,
