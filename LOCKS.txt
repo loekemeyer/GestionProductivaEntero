@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-07-31 - Relevamiento (?v=20260731c): CAJAS (Cervantes) y CARTONES — la tanda ("T" en Uni sueltas) ahora carga LOS 2 INPUTS: cada tanda tiene "Paquetes" (caj) + "Uni sueltas" (uni); al confirmar, la suma de paquetes cae en el input Paquetes y la de sueltas en Uni sueltas. Antes la tanda solo afectaba a la unidad (uni sueltas). Config: uni_suelta gana tandasPaqKey (conteo_paq/conteo_paquete) + tandasPaqLabel; abrirTandasDet abre popup pedirCaj+pedirUni y llena ambos inputs. loekemeyer.
 2026-07-31 - Relevamiento: BACKUP del estado actual antes de rediseñar la parte inicial -> Relevamiento/_backup_relevamiento_20260731.{html,js} (copia fiel de relevamiento.{html,js} en ?v=20260731b). Sirve de punto de restauracion del inicio. loekemeyer.
 2026-07-31 - Relevamiento (?v=20260731b): bordes de las tablas en NEGRO — th,td border #9aa6b2 -> #111; separador de las columnas fijas (fz border-right) #6b7885 -> #111. loekemeyer.
 2026-07-31 - Relevamiento (?v=20260731a): FIX "Relevamiento actual" — se elegia la tanda de MAYOR FECHA, asi una tanda vieja con un lugar post-fechado (ej. cajas grupo 51 con Virgilio 31/07) le ganaba a una tanda NUEVA recien creada (grupo 62, 30/07), que caia en "anteriores". Ahora ultimasTandasPorTipo elige la tanda CREADA MAS RECIENTE (mayor grupo_id): una tanda nueva siempre "pisa" a las anteriores. Afecta tambien la tabla "Último Relevamiento" (usa la misma func). loekemeyer.
