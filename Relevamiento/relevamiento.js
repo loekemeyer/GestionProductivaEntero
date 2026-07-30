@@ -365,7 +365,12 @@
       .eq("relevamiento_id", relId)
       .order("orden", { ascending: true });
     if (error) { showMsg("Error leyendo detalle: " + error.message, "err"); return; }
-    DET = { rel, rows: data || [], cols: colsFor(rel.tipo, rel.planta), dirty: new Set(), readonly: !!readonly, onBack: onBack || null };
+    DET = { rel, rows: data || [], cols: colsFor(rel.tipo, rel.planta), dirty: new Set(), readonly: !!readonly, onBack: onBack || null, rollos: {} };
+    // Flejes: cargar el desglose de rollos guardado (para reabrir las tandas sin combinar).
+    (data || []).forEach(row => {
+      const rj = row.conteo && row.conteo.rollos_json;
+      if (Array.isArray(rj) && rj.length) DET.rollos[row.det_id] = rj;
+    });
     $("vistaLista").style.display = "none";
     $("vistaDetalle").style.display = "";
     $("detTitulo").textContent = `${TIPO_LABEL[rel.tipo]} · ${rel.planta} · ${fmtFecha(rel.fecha)}${rel.encargado ? " · " + rel.encargado : ""}${readonly ? " · (solo ver)" : ""}`;
@@ -546,13 +551,21 @@
     const col = (DET.cols || []).find(c => c.key === key) || {};
     const cur = parseFloat(String(inp.value).replace(",", ".")) || 0;
     if (col.flejeTandas) {
+      const detNum = Number(detId);
+      // El desglose real de rollos si ya se cargó; si no hay pero sí un total viejo, un solo rollo como respaldo.
+      const guardado = DET.rollos && DET.rollos[detNum];
+      const initial = (Array.isArray(guardado) && guardado.length)
+        ? guardado.map(t => ({ caj: t.caj, kg: t.kg }))
+        : (cur > 0 ? [{ caj: 1, kg: cur }] : []);
       window.tandasPopup.open({
         titulo: "Tandas — Rollos (Cant × Kg c/u)",
         pedirCaj: true, pedirKg: true, pedirUni: false, multiplicar: true,
         exigirCompletos: true, grande: true,
         unidadCaj: "Cant rollos", unidadKg: "Kg c/u",
-        initial: cur > 0 ? [{ caj: 1, kg: cur }] : [],
-        onConfirm: (t, totales) => {
+        initial,
+        onConfirm: (tandas, totales) => {
+          // Guardar el desglose (cada rollo con su cant y kg) para que no se combinen al reabrir.
+          if (DET.rollos) DET.rollos[detNum] = tandas.map(t => ({ caj: Number(t.caj) || 0, kg: parseFloat(String(t.kg).replace(",", ".")) || 0 }));
           inp.value = totales.kg ? (Math.round(totales.kg * 1000) / 1000) : "";
           inp.dispatchEvent(new Event("input", { bubbles: true }));
         }
@@ -623,6 +636,8 @@
       const vals = {};
       tr.querySelectorAll("input.ci").forEach(i => { vals[i.dataset.key] = i.value.trim(); });
       comps.forEach(c => { vals[c.key] = c.compute(vals); });
+      // Flejes: adjuntar el desglose de rollos (array de {caj,kg}) o null si se vació.
+      DET.cols.forEach(c => { if (c.flejeTandas) vals.rollos_json = (DET.rollos && DET.rollos[detId] && DET.rollos[detId].length) ? DET.rollos[detId] : null; });
       tr.classList.add("saving");
       const { error } = await sb.rpc("rc_set_conteo", { p_tipo: DET.rel.tipo, p_det_id: detId, p_vals: vals });
       tr.classList.remove("saving");
@@ -634,6 +649,7 @@
         row.conteo = row.conteo || {};
         DET.cols.forEach(c => { row.conteo[c.key] = vals[c.key] === "" ? null : vals[c.key]; });
         comps.forEach(c => { row.conteo[c.key] = vals[c.key] === "" ? null : vals[c.key]; });
+        if (vals.rollos_json !== undefined) row.conteo.rollos_json = vals.rollos_json;
         row.cargado = DET.cols.some(c => vals[c.key] !== "" && vals[c.key] != null);
         tr.classList.toggle("loaded", row.cargado);
       }
