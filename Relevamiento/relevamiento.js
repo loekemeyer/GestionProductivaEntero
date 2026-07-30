@@ -439,6 +439,7 @@
   }
 
   function renderCombinado(tipo, rels, items) {
+    $("detTable").classList.add("combined");
     const info = INFO_COLS[tipo] || [];
     const showDesc = !HIDE_DESC[tipo];
     const unit = BASE_UNIT[tipo] || "";
@@ -469,6 +470,7 @@
   }
 
   function renderDetalle() {
+    $("detTable").classList.remove("combined");
     const { rel, rows, cols } = DET;
     const info = INFO_COLS[rel.tipo] || [];
     const comps = computedFor(rel.tipo, rel.planta);
