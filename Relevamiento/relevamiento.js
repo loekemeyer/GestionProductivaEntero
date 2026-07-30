@@ -244,6 +244,8 @@
   }
 
   // Última tanda (grupo) de cada tipo: tipo -> { g, rels, maxFecha }. Es el "relevamiento actual" de cada tipo.
+  // Se elige la tanda CREADA MÁS RECIENTEMENTE (mayor grupo_id), no la de mayor fecha: una tanda nueva
+  // "pisa" a las anteriores aunque tenga fecha anterior (p.ej. una tanda vieja con un lugar post-fechado).
   function ultimasTandasPorTipo() {
     const groups = new Map();
     for (const r of RELS) { const g = r.grupo_id || r.id; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); }
@@ -252,7 +254,7 @@
       const tipo = rels[0].tipo;
       const maxFecha = rels.reduce((m, r) => (r.fecha > m ? r.fecha : m), rels[0].fecha);
       const cur = ultima[tipo];
-      if (!cur || maxFecha > cur.maxFecha || (maxFecha === cur.maxFecha && g > cur.g)) ultima[tipo] = { g, rels, maxFecha };
+      if (!cur || g > cur.g) ultima[tipo] = { g, rels, maxFecha };
     }
     return ultima;
   }
