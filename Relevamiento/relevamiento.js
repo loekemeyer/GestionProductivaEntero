@@ -381,6 +381,7 @@
     $("vistaDetalle").style.display = "";
     $("detTitulo").textContent = `${TIPO_LABEL[rel.tipo]} · ${rel.planta} · ${fmtFecha(rel.fecha)}${rel.encargado ? " · " + rel.encargado : ""}${readonly ? " · (solo ver)" : ""}`;
     $("btnGuardar").style.display = readonly ? "none" : "";
+    $("guardarBottomWrap").style.display = readonly ? "none" : "";
     $("detUnsaved").style.display = readonly ? "none" : "";
     $("detLugares").style.display = "none";
     renderDetalle();
@@ -417,6 +418,7 @@
     const maxFecha = rels.reduce((m, r) => (r.fecha > m ? r.fecha : m), rels[0].fecha);
     $("detTitulo").textContent = `${TIPO_LABEL[rels[0].tipo]} · Total por lugar · ${fmtFecha(maxFecha)}`;
     $("btnGuardar").style.display = "none";
+    $("guardarBottomWrap").style.display = "none";
     $("detUnsaved").style.display = "none";
     $("detProg").textContent = `${rels.length} lugares`;
     // toolbar por lugar (ver detalle / borrar)
@@ -570,16 +572,17 @@
 
   // Guardar SOLO se habilita cuando el lugar está completo (todos los renglones con dato y sin pares a medias).
   function updateGuardarState() {
-    const btn = $("btnGuardar"), ind = $("detUnsaved");
-    if (DET.readonly) { if (btn) btn.disabled = true; if (ind) ind.textContent = ""; return; }
+    const btns = [$("btnGuardar"), $("btnGuardarBottom")], ind = $("detUnsaved");
+    if (DET.readonly) { btns.forEach(b => { if (b) b.disabled = true; }); if (ind) ind.textContent = ""; return; }
     const n = DET.dirty.size;
     const { sinDato, errPar } = estadoCarga();
     const completo = sinDato === 0 && errPar === 0;
-    if (btn) {
+    btns.forEach(btn => {
+      if (!btn) return;
       btn.disabled = !(completo && n > 0);
       btn.textContent = n ? `Guardar (${n})` : "Guardar";
       btn.title = completo ? "" : "Completá todos los renglones para poder guardar";
-    }
+    });
     if (ind) {
       if (sinDato) ind.textContent = `Faltan ${sinDato} renglón${sinDato === 1 ? "" : "es"}`;
       else if (errPar) ind.textContent = `${errPar} par${errPar === 1 ? "" : "es"} incompleto${errPar === 1 ? "" : "s"}`;
@@ -637,6 +640,7 @@
   });
 
   $("btnGuardar").addEventListener("click", guardarTodo);
+  $("btnGuardarBottom").addEventListener("click", guardarTodo);
 
   // Clic en una celda de "Último Relevamiento" -> abre ese relevamiento en SOLO LECTURA
   $("resumenBox").addEventListener("click", (e) => {
