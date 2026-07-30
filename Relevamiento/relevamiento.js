@@ -160,7 +160,7 @@
       if (planta !== "Cervantes") return { lineas: [L("Stock Kg", num(c.stock_kg))], total: num(c.stock_kg), unidad: "kg" };
       const rollos = Array.isArray(c.rollos_json) ? c.rollos_json : [];
       const lineas = rollos.length
-        ? rollos.map((r, idx) => L(`Rollo ${idx + 1}: ${num(r.caj)} rollo(s) × ${num(r.kg)} kg`, num(r.caj) * num(r.kg)))
+        ? rollos.map(r => L(`${num(r.caj)} rollo(s) × ${num(r.kg)} kg`, num(r.caj) * num(r.kg)))
         : [L("Total Kg", num(c.total_kg))];
       return { lineas, total: num(c.total_kg), unidad: "kg" };
     }
