@@ -82,6 +82,8 @@
   .lug-tag .cnt{font-weight:800}
   #detTable td.num{text-align:center;font-variant-numeric:tabular-nums;font-weight:800;font-size:23px}
   #detTable tr.tot-row td{background:#e9eef3;font-size:23px;text-align:center}
+  .guardar-bottom{display:flex;justify-content:center;margin-top:16px}
+  .big-save{min-width:300px;min-height:66px;font-size:23px}
 
   /* modal agregar lugar */
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
@@ -184,6 +186,9 @@
           <tbody id="detBody"></tbody>
         </table>
       </div>
+      <div class="guardar-bottom" id="guardarBottomWrap">
+        <button class="btn btn-green big-save" id="btnGuardarBottom" disabled>Guardar</button>
+      </div>
     </div>
   </div>
 
@@ -206,6 +211,6 @@
 <script src="../version.js?v=20260617b"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../tandas-popup.js?v=20260617a"></script>
-<script src="relevamiento.js?v=20260729y"></script>
+<script src="relevamiento.js?v=20260729z"></script>
 </body>
 </html>
