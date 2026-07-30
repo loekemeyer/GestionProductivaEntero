@@ -278,6 +278,8 @@
     arr.sort((a, b) => (a.maxFecha < b.maxFecha ? 1 : a.maxFecha > b.maxFecha ? -1 : b.g - a.g));
 
     const actuales = arr.filter(grp => actualSet.has(grp.g));
+    // En "actual": los COMPLETADOS van al final (los que faltan terminar, primero). Sort estable: conserva el orden por fecha dentro de cada grupo.
+    actuales.sort((a, b) => (a.completo === b.completo ? 0 : a.completo ? 1 : -1));
     const anteriores = arr.filter(grp => !actualSet.has(grp.g));
     boxAct.innerHTML = actuales.length ? actuales.map(renderGrupoCard).join("") : `<div class="empty">No hay relevamiento actual.</div>`;
     boxAnt.innerHTML = anteriores.length ? anteriores.map(renderGrupoCard).join("") : `<div class="empty">No hay relevamientos anteriores.</div>`;
