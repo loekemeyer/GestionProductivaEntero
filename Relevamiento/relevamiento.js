@@ -379,7 +379,6 @@
     $("rzTitulo").textContent = "Realizar — " + (TIPO_LABEL[tipo] || tipo);
     const ps = PLANTAS_TIPO[tipo] || ["Cervantes"];
     $("rzPlanta").innerHTML = ps.map(p => `<option value="${p}">${p}${tipo === "plasticos" ? " (" + (PLASTICO_LUGAR[p] || "") + ")" : ""}</option>`).join("");
-    $("rzFecha").value = toYmd(hoyDate());
     $("rzEncargado").value = "";
     $("rzEncargado").style.borderColor = "";
     $("modalRealizar").style.display = "flex";
@@ -388,7 +387,7 @@
   function cerrarRealizar() { $("modalRealizar").style.display = "none"; }
   async function confirmarRealizar() {
     const tipo = RZ.tipo, planta = $("rzPlanta").value;
-    const fecha = $("rzFecha").value || toYmd(hoyDate());
+    const fecha = toYmd(hoyDate());  // siempre la fecha actual
     const encargado = $("rzEncargado").value.trim();
     if (!encargado) { $("rzEncargado").style.borderColor = "#c00"; $("rzEncargado").focus(); return; }
     // Si ya hay un relevamiento de este tipo+lugar SIN completar, lo retomamos (no duplicar).
