@@ -129,6 +129,19 @@
   const wrapBreak = (s, n) => wrapLines(s, n).map(esc).join("<br>");
   const norm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const fmtFecha = (f) => { if (!f) return ""; const [y, m, d] = String(f).slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
+  // Orden NATURAL (A1 < A2 < A10 < B1). Se parte en tramos de letras/numeros y se comparan por tramo.
+  const natKey = (s) => String(s == null ? "" : s).toUpperCase().match(/\d+|\D+/g) || [];
+  function cmpNat(a, b) {
+    const ka = natKey(a), kb = natKey(b), n = Math.min(ka.length, kb.length);
+    for (let i = 0; i < n; i++) {
+      const x = ka[i], y = kb[i], nx = parseInt(x, 10), ny = parseInt(y, 10);
+      if (!isNaN(nx) && !isNaN(ny)) { if (nx !== ny) return nx - ny; }
+      else if (x !== y) return x < y ? -1 : 1;
+    }
+    return ka.length - kb.length;
+  }
+  // Ordena las filas del relevamiento por SECTOR (natural), con el orden del catalogo como desempate.
+  const cmpSector = (a, b) => cmpNat(a.sector, b.sector) || ((a.orden || 0) - (b.orden || 0));
 
   function colsFor(tipo, planta) {
     return (CONTEO_COLS[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
@@ -463,9 +476,10 @@
       .eq("relevamiento_id", relId)
       .order("orden", { ascending: true });
     if (error) { showMsg("Error leyendo detalle: " + error.message, "err"); return; }
-    DET = { rel, rows: data || [], cols: colsFor(rel.tipo, rel.planta), dirty: new Set(), readonly: !!readonly, onBack: onBack || null, rollos: {} };
+    const filas = (data || []).slice().sort(cmpSector);  // ordenado por sector
+    DET = { rel, rows: filas, cols: colsFor(rel.tipo, rel.planta), dirty: new Set(), readonly: !!readonly, onBack: onBack || null, rollos: {} };
     // Flejes: cargar el desglose de rollos guardado (para reabrir las tandas sin combinar).
-    (data || []).forEach(row => {
+    filas.forEach(row => {
       const rj = row.conteo && row.conteo.rollos_json;
       if (Array.isArray(rj) && rj.length) DET.rollos[row.det_id] = rj;
     });
@@ -498,6 +512,8 @@
     if (error) { showMsg("Error leyendo detalle: " + error.message, "err"); return; }
     const byRel = {};
     (data || []).forEach(d => { (byRel[d.relevamiento_id] = byRel[d.relevamiento_id] || []).push(d); });
+    // Ordenar cada lugar por SECTOR (mismo criterio) para que las filas queden alineadas por indice.
+    Object.values(byRel).forEach(arr => arr.sort(cmpSector));
     const base = byRel[ids[0]] || [];
     const items = base.map((row, idx) => {
       const porLugar = {};
