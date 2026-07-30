@@ -143,6 +143,17 @@
   .msg.ok{background:#e6f5ec;color:#0a7a2f}
   .msg.err{background:#fdecec;color:#c00}
   .empty{color:#8a96a2;font-size:14px;padding:8px 2px}
+
+  /* cronograma */
+  #cronoBox td.crono-tipo{font-size:18px;font-weight:800;text-align:left}
+  #cronoBox td.crono-fecha{font-size:19px;font-weight:800;white-space:nowrap}
+  #cronoBox td.crono-fecha.vencido{color:#c00}
+  #cronoBox td.crono-estado{text-align:left}
+  .crono-chip{display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:5px 10px;margin:3px;border-radius:8px;font-size:14px;font-weight:800;line-height:1.1}
+  .crono-chip.ok{background:#dff3e6;color:#0a7a2f}
+  .crono-chip.falta{background:#fbe0e0;color:#c00}
+  .crono-chip .crono-enc{font-size:12px;font-weight:700;color:#3a4653}
+  #cronoBox th{font-size:15px}
 </style>
 </head>
 <body>
@@ -160,33 +171,8 @@
   <div id="vistaLista" style="display:flex;flex-direction:column;gap:14px">
 
     <div class="card">
-      <h2>Nueva tanda de relevamiento</h2>
-      <div class="body">
-        <div class="form-row">
-          <div class="field">
-            <label>Tipo</label>
-            <select id="nvTipo"></select>
-          </div>
-          <div class="field">
-            <label>Lugar</label>
-            <select id="nvPlanta"></select>
-          </div>
-          <div class="field">
-            <label>Fecha</label>
-            <input type="date" id="nvFecha"/>
-          </div>
-          <div class="field" style="flex:1;min-width:160px">
-            <label>Encargado <span style="color:#c00">*</span></label>
-            <input type="text" id="nvEncargado" placeholder="Obligatorio — quién releva" required/>
-          </div>
-          <button class="btn btn-dark" id="btnGenerar">Generar</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="card resumen">
-      <h2>Último Relevamiento</h2>
-      <div class="body tbl-scroll" id="resumenBox">
+      <h2>📅 Cronograma</h2>
+      <div class="body tbl-scroll" id="cronoBox">
         <div class="empty">Cargando…</div>
       </div>
     </div>
@@ -231,6 +217,20 @@
     </div>
   </div>
 
+  <!-- Modal: Realizar relevamiento (elegir lugar + encargado) -->
+  <div id="modalRealizar" class="modal-bg" style="display:none">
+    <div class="modal">
+      <h3 id="rzTitulo">Realizar relevamiento</h3>
+      <div class="field"><label>Lugar</label><select id="rzPlanta"></select></div>
+      <div class="field"><label>Fecha</label><input type="date" id="rzFecha"/></div>
+      <div class="field"><label>Encargado <span style="color:#c00">*</span></label><input type="text" id="rzEncargado" placeholder="Obligatorio — quién releva"/></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="rzCancelar">Cancelar</button>
+        <button class="btn btn-green" id="rzConfirmar">Realizar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: composición de una celda (cómo se calculó el valor) -->
   <div id="modalComp" class="modal-bg" style="display:none">
     <div class="modal">
@@ -261,6 +261,6 @@
 <script src="../version.js?v=20260617b"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../tandas-popup.js?v=20260730i"></script>
-<script src="relevamiento.js?v=20260731c"></script>
+<script src="relevamiento.js?v=20260731d"></script>
 </body>
 </html>
