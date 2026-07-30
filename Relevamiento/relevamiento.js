@@ -364,7 +364,7 @@
         const extra = t.key === "plasticos" ? " " + (PLASTICO_LUGAR[e.p] || "") : "";
         return `<span class="crono-chip ${e.hecho ? "ok" : "falta"}">${esc((ABREV_PLANTA[e.p] || e.p) + extra)} ${e.hecho ? "✓" : "✗"}${e.encargado ? `<span class="crono-enc">${esc(e.encargado)}</span>` : ""}</span>`;
       }).join("");
-      return `<div class="crono-linea${todosHechos ? " completo" : ""}">
+      return `<div class="crono-linea${todosHechos ? " completo" : ""}" data-tipo="${t.key}" title="Ver el total (por lugar)">
         <div class="cl-tipo">${esc(t.label)}</div>
         <div class="cl-fecha${vibra ? " vibra" : ""}"><span class="cl-lbl">${cervHecho ? "Próximo" : "A realizar"}</span>${fmtFecha(toYmd(px.adj))}</div>
         <div class="cl-chips">${chips}</div>
@@ -1061,9 +1061,18 @@
   $("btnGuardarBottom").addEventListener("click", guardarTodo);
 
   // Cronograma: botón "Realizar" -> elegir lugar + encargado y abrir la carga.
+  // Click en el resto de la línea -> ver el TOTAL (combinada por lugar, o detalle
+  // solo-lectura si es un solo lugar) de la última tanda de ese tipo.
   $("cronoBox").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-realizar]");
-    if (b) abrirRealizar(b.dataset.realizar);
+    if (b) { abrirRealizar(b.dataset.realizar); return; }
+    const linea = e.target.closest(".crono-linea[data-tipo]");
+    if (linea) {
+      const ult = ultimasTandasPorTipo()[linea.dataset.tipo];
+      if (!ult) { showMsg("Todavía no hay ningún relevamiento cargado de este tipo.", "err"); return; }
+      if (ult.rels.length === 1) abrirDetalle(ult.rels[0].id, true);
+      else abrirCombinado(ult.g);
+    }
   });
   $("rzConfirmar").addEventListener("click", confirmarRealizar);
   $("rzCancelar").addEventListener("click", cerrarRealizar);
