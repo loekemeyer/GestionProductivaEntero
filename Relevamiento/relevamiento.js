@@ -106,6 +106,21 @@
   };
   const computedFor = (tipo, planta) => (COMPUTED[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
 
+  // Unidad base para el TOTAL de la vista combinada, y aporte de cada lugar en esa unidad.
+  const BASE_UNIT = { flejes: "kg", cajas: "uni", plasticos: "uni" };
+  function aporteBase(tipo, planta, conteo, info) {
+    const num = x => { const n = parseFloat(String(x == null ? "" : x).replace(",", ".")); return isNaN(n) ? 0 : n; };
+    const c = conteo || {}, i = info || {};
+    if (tipo === "flejes") return planta === "Cervantes" ? num(c.total_kg) : num(c.stock_kg);
+    if (tipo === "cajas") return planta === "Virgilio" ? num(c.uni) : num(c.conteo_paq) * num(i.uni_x_paq) + num(c.uni_suelta);
+    if (tipo === "plasticos") return num(c.stock_relev_bolsa) * num(i.uni_x_bolsa) + num(c.uni_suelta);
+    return 0;
+  }
+  function fmtNum(n, tipo) {
+    const dec = BASE_UNIT[tipo] === "kg" ? 3 : 0;
+    return Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: dec });
+  }
+
   const $ = (id) => document.getElementById(id);
   const esc = (s) => { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; };
   // Titulo de columna: si tiene un espacio, se parte en dos lineas (en el primer espacio)
@@ -299,10 +314,8 @@
     if (act === "ver") {
       const g = Number(b.dataset.grupo);
       const rels = RELS.filter(r => (r.grupo_id || r.id) === g);
-      if (rels.length === 1) { abrirDetalle(rels[0].id, true); return; } // solo lectura
-      const box = document.querySelector(`.grupo-lugares[data-grupo="${g}"]`);
-      if (box) box.style.display = box.style.display === "none" ? "" : "none";
-      return;
+      if (rels.length === 1) { abrirDetalle(rels[0].id, true); return; } // 1 lugar: solo lectura directo
+      abrirCombinado(g); return; // varios lugares: vista por lugar + total
     }
     if (act === "cargar-falta") { abrirAgregar(Number(b.dataset.grupo), b.dataset.tipo, b.dataset.planta); return; }
     const id = Number(b.dataset.id);
@@ -369,6 +382,7 @@
     $("detTitulo").textContent = `${TIPO_LABEL[rel.tipo]} · ${rel.planta} · ${fmtFecha(rel.fecha)}${rel.encargado ? " · " + rel.encargado : ""}${readonly ? " · (solo ver)" : ""}`;
     $("btnGuardar").style.display = readonly ? "none" : "";
     $("detUnsaved").style.display = readonly ? "none" : "";
+    $("detLugares").style.display = "none";
     renderDetalle();
     updateGuardarState();
   }
@@ -376,6 +390,80 @@
   async function refetchRel(relId) {
     const { data } = await sb.from("v_rc_relevamientos").select("*").eq("id", relId).maybeSingle();
     return data || null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // VISTA COMBINADA (solo lectura): por cada pieza, el valor de cada lugar + el total
+  // ---------------------------------------------------------------------------
+  async function abrirCombinado(grupoId) {
+    const rels = RELS.filter(r => (r.grupo_id || r.id) === grupoId)
+      .slice().sort((a, b) => PLANTAS.indexOf(a.planta) - PLANTAS.indexOf(b.planta));
+    if (!rels.length) return;
+    const ids = rels.map(r => r.id);
+    const { data, error } = await sb.from("v_rc_detalle").select("*")
+      .in("relevamiento_id", ids).order("relevamiento_id", { ascending: true }).order("orden", { ascending: true });
+    if (error) { showMsg("Error leyendo detalle: " + error.message, "err"); return; }
+    const byRel = {};
+    (data || []).forEach(d => { (byRel[d.relevamiento_id] = byRel[d.relevamiento_id] || []).push(d); });
+    const base = byRel[ids[0]] || [];
+    const items = base.map((row, idx) => {
+      const porLugar = {};
+      rels.forEach(rel => { const rows = byRel[rel.id] || []; porLugar[rel.planta] = rows[idx] ? rows[idx].conteo : {}; });
+      return { ident: { descripcion: row.descripcion, sector: row.sector, info: row.info }, porLugar };
+    });
+    DET = { rel: rels[0], rows: [], cols: [], dirty: new Set(), readonly: true, combined: true };
+    $("vistaLista").style.display = "none";
+    $("vistaDetalle").style.display = "";
+    const maxFecha = rels.reduce((m, r) => (r.fecha > m ? r.fecha : m), rels[0].fecha);
+    $("detTitulo").textContent = `${TIPO_LABEL[rels[0].tipo]} · Total por lugar · ${fmtFecha(maxFecha)}`;
+    $("btnGuardar").style.display = "none";
+    $("detUnsaved").style.display = "none";
+    $("detProg").textContent = `${rels.length} lugares`;
+    // toolbar por lugar (ver detalle / borrar)
+    $("detLugares").innerHTML = rels.map(r => {
+      const rojo = !(r.items > 0 && r.cargados >= r.items);
+      return `<span class="lug-tag ${rojo ? "incompleto" : "ok"}"><b>${esc(r.planta)}</b> <span class="cnt">${r.cargados}/${r.items}</span>
+        <button class="btn btn-ghost sm" data-act="ver-lugar" data-id="${r.id}">Detalle</button>
+        <button class="btn btn-red sm" data-act="borrar" data-id="${r.id}" title="Borrar este lugar">✕</button></span>`;
+    }).join("");
+    $("detLugares").style.display = "flex";
+    renderCombinado(rels[0].tipo, rels, items);
+  }
+
+  function renderCombinado(tipo, rels, items) {
+    const info = INFO_COLS[tipo] || [];
+    const showDesc = !HIDE_DESC[tipo];
+    const unit = BASE_UNIT[tipo] || "";
+    let head = "<tr>";
+    if (showDesc) head += "<th>Descripción</th>";
+    head += "<th>Sector</th>";
+    info.forEach(([, lbl]) => head += `<th>${titleBreak(lbl)}</th>`);
+    rels.forEach(r => head += `<th>${esc(r.planta)}</th>`);
+    head += `<th>Total${unit ? ` (${unit})` : ""}</th></tr>`;
+    $("detHead").innerHTML = head;
+
+    const totLugar = {}; rels.forEach(r => totLugar[r.planta] = 0); let totGrand = 0;
+    const body = items.map(it => {
+      let tds = "";
+      if (showDesc) tds += `<td>${esc(it.ident.descripcion)}</td>`;
+      tds += `<td style="font-weight:700">${esc(it.ident.sector)}</td>`;
+      info.forEach(([k]) => { const raw = it.ident.info ? it.ident.info[k] : ""; tds += `<td style="font-weight:700">${k === "cod" ? dashBreak(raw) : esc(raw)}</td>`; });
+      let sum = 0;
+      rels.forEach(r => {
+        const v = aporteBase(tipo, r.planta, it.porLugar[r.planta], it.ident.info);
+        sum += v; totLugar[r.planta] += v;
+        tds += `<td class="num">${fmtNum(v, tipo)}</td>`;
+      });
+      totGrand += sum;
+      tds += `<td class="num" style="font-weight:800">${fmtNum(sum, tipo)}</td>`;
+      return `<tr>${tds}</tr>`;
+    }).join("");
+
+    const identCols = (showDesc ? 1 : 0) + 1 + info.length;
+    let foot = `<tr class="tot-row"><td colspan="${identCols}" style="text-align:right;font-weight:800">TOTAL</td>`;
+    rels.forEach(r => foot += `<td class="num" style="font-weight:800">${fmtNum(totLugar[r.planta], tipo)}</td>`);
+    foot += `<td class="num" style="font-weight:900">${fmtNum(totGrand, tipo)}</td></tr>`;
+    $("detBody").innerHTML = body + foot;
   }
 
   function renderDetalle() {
@@ -554,6 +642,22 @@
   $("resumenBox").addEventListener("click", (e) => {
     const td = e.target.closest("td[data-relid]"); if (!td) return;
     abrirDetalle(Number(td.dataset.relid), true);
+  });
+
+  // Barra por-lugar de la vista combinada: Detalle (solo lectura) / borrar lugar
+  $("detLugares").addEventListener("click", async (e) => {
+    const b = e.target.closest("button[data-act]"); if (!b) return;
+    const id = Number(b.dataset.id), act = b.dataset.act;
+    if (act === "ver-lugar") { abrirDetalle(id, true); return; }
+    if (act === "borrar") {
+      const r = RELS.find(x => x.id === id);
+      if (!confirm(`¿Borrar el lugar ${r ? r.planta : ""}? Se pierde su conteo.`)) return;
+      const { error } = await sb.rpc("rc_borrar", { p_relevamiento_id: id });
+      if (error) { showMsg("No se pudo borrar: " + error.message, "err"); return; }
+      showMsg("Lugar borrado.", "ok");
+      $("vistaDetalle").style.display = "none"; $("vistaLista").style.display = "";
+      cargarLista();
+    }
   });
 
   // Modal Agregar lugar
