@@ -503,7 +503,9 @@
       const inputs = cols.map(c => {
         const v = r.conteo && r.conteo[c.key] != null ? r.conteo[c.key] : "";
         const tb = (c.tandas && !DET.readonly) ? `<button class="ci-tandas" data-det="${r.det_id}" data-key="${c.key}" type="button" title="Cargar por tandas">T</button>` : "";
-        return `<td style="text-align:center;white-space:nowrap;width:${cW(c)}px;min-width:${cW(c)}px"><input class="ci" data-det="${r.det_id}" data-key="${c.key}" type="number" inputmode="decimal" step="any" value="${esc(v)}"${DET.readonly ? " disabled" : ""}>${tb}</td>`;
+        // Flejes Cervantes: el Total Kg NO se tipea, solo se carga por tandas (input readonly, se llena con "T").
+        const ro = (c.flejeTandas && !DET.readonly);
+        return `<td style="text-align:center;white-space:nowrap;width:${cW(c)}px;min-width:${cW(c)}px"><input class="ci${ro ? " ci-tanda-only" : ""}" data-det="${r.det_id}" data-key="${c.key}" type="number" inputmode="decimal" step="any" value="${esc(v)}"${DET.readonly ? " disabled" : ""}${ro ? ' readonly title="Cargar por tandas (botón T)"' : ""}>${tb}</td>`;
       }).join("");
       const compCells = comps.map(c =>
         `<td class="computed" data-key="${c.key}" style="text-align:center;font-weight:800;color:#0a7a2f;width:${compW}px;min-width:${compW}px">${esc(c.compute(r.conteo || {}))}</td>`
@@ -536,11 +538,9 @@
     updateGuardarState();
   });
 
-  // Botón "T": cargar por tandas. Uni sueltas (cajas/cartones) -> suma de unidades.
+  // Abre el popup de tandas para una celda. Uni sueltas (cajas/cartones) -> suma de unidades.
   // Flejes Cervantes (Total Kg) -> cada tanda es Cant rollos x Kg c/u; el total ponderado cae en el input.
-  $("detBody").addEventListener("click", (e) => {
-    const b = e.target.closest(".ci-tandas"); if (!b) return;
-    const detId = b.dataset.det, key = b.dataset.key;
+  function abrirTandasDet(detId, key) {
     const inp = document.querySelector(`#detBody input.ci[data-det="${detId}"][data-key="${key}"]`);
     if (!inp || !window.tandasPopup) return;
     const col = (DET.cols || []).find(c => c.key === key) || {};
@@ -549,6 +549,7 @@
       window.tandasPopup.open({
         titulo: "Tandas — Rollos (Cant × Kg c/u)",
         pedirCaj: true, pedirKg: true, pedirUni: false, multiplicar: true,
+        exigirCompletos: true, grande: true,
         unidadCaj: "Cant rollos", unidadKg: "Kg c/u",
         initial: cur > 0 ? [{ caj: 1, kg: cur }] : [],
         onConfirm: (t, totales) => {
@@ -560,13 +561,21 @@
     }
     window.tandasPopup.open({
       titulo: "Tandas — Uni sueltas",
-      pedirCaj: false, pedirKg: false, pedirUni: true, unidadUni: "uni",
+      pedirCaj: false, pedirKg: false, pedirUni: true, unidadUni: "uni", grande: true,
       initial: cur > 0 ? [{ uni: cur }] : [],
       onConfirm: (t, totales) => {
         inp.value = totales.uni || "";
         inp.dispatchEvent(new Event("input", { bubbles: true }));
       }
     });
+  }
+
+  // "T" o clic sobre el input de solo-tandas (flejes) abren el popup.
+  $("detBody").addEventListener("click", (e) => {
+    const b = e.target.closest(".ci-tandas");
+    if (b) { abrirTandasDet(b.dataset.det, b.dataset.key); return; }
+    const inp = e.target.closest("input.ci-tanda-only");
+    if (inp && !DET.readonly) abrirTandasDet(inp.dataset.det, inp.dataset.key);
   });
 
   // Cuenta renglones sin ningún dato y pares incompletos (flejes) en el estado actual de la tabla.

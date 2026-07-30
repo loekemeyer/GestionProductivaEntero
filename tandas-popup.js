@@ -37,6 +37,7 @@
         </div>
         <div class="tandas-body" id="tandasBody"></div>
         <div class="tandas-footer">
+          <div class="tandas-msg" id="tandasMsg"></div>
           <button class="btn-ok" id="tandasOk" type="button">Listo</button>
         </div>
       </div>
@@ -61,6 +62,8 @@
       unidadKg: "kg",
       unidadUni: "uni",
       multiplicar: false,   // si true, el total Kg = suma de (caj x kg) por tanda (ej. flejes: cant rollos x kg c/u)
+      exigirCompletos: false, // si true, cada tanda con algún dato debe tener TODOS sus campos > 0 (nada vacío)
+      grande: false,        // si true, popup y contenido más grandes (tablet)
       onConfirm: null
     }, opts || {});
     tandas = (config.initial || []).map(t => ({
@@ -70,8 +73,15 @@
     }));
     if (!tandas.length) tandas.push({ caj: 0, kg: 0, uni: 0 });
     document.getElementById("tandasTitulo").textContent = config.titulo;
+    overlay.classList.toggle("tandas-lg", !!config.grande);
+    mostrarMsg("");
     render();
     overlay.classList.add("open");
+  }
+
+  function mostrarMsg(txt){
+    const m = document.getElementById("tandasMsg");
+    if (m) m.textContent = txt || "";
   }
 
   function cerrar(){
@@ -81,8 +91,26 @@
   function confirmar(){
     // Sincronizar valores del DOM antes de confirmar
     sincronizarInputs();
-    // Filtrar tandas vacias (todo 0)
-    const validas = tandas.filter(t => t.caj > 0 || t.kg > 0 || t.uni > 0);
+    // Campos pedidos en este popup
+    const req = [];
+    if (config.pedirCaj) req.push("caj");
+    if (config.pedirKg) req.push("kg");
+    if (config.pedirUni) req.push("uni");
+    const val = (t, f) => f === "kg" ? (parseDecimal(t.kg) || 0) : (Number(t[f]) || 0);
+    if (config.exigirCompletos){
+      // Ninguna tanda que tenga algún dato puede dejar otro campo pedido vacío.
+      const hayIncompleta = tandas.some(t => {
+        const algo = req.some(f => val(t, f) > 0);
+        return algo && req.some(f => !(val(t, f) > 0));
+      });
+      if (hayIncompleta){ mostrarMsg("Completá todos los campos de cada tanda (ninguno vacío)."); return; }
+      const completas = tandas.filter(t => req.every(f => val(t, f) > 0));
+      if (!completas.length){ mostrarMsg("Cargá al menos una tanda completa."); return; }
+    }
+    // Filtrar tandas vacias (todo 0); con exigirCompletos, solo las completas.
+    const validas = config.exigirCompletos
+      ? tandas.filter(t => req.every(f => val(t, f) > 0))
+      : tandas.filter(t => t.caj > 0 || t.kg > 0 || t.uni > 0);
     const totales = {
       caj: validas.reduce((s, t) => s + (Number(t.caj) || 0), 0),
       kg: validas.reduce((s, t) => s + kgDe(t), 0),
@@ -174,6 +202,7 @@
         const fld = inp.dataset.fld;
         if (fld === "caj" || fld === "uni") inp.value = inp.value.replace(/\D/g, "");
         else inp.value = inp.value.replace(/[^0-9,.\-]/g, "");
+        mostrarMsg("");
       });
       inp.addEventListener("change", () => {
         sincronizarInputs();
