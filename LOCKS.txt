@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-07-30 - Relevamiento (?v=20260730f): TABLA DE CARGA optimizada en TODOS los relevamientos — #detTable pasa de width:100% (estiraba las columnas de conteo "Paquetes"/"Uni sueltas"/etc dejando huecos hacia el borde) a width:auto + margin auto (centrada). Ahora cada columna se ajusta a su contenido (input 82px + header). El scroll horizontal lo sigue manejando .tbl-scroll para tablas anchas (ej. flejes Cervantes) con las columnas fijas laterales. loekemeyer.
 2026-07-30 - Relevamiento (?v=20260730e): el CONTENIDO de las columnas de info (no solo el titulo) se parte en DOBLE LINEA si tiene un espacio (titleBreak, ej. "Tira Imp." en N° Caja -> "Tira"/"Imp."), tanto en la tabla de carga (renderDetalle) como en la combinada (renderCombinado). Ademas, el ancho de cada columna de info pasa de fijo (92px) a DINAMICO = al token mas largo tras partir en espacio/guion (max*14+18, tope 140) -> la columna se optimiza y no deja espacio libre al borde. loekemeyer.
 2026-07-30 - Relevamiento (?v=20260730d): vista combinada — encabezados de lugar ABREVIADOS (Cerv./Virg./San R. via ABREV_PLANTA) y "Total (uni)" en 2 lineas (titleBreak), padding de celdas 7/12 (antes 8/18) para ajustar mejor al contenido. loekemeyer.
 2026-07-30 - Relevamiento (?v=20260730c): vista combinada optimizada — #detTable.combined width:auto (antes 100% estiraba las columnas dejando huecos) + margin auto (centrada) + padding 8/18. Las columnas se ajustan al contenido. Se agrega/quita la clase 'combined' al #detTable en renderCombinado/renderDetalle. loekemeyer.
