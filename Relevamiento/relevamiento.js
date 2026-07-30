@@ -119,6 +119,60 @@
     return (CONTEO_COLS[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
   }
 
+  // Composición de un valor: cómo se calculó (renglones intermedios + resultado final).
+  function composicion(tipo, planta, info, conteo) {
+    const num = x => { const n = parseFloat(String(x == null ? "" : x).replace(",", ".")); return isNaN(n) ? 0 : n; };
+    const c = conteo || {}, i = info || {};
+    const L = (label, val, tipoFila) => ({ label, val, tipoFila });
+    if (tipo === "cajas") {
+      if (planta === "Virgilio") return { lineas: [L("Unidades", num(c.uni))], total: num(c.uni), unidad: "uni" };
+      const paq = num(c.conteo_paq), upp = num(i.uni_x_paq), sub = paq * upp, sueltas = num(c.uni_suelta);
+      return { lineas: [L("Paquetes", paq), L("Uni x paquete", upp), L("Paquetes × Uni/paq", sub, "sub"), L("Uni sueltas", sueltas)], total: sub + sueltas, unidad: "uni" };
+    }
+    if (tipo === "cartones") {
+      const paq = num(c.conteo_paquete), upp = num(i.uni_x_paq), sub = paq * upp, sueltas = num(c.uni_suelta);
+      return { lineas: [L("Paquetes", paq), L("Uni x paquete", upp), L("Paquetes × Uni/paq", sub, "sub"), L("Uni sueltas", sueltas)], total: sub + sueltas, unidad: "uni" };
+    }
+    if (tipo === "plasticos") {
+      const b = num(c.stock_relev_bolsa), ub = num(i.uni_x_bolsa), sub = b * ub, sueltas = num(c.uni_suelta);
+      return { lineas: [L("Bolsas", b), L("Uni x bolsa", ub), L("Bolsas × Uni/bolsa", sub, "sub"), L("Uni sueltas", sueltas)], total: sub + sueltas, unidad: "uni" };
+    }
+    if (tipo === "bombillas") {
+      const s = num(c.stock_bolsa_caj_rollo), ub = num(i.uni_x_bc), sub = s * ub, sueltas = num(c.uni_suelta);
+      return { lineas: [L("Bolsa/Caj/Rollo", s), L("Uni x b/c", ub), L("× Uni", sub, "sub"), L("Uni sueltas", sueltas)], total: sub + sueltas, unidad: "uni" };
+    }
+    if (tipo === "flejes") {
+      if (planta !== "Cervantes") return { lineas: [L("Stock Kg", num(c.stock_kg))], total: num(c.stock_kg), unidad: "kg" };
+      const rollos = Array.isArray(c.rollos_json) ? c.rollos_json : [];
+      const lineas = rollos.length
+        ? rollos.map((r, idx) => L(`Rollo ${idx + 1}: ${num(r.caj)} rollo(s) × ${num(r.kg)} kg`, num(r.caj) * num(r.kg)))
+        : [L("Total Kg", num(c.total_kg))];
+      return { lineas, total: num(c.total_kg), unidad: "kg" };
+    }
+    if (tipo === "remaches") {
+      return { lineas: [L("Bolsas níquel", num(c.bolsas_niquel)), L("Stock crudo Kg", num(c.stock_crudo_kg))], total: null };
+    }
+    if (tipo === "garage") return { lineas: [L("Cajones", num(c.stock_actual_cajon))], total: num(c.stock_actual_cajon), unidad: "cajón" };
+    return { lineas: [], total: null };
+  }
+
+  function fmtComp(v) { return Number(v || 0).toLocaleString("es-AR", { maximumFractionDigits: 3 }); }
+
+  function mostrarComposicion(tipo, planta, info, conteo, descripcion, sector) {
+    const comp = composicion(tipo, planta, info, conteo);
+    const filas = comp.lineas.map(l =>
+      `<tr class="${l.tipoFila === "sub" ? "sub" : ""}"><td class="lbl">${esc(l.label)}</td><td class="val">${fmtComp(l.val)}</td></tr>`
+    ).join("");
+    const totFila = comp.total == null ? "" :
+      `<tr class="tot"><td class="lbl">Total</td><td class="val">${fmtComp(comp.total)}${comp.unidad ? " " + esc(comp.unidad) : ""}</td></tr>`;
+    $("compTitulo").textContent = `${TIPO_LABEL[tipo] || tipo} · ${planta}`;
+    $("compBody").innerHTML =
+      `<div class="comp-sub">${esc(sector || "")}${descripcion ? " — " + esc(descripcion) : ""}</div>
+       <table class="comp-tabla">${filas}${totFila}</table>`;
+    $("modalComp").style.display = "flex";
+  }
+  function cerrarComposicion() { $("modalComp").style.display = "none"; }
+
   // Pares que van juntos: si uno tiene valor, el otro también. (Flejes ya no usa pares: carga por tandas.)
   const PAIR_VALID = {};
   // Marca en rojo el input que falta de un par y devuelve las claves con error de esa fila.
@@ -384,6 +438,7 @@
   // DETALLE (carga de conteo)
   // ---------------------------------------------------------------------------
   let DET = { rel: null, rows: [], cols: [], dirty: new Set() };
+  let COMB = {}; // datos de la vista combinada para el popup de composición
 
   async function abrirDetalle(relId, readonly, onBack) {
     const rel = RELS.find(x => x.id === relId) || (await refetchRel(relId));
@@ -455,6 +510,7 @@
   }
 
   function renderCombinado(tipo, rels, items) {
+    COMB = { tipo, rels, items };
     $("detTable").classList.add("combined");
     const info = INFO_COLS[tipo] || [];
     const showDesc = !HIDE_DESC[tipo];
@@ -467,7 +523,7 @@
     head += `<th>${titleBreak(`Total${unit ? ` (${unit})` : ""}`)}</th></tr>`;
     $("detHead").innerHTML = head;
 
-    const body = items.map(it => {
+    const body = items.map((it, idx) => {
       let tds = "";
       if (showDesc) tds += `<td>${esc(it.ident.descripcion)}</td>`;
       tds += `<td style="font-weight:800;font-size:22px">${esc(it.ident.sector)}</td>`;
@@ -476,7 +532,8 @@
       rels.forEach(r => {
         const v = aporteBase(tipo, r.planta, it.porLugar[r.planta], it.ident.info);
         sum += v;
-        tds += `<td class="num">${fmtNum(v, tipo)}</td>`;
+        // Celda clickable -> popup de composición (cómo se calculó el valor de ese lugar).
+        tds += `<td class="num comp-cell" data-i="${idx}" data-planta="${esc(r.planta)}" title="Ver composición">${fmtNum(v, tipo)}</td>`;
       });
       tds += `<td class="num" style="font-weight:800">${fmtNum(sum, tipo)}</td>`;
       return `<tr>${tds}</tr>`;
@@ -543,7 +600,8 @@
       const compCells = comps.map(c =>
         `<td class="computed" data-key="${c.key}" style="text-align:center;font-weight:800;color:#0a7a2f;width:${compW}px;min-width:${compW}px">${esc(c.compute(r.conteo || {}))}</td>`
       ).join("");
-      return `<tr data-det="${r.det_id}" class="${r.cargado ? "loaded" : ""}">${froz}${inputs}${compCells}</tr>`;
+      // En solo-lectura la fila es clickable -> popup de composición de esa pieza.
+      return `<tr data-det="${r.det_id}" class="${r.cargado ? "loaded" : ""}${DET.readonly ? " ro-row" : ""}"${DET.readonly ? ' title="Ver composición"' : ""}>${froz}${inputs}${compCells}</tr>`;
     }).join("");
     if (PAIR_VALID[rel.tipo]) document.querySelectorAll("#detBody tr").forEach(marcarErroresPar);
     updateProg();
@@ -618,6 +676,24 @@
     const inp = e.target.closest("input.ci-tanda-only");
     if (inp && !DET.readonly) abrirTandasDet(inp.dataset.det, inp.dataset.key);
   });
+
+  // Composición: click en celda de la vista combinada (por lugar) o en fila del detalle solo-lectura.
+  $("detBody").addEventListener("click", (e) => {
+    if (DET.combined) {
+      const cell = e.target.closest("td.comp-cell"); if (!cell) return;
+      const it = (COMB.items || [])[Number(cell.dataset.i)]; if (!it) return;
+      const planta = cell.dataset.planta;
+      mostrarComposicion(COMB.tipo, planta, it.ident.info, it.porLugar[planta], it.ident.descripcion, it.ident.sector);
+      return;
+    }
+    if (DET.readonly) {
+      const tr = e.target.closest("tr[data-det]"); if (!tr) return;
+      const row = DET.rows.find(r => r.det_id === Number(tr.dataset.det)); if (!row) return;
+      mostrarComposicion(DET.rel.tipo, DET.rel.planta, row.info, row.conteo, row.descripcion, row.sector);
+    }
+  });
+  $("compCerrar").addEventListener("click", cerrarComposicion);
+  $("modalComp").addEventListener("click", (e) => { if (e.target.id === "modalComp") cerrarComposicion(); });
 
   // Cuenta renglones sin ningún dato y pares incompletos (flejes) en el estado actual de la tabla.
   function estadoCarga() {

@@ -40,6 +40,17 @@
   #detTable{width:auto;margin:0 auto}
   #detTable.combined{width:auto;margin:0 auto}
   #detTable.combined td, #detTable.combined th{padding:7px 12px}
+  #detTable.combined td.comp-cell{cursor:pointer}
+  #detTable.combined td.comp-cell:hover{background:#eef4f9}
+  #detBody tr.ro-row{cursor:pointer}
+  #detBody tr.ro-row:hover td{background:#f2f7fb}
+  .comp-tabla{width:100%;border-collapse:collapse;font-size:18px}
+  .comp-tabla td{border:1px solid #d7dde3;padding:8px 12px}
+  .comp-tabla td.lbl{text-align:left;font-weight:600}
+  .comp-tabla td.val{text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+  .comp-tabla tr.sub td{background:#f6f8fa;color:#3a4653}
+  .comp-tabla tr.tot td{background:#dff3e6;font-size:20px}
+  .comp-sub{font-size:13px;color:#5a6672;margin-bottom:8px}
   .tbl-scroll{overflow-x:auto}
   th,td{border:1px solid #9aa6b2;padding:8px 9px;text-align:center;vertical-align:middle;white-space:nowrap;box-sizing:border-box}
   thead th{background:#e9eef3;color:#26313c;font-weight:800;position:sticky;top:0}
@@ -209,6 +220,17 @@
     </div>
   </div>
 
+  <!-- Modal: composición de una celda (cómo se calculó el valor) -->
+  <div id="modalComp" class="modal-bg" style="display:none">
+    <div class="modal">
+      <h3 id="compTitulo">Composición</h3>
+      <div id="compBody"></div>
+      <div class="modal-actions">
+        <button class="btn btn-dark" id="compCerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: agregar otro lugar al mismo relevamiento -->
   <div id="modalAgregar" class="modal-bg" style="display:none">
     <div class="modal">
@@ -228,6 +250,6 @@
 <script src="../version.js?v=20260617b"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../tandas-popup.js?v=20260730i"></script>
-<script src="relevamiento.js?v=20260730n"></script>
+<script src="relevamiento.js?v=20260730o"></script>
 </body>
 </html>
