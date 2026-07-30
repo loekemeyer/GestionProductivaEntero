@@ -112,8 +112,21 @@
   const titleBreak = (s) => { s = String(s == null ? "" : s); const i = s.indexOf(" "); return i < 0 ? esc(s) : esc(s.slice(0, i)) + "<br>" + esc(s.slice(i + 1)); };
   // Parte un valor por "-" en varias lineas (ej. cod "Bomb-CH" -> "Bomb"/"CH")
   const dashBreak = (s) => String(s == null ? "" : s).split("-").map(esc).join("<br>");
-  // Corta un texto en trozos de n caracteres, uno por linea (ej. plasticos descripcion cada 10)
-  const chunkBreak = (s, n) => { s = String(s == null ? "" : s); const out = []; for (let i = 0; i < s.length; i += n) out.push(esc(s.slice(i, i + n))); return out.length ? out.join("<br>") : ""; };
+  // Envuelve por PALABRAS: acumula palabras y corta en el espacio cuando la linea pasa de n caracteres
+  // (no parte palabras al medio). Ej. n=10: "Cuchilla Pelapapa Curva" -> "Cuchilla Pelapapa" / "Curva".
+  const wrapLines = (s, n) => {
+    s = String(s == null ? "" : s).trim();
+    if (!s) return [];
+    const words = s.split(/\s+/), lines = [];
+    let cur = "";
+    for (const w of words) {
+      cur = cur ? cur + " " + w : w;
+      if (cur.length >= n) { lines.push(cur); cur = ""; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+  const wrapBreak = (s, n) => wrapLines(s, n).map(esc).join("<br>");
   const norm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const fmtFecha = (f) => { if (!f) return ""; const [y, m, d] = String(f).slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
 
@@ -527,7 +540,7 @@
 
     const body = items.map((it, idx) => {
       let tds = "";
-      if (showDesc) tds += `<td>${tipo === "plasticos" ? chunkBreak(it.ident.descripcion, 10) : esc(it.ident.descripcion)}</td>`;
+      if (showDesc) tds += `<td>${tipo === "plasticos" ? wrapBreak(it.ident.descripcion, 10) : esc(it.ident.descripcion)}</td>`;
       tds += `<td style="font-weight:800;font-size:22px">${esc(it.ident.sector)}</td>`;
       info.forEach(([k]) => { const raw = it.ident.info ? it.ident.info[k] : ""; tds += `<td style="font-weight:800;font-size:22px">${k === "cod" ? dashBreak(raw) : titleBreak(raw)}</td>`; });
       let sum = 0;
@@ -554,9 +567,14 @@
     // Ancho de Sector = al máximo de caracteres del contenido (mín. 5), con la letra grande del contenido (22px).
     const secLens = rows.map(r => String(r.sector == null ? "" : r.sector).length);
     const maxSec = Math.max(5, secLens.length ? Math.max.apply(null, secLens) : 5);
-    // Plasticos: la descripcion se corta cada 10 caracteres -> columna mas angosta (~10 chars).
+    // Plasticos: la descripcion se corta por palabra al pasar 10 chars -> ancho = a la linea mas larga.
     const descChunk = rel.tipo === "plasticos";
-    const W_DESC = descChunk ? 120 : 165, W_SECTOR = Math.min(190, maxSec * 15 + 20);
+    let W_DESC = 165;
+    if (descChunk) {
+      const maxLine = rows.reduce((m, r) => { const ls = wrapLines(r.descripcion, 10); return ls.reduce((mm, l) => Math.max(mm, l.length), m); }, 8);
+      W_DESC = Math.min(210, Math.max(90, maxLine * 10 + 18));
+    }
+    const W_SECTOR = Math.min(190, maxSec * 15 + 20);
     // Ancho de cada columna de info = al token mas largo (tras partir en espacio/guion, ya que el contenido va en doble linea).
     const wInfo = (k, lbl) => {
       const toks = [];
@@ -568,7 +586,7 @@
 
     // Columnas congeladas lateralmente (identificadores). Descripción es opcional (se oculta en cajas).
     const fcols = [];
-    if (!HIDE_DESC[rel.tipo]) fcols.push({ w: W_DESC, head: "Descripción", cls: "desc", val: r => descChunk ? chunkBreak(r.descripcion, 10) : esc(r.descripcion) });
+    if (!HIDE_DESC[rel.tipo]) fcols.push({ w: W_DESC, head: "Descripción", cls: "desc", val: r => descChunk ? wrapBreak(r.descripcion, 10) : esc(r.descripcion) });
     fcols.push({ w: W_SECTOR, head: "Sector", big: true, val: r => esc(r.sector) });
     info.forEach(([k, lbl]) => fcols.push({ w: wInfo(k, lbl), head: lbl, big: true, val: r => (k === "cod") ? dashBreak(r.info ? r.info[k] : "") : titleBreak(r.info ? r.info[k] : "") }));
     let accL = 0; fcols.forEach(f => { f.left = accL; accL += f.w; });
