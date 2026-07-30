@@ -456,7 +456,7 @@
       let tds = "";
       if (showDesc) tds += `<td>${esc(it.ident.descripcion)}</td>`;
       tds += `<td style="font-weight:800;font-size:22px">${esc(it.ident.sector)}</td>`;
-      info.forEach(([k]) => { const raw = it.ident.info ? it.ident.info[k] : ""; tds += `<td style="font-weight:800;font-size:22px">${k === "cod" ? dashBreak(raw) : esc(raw)}</td>`; });
+      info.forEach(([k]) => { const raw = it.ident.info ? it.ident.info[k] : ""; tds += `<td style="font-weight:800;font-size:22px">${k === "cod" ? dashBreak(raw) : titleBreak(raw)}</td>`; });
       let sum = 0;
       rels.forEach(r => {
         const v = aporteBase(tipo, r.planta, it.porLugar[r.planta], it.ident.info);
@@ -480,13 +480,21 @@
     // Ancho de Sector = al máximo de caracteres del contenido (mín. 5), con la letra grande del contenido (22px).
     const secLens = rows.map(r => String(r.sector == null ? "" : r.sector).length);
     const maxSec = Math.max(5, secLens.length ? Math.max.apply(null, secLens) : 5);
-    const W_DESC = 165, W_SECTOR = Math.min(190, maxSec * 15 + 20), W_INFO = 92;
+    const W_DESC = 165, W_SECTOR = Math.min(190, maxSec * 15 + 20);
+    // Ancho de cada columna de info = al token mas largo (tras partir en espacio/guion, ya que el contenido va en doble linea).
+    const wInfo = (k, lbl) => {
+      const toks = [];
+      String(lbl == null ? "" : lbl).split(/[\s-]+/).forEach(t => toks.push(t.length));
+      rows.forEach(r => { const v = String((r.info && r.info[k] != null) ? r.info[k] : ""); v.split(k === "cod" ? "-" : /\s+/).forEach(t => toks.push(t.length)); });
+      const max = Math.max(3, toks.length ? Math.max.apply(null, toks) : 3);
+      return Math.min(140, max * 14 + 18);
+    };
 
     // Columnas congeladas lateralmente (identificadores). Descripción es opcional (se oculta en cajas).
     const fcols = [];
     if (!HIDE_DESC[rel.tipo]) fcols.push({ w: W_DESC, head: "Descripción", cls: "desc", val: r => esc(r.descripcion) });
     fcols.push({ w: W_SECTOR, head: "Sector", big: true, val: r => esc(r.sector) });
-    info.forEach(([k, lbl]) => fcols.push({ w: W_INFO, head: lbl, big: true, val: r => (k === "cod") ? dashBreak(r.info ? r.info[k] : "") : esc(r.info ? r.info[k] : "") }));
+    info.forEach(([k, lbl]) => fcols.push({ w: wInfo(k, lbl), head: lbl, big: true, val: r => (k === "cod") ? dashBreak(r.info ? r.info[k] : "") : titleBreak(r.info ? r.info[k] : "") }));
     let accL = 0; fcols.forEach(f => { f.left = accL; accL += f.w; });
     const lastFz = fcols.length - 1;
     const fz = (f, i, head) => {
