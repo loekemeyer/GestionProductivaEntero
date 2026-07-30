@@ -47,7 +47,10 @@
   .resumen thead th{font-size:21px;font-weight:800;text-align:center}
   .resumen td.tipo{font-size:19px;font-weight:800;text-align:center}
   .resumen .enc{font-size:18px;font-weight:800;margin-top:3px;color:#1b2430}
-  .resumen td.cell[data-relid]:hover{background:#eef4f0}
+  .resumen td.cell-ok{background:#dff3e6}
+  .resumen td.cell-inc,.resumen td.cell-falta{background:#fbe0e0}
+  .resumen td .falta{color:#c00;font-weight:800}
+  .resumen td.cell[data-relid]:hover{filter:brightness(.96)}
   .resumen td.tipo[data-grupo]{cursor:pointer;text-decoration:underline}
   .resumen td.tipo[data-grupo]:hover{background:#eef4f0}
   .pill{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;font-weight:700}
@@ -218,6 +221,6 @@
 <script src="../version.js?v=20260617b"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../tandas-popup.js?v=20260730i"></script>
-<script src="relevamiento.js?v=20260730k"></script>
+<script src="relevamiento.js?v=20260730l"></script>
 </body>
 </html>

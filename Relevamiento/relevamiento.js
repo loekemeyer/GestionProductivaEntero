@@ -185,14 +185,22 @@
       for (const p of PLANTAS) {
         const aplica = (PLANTAS_TIPO[t.key] || []).includes(p);
         const rel = u ? u.rels.find(r => r.planta === p) : null;
-        let cell = `<span class="muted" title="No aplica">·</span>`, attr = "";
+        let cell = `<span class="muted" title="No aplica">·</span>`, attr = "", cls = "cell";
         if (aplica) {
           if (rel) {
+            const completo = rel.items > 0 && rel.cargados >= rel.items;
+            cls += completo ? " cell-ok" : " cell-inc";
+            const estado = completo ? "Completo" : `Falta terminar (${rel.cargados}/${rel.items})`;
             cell = `${fmtFecha(rel.fecha)}${rel.encargado ? `<div class="enc">${esc(rel.encargado)}</div>` : ""}`;
-            attr = ` data-relid="${rel.id}" style="cursor:pointer" title="Ver este lugar"`;
-          } else cell = `<span class="muted">—</span>`;
+            attr = ` data-relid="${rel.id}" style="cursor:pointer" title="${estado} — Ver este lugar"`;
+          } else {
+            // Aplica pero no se cargó este lugar -> falta hacer (rojo).
+            cls += " cell-falta";
+            cell = `<span class="falta">Falta</span>`;
+            attr = ` title="Falta hacer este lugar"`;
+          }
         }
-        html += `<td class="cell"${attr}>${cell}</td>`;
+        html += `<td class="${cls}"${attr}>${cell}</td>`;
       }
       html += `</tr>`;
     }
