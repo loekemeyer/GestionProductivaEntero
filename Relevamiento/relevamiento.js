@@ -98,7 +98,9 @@
     const c = conteo || {}, i = info || {};
     if (tipo === "flejes") return planta === "Cervantes" ? num(c.total_kg) : num(c.stock_kg);
     if (tipo === "cajas") return planta === "Virgilio" ? num(c.uni) : num(c.conteo_paq) * num(i.uni_x_paq) + num(c.uni_suelta);
-    if (tipo === "plasticos") return num(c.stock_relev_bolsa) * num(i.uni_x_bolsa) + num(c.uni_suelta);
+    // Si el ítem no tiene "uni x bolsa" (Master Bach, materias primas, etc.), la cuenta es
+    // por BOLSA: 1 bolsa = 1 (no multiplicar por 0, que borraba lo cargado).
+    if (tipo === "plasticos") { const ub = num(i.uni_x_bolsa); return num(c.stock_relev_bolsa) * (ub || 1) + num(c.uni_suelta); }
     return 0;
   }
   function fmtNum(n, tipo) {
@@ -162,7 +164,10 @@
       return { lineas: [L("Paquetes", paq), L("Uni x paquete", upp), L("Paquetes × Uni/paq", sub, "sub"), L("Uni sueltas", sueltas)], total: sub + sueltas, unidad: "uni" };
     }
     if (tipo === "plasticos") {
-      const b = num(c.stock_relev_bolsa), ub = num(i.uni_x_bolsa), sub = b * ub, sueltas = num(c.uni_suelta);
+      const b = num(c.stock_relev_bolsa), ub = num(i.uni_x_bolsa), sueltas = num(c.uni_suelta);
+      // Sin "uni x bolsa": se cuenta por bolsa (no hay conversión a unidades).
+      if (!ub) return { lineas: [L("Bolsas", b), L("Uni sueltas", sueltas)], total: b + sueltas, unidad: "uni" };
+      const sub = b * ub;
       return { lineas: [L("Bolsas", b), L("Uni x bolsa", ub), L("Bolsas × Uni/bolsa", sub, "sub"), L("Uni sueltas", sueltas)], total: sub + sueltas, unidad: "uni" };
     }
     if (tipo === "bombillas") {
