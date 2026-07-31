@@ -475,29 +475,22 @@
   function cerrarRealizar() { $("modalRealizar").style.display = "none"; }
   async function confirmarRealizar() {
     const tipo = RZ.tipo, planta = $("rzPlanta").value;
-    const fecha = toYmd(hoyDate());  // siempre la fecha actual
     const encargado = $("rzEncargado").value.trim();
     if (!encargado) { $("rzEncargado").style.borderColor = "#c00"; $("rzEncargado").focus(); return; }
     // Si ya hay un relevamiento de este tipo+lugar SIN completar, lo retomamos (no duplicar).
     const pendiente = RELS.find(r => r.tipo === tipo && r.planta === planta && !(r.items > 0 && r.cargados >= r.items));
     if (pendiente) { cerrarRealizar(); abrirDetalle(pendiente.id, false); return; }
-    const btn = $("rzConfirmar"); btn.disabled = true;
     // El "ciclo" del tipo abarca TODAS sus plantas (ej. plásticos = Cervantes + Virgilio).
-    // Sumamos este lugar a la tanda actual mientras el ciclo no esté completo (aunque el/los
-    // lugar(es) ya cargado(s) estén completos) y no tenga ya este lugar; si no, tanda nueva.
+    // Se suma este lugar a la tanda actual mientras el ciclo no esté completo y no tenga ya
+    // este lugar; si no, tanda nueva. NO se crea nada en la base todavía: el relevamiento se
+    // crea recién al apretar Guardar (guardarTodo). Acá sólo se decide el grupo destino.
     const req = PLANTAS_TIPO[tipo] || [];
     const ult = ultimasTandasPorTipo()[tipo];
     const cicloCompleto = !!ult && req.every(p => { const r = ult.rels.find(x => x.planta === p); return r && r.items > 0 && r.cargados >= r.items; });
     const yaTiene = !!ult && ult.rels.some(r => r.planta === planta);
     const enProgreso = !!ult && !cicloCompleto && !yaTiene;
-    let data, error;
-    if (enProgreso) ({ data, error } = await sb.rpc("rc_agregar_lugar", { p_grupo_id: ult.g, p_planta: planta, p_fecha: fecha, p_encargado: encargado }));
-    else ({ data, error } = await sb.rpc("rc_generar", { p_tipo: tipo, p_planta: planta, p_fecha: fecha, p_encargado: encargado }));
-    btn.disabled = false;
-    if (error) { showMsg("No se pudo iniciar (¿estás logueado?): " + error.message, "err"); return; }
     cerrarRealizar();
-    await cargarLista();
-    abrirDetalle(data, false);
+    abrirDetalleNuevo(tipo, planta, encargado, enProgreso ? ult.g : null);
   }
 
   // Totales y por lugar: por cada tipo x planta muestra la FECHA del último relevamiento (sin columna Total)
@@ -725,15 +718,34 @@
       const rj = row.conteo && row.conteo.rollos_json;
       if (Array.isArray(rj) && rj.length) DET.rollos[row.det_id] = rj;
     });
+    pintarDetalle();
+  }
+
+  // Tail de render de la tabla de carga (compartido por abrirDetalle y abrirDetalleNuevo).
+  function pintarDetalle() {
+    const { rel, readonly } = DET;
     $("vistaLista").style.display = "none";
     $("vistaDetalle").style.display = "";
-    $("detTitulo").textContent = `${TIPO_LABEL[rel.tipo]} · ${rel.planta} · ${fmtFecha(rel.fecha)}${rel.encargado ? " · " + rel.encargado : ""}${readonly ? " · (solo ver)" : ""}`;
+    $("detTitulo").textContent = `${TIPO_LABEL[rel.tipo]} · ${rel.planta} · ${fmtFecha(rel.fecha)}${rel.encargado ? " · " + rel.encargado : ""}${readonly ? " · (solo ver)" : (rel.nuevo ? " · (nuevo — se guarda al apretar Guardar)" : "")}`;
     $("btnGuardar").style.display = readonly ? "none" : "";
     $("guardarBottomWrap").style.display = readonly ? "none" : "";
     $("detUnsaved").style.display = readonly ? "none" : "";
     $("detLugares").style.display = "none";
     renderDetalle();
     updateGuardarState();
+  }
+
+  // Abrir un relevamiento NUEVO sin crearlo en la base: la tabla se arma desde el catálogo
+  // (v_rc_catalogo). El relevamiento se crea recién al apretar Guardar (ver guardarTodo).
+  async function abrirDetalleNuevo(tipo, planta, encargado, grupoId) {
+    const { data, error } = await sb.from("v_rc_catalogo").select("*").eq("tipo", tipo).order("orden", { ascending: true });
+    if (error) { showMsg("Error leyendo el catálogo: " + error.message, "err"); return; }
+    let filas = data || [];
+    if (tipo === "plasticos") filas = filas.filter(r => planta === "Cervantes" ? r.en_cervantes : (planta === "Virgilio" ? r.en_virgilio : true));
+    filas = filas.map(r => ({ det_id: -r.cat_id, cat_id: r.cat_id, relevamiento_id: null, tipo, orden: r.orden, descripcion: r.descripcion, sector: r.sector, info: r.info, conteo: {}, cargado: false })).sort(cmpSector);
+    const rel = { id: null, nuevo: true, grupoId: grupoId || null, tipo, planta, fecha: toYmd(hoyDate()), encargado, items: filas.length, cargados: 0 };
+    DET = { rel, rows: filas, cols: colsFor(tipo, planta), dirty: new Set(), readonly: false, onBack: null, rollos: {} };
+    pintarDetalle();
   }
 
   async function refetchRel(relId) {
@@ -1099,6 +1111,31 @@
   async function guardarTodo() {
     if (!DET.dirty.size) return;
     const btn = $("btnGuardar"); btn.disabled = true;
+    // GUARDADO DIFERIDO: si el relevamiento es nuevo, recién ahora se crea en la base
+    // (al apretar Guardar). Antes no existía ninguna fila -> no quedan relevamientos vacíos.
+    let creadoAhora = false;
+    if (DET.rel.nuevo) {
+      const r = DET.rel;
+      const { data: newId, error: cErr } = r.grupoId
+        ? await sb.rpc("rc_agregar_lugar", { p_grupo_id: r.grupoId, p_planta: r.planta, p_fecha: r.fecha, p_encargado: r.encargado })
+        : await sb.rpc("rc_generar", { p_tipo: r.tipo, p_planta: r.planta, p_fecha: r.fecha, p_encargado: r.encargado });
+      if (cErr || newId == null) { showMsg("No se pudo crear el relevamiento (¿estás logueado?): " + (cErr ? cErr.message : ""), "err"); btn.disabled = false; return; }
+      // Mapear cat_id -> det_id real del relevamiento recién creado.
+      const { data: nd, error: ndErr } = await sb.from("v_rc_detalle").select("det_id,cat_id").eq("relevamiento_id", newId);
+      if (ndErr) { showMsg("Error preparando el relevamiento: " + ndErr.message, "err"); btn.disabled = false; return; }
+      const byCat = {}; (nd || []).forEach(x => byCat[x.cat_id] = x.det_id);
+      const nuevoDirty = new Set(), nuevoRollos = {};
+      DET.rows.forEach(row => {
+        const real = byCat[row.cat_id]; if (real == null) return;
+        const old = row.det_id;
+        const tr = document.querySelector(`#detBody tr[data-det="${old}"]`); if (tr) tr.dataset.det = real;
+        if (DET.dirty.has(old)) nuevoDirty.add(real);
+        if (DET.rollos[old]) nuevoRollos[real] = DET.rollos[old];
+        row.det_id = real; row.relevamiento_id = newId;
+      });
+      DET.dirty = nuevoDirty; DET.rollos = nuevoRollos;
+      DET.rel.id = newId; DET.rel.nuevo = false; creadoAhora = true;
+    }
     const comps = computedFor(DET.rel.tipo, DET.rel.planta);
     let ok = 0, fail = 0, invalid = 0;
     for (const detId of [...DET.dirty]) {
@@ -1125,6 +1162,19 @@
         row.cargado = DET.cols.some(c => vals[c.key] !== "" && vals[c.key] != null);
         tr.classList.toggle("loaded", row.cargado);
       }
+    }
+    // Si se creó el relevamiento en este Guardar pero NO se pudo guardar ninguna fila,
+    // se borra para no dejar un relevamiento vacío (vuelve al estado "nuevo" para reintentar).
+    if (creadoAhora && ok === 0) {
+      await sb.rpc("rc_borrar", { p_relevamiento_id: DET.rel.id });
+      DET.rows.forEach(row => {
+        const old = row.det_id, neg = -row.cat_id;
+        const tr = document.querySelector(`#detBody tr[data-det="${old}"]`); if (tr) tr.dataset.det = neg;
+        if (DET.dirty.has(old)) { DET.dirty.delete(old); DET.dirty.add(neg); }
+        if (DET.rollos[old]) { DET.rollos[neg] = DET.rollos[old]; delete DET.rollos[old]; }
+        row.det_id = neg; row.relevamiento_id = null;
+      });
+      DET.rel.id = null; DET.rel.nuevo = true;
     }
     btn.disabled = false;
     updateProg(); updateGuardarState();
