@@ -477,7 +477,15 @@
     const tipo = RZ.tipo, planta = $("rzPlanta").value;
     const encargado = $("rzEncargado").value.trim();
     if (!encargado) { $("rzEncargado").style.borderColor = "#c00"; $("rzEncargado").focus(); return; }
-    // Si ya hay un relevamiento de este tipo+lugar SIN completar, lo retomamos (no duplicar).
+    // No se puede hacer 2 veces el mismo tipo+lugar en el MISMO día.
+    const hoy = toYmd(hoyDate());
+    const hoyMismo = RELS.find(r => r.tipo === tipo && r.planta === planta && String(r.fecha).slice(0, 10) === hoy);
+    if (hoyMismo) {
+      const completo = hoyMismo.items > 0 && hoyMismo.cargados >= hoyMismo.items;
+      if (completo) { cerrarRealizar(); showMsg(`Ya se hizo hoy el relevamiento de ${TIPO_LABEL[tipo] || tipo} en ${planta}. No se puede hacer otro el mismo día.`, "err"); return; }
+      cerrarRealizar(); abrirDetalle(hoyMismo.id, false); return; // el de hoy sin terminar: se retoma
+    }
+    // Si ya hay un relevamiento de este tipo+lugar SIN completar (de otro día), lo retomamos (no duplicar).
     const pendiente = RELS.find(r => r.tipo === tipo && r.planta === planta && !(r.items > 0 && r.cargados >= r.items));
     if (pendiente) { cerrarRealizar(); abrirDetalle(pendiente.id, false); return; }
     // El "ciclo" del tipo abarca TODAS sus plantas (ej. plásticos = Cervantes + Virgilio).
