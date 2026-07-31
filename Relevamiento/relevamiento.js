@@ -333,6 +333,17 @@
     return { raw, adj: proxHabil(raw), cicloInicio: addDias(ancla, (k - 1) * X) };
   }
 
+  // Próximas N fechas (grilla fija desde ancla) empezando por la próxima a realizar.
+  function proximasFechas(tipo, n) {
+    const cfg = CRONOGRAMA[tipo]; if (!cfg) return [];
+    const ancla = parseYmd(cfg.ancla), X = cfg.frecuencia, MS = 86400000;
+    const first = proximaCervantes(tipo);
+    const k0 = Math.round((first.raw - ancla) / (X * MS));
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(proxHabil(addDias(ancla, (k0 + i) * X)));
+    return out;
+  }
+
   // Estado de un lugar para el ciclo actual. HECHO solo si se COMPLETÓ el relevamiento de este ciclo
   // (fecha estrictamente posterior al inicio del ciclo). El ancla NO cuenta como hecho para la fecha que viene.
   function estadoLugar(tipo, planta, cicloInicio) {
@@ -385,6 +396,33 @@
       </div>`;
     }).join("");
     box.innerHTML = lineas || `<div class="empty">Sin cronograma.</div>`;
+  }
+
+  // Calendario (modal): por cada tipo, la próxima fecha a realizar + las siguientes.
+  function renderCalendario() {
+    const hoy = hoyDate();
+    const orden = TIPOS.filter(t => CRONOGRAMA[t.key])
+      .map(t => ({ t, px: proximaCervantes(t.key) }))
+      .sort((a, b) => a.px.adj - b.px.adj);
+    const rows = orden.map(({ t, px }) => {
+      const plantas = PLANTAS_TIPO[t.key] || ["Cervantes"];
+      const todosHechos = plantas.every(p => estadoLugar(t.key, p, px.cicloInicio).hecho);
+      const fechas = proximasFechas(t.key, 3);      // próxima + 2 siguientes
+      const f = fechas[0];
+      let est = "";
+      if (todosHechos) est = "verde";
+      else if (f < hoy) est = "rojo";
+      else if (+f === +hoy) est = "naranja";
+      else if (bizDiasHasta(f) <= 3) est = "amarillo";
+      const sig = fechas.slice(1).map(d => fmtFecha(toYmd(d))).join("<br>") || "—";
+      return `<tr>
+        <td class="cal-tipo">${esc(t.label)}</td>
+        <td class="cal-actual${est ? " est-" + est : ""}">${fmtFecha(toYmd(f))}</td>
+        <td class="cal-sig">${sig}</td>
+      </tr>`;
+    }).join("");
+    $("calBody").innerHTML = `<table class="cal-tabla"><thead><tr><th>Relevamiento</th><th>Próxima</th><th>Siguientes</th></tr></thead><tbody>${rows}</tbody></table>`;
+    $("modalCalendario").style.display = "flex";
   }
 
   // Flujo "Realizar": elegir lugar + encargado -> crea (o retoma) el relevamiento y abre la carga.
@@ -1081,6 +1119,11 @@
 
   $("btnGuardar").addEventListener("click", guardarTodo);
   $("btnGuardarBottom").addEventListener("click", guardarTodo);
+
+  // Calendario: abre el modal con las fechas próximas y siguientes de cada relevamiento.
+  $("btnCalendario").addEventListener("click", renderCalendario);
+  $("calCerrar").addEventListener("click", () => { $("modalCalendario").style.display = "none"; });
+  $("modalCalendario").addEventListener("click", (e) => { if (e.target.id === "modalCalendario") $("modalCalendario").style.display = "none"; });
 
   // Cronograma: botón "Realizar" -> elegir lugar + encargado y abrir la carga.
   // Click en el resto de la línea -> ver el TOTAL (combinada por lugar, o detalle

@@ -169,6 +169,17 @@
   .cl-fecha.est-rojo{color:#c00;animation:crono-rojo .4s infinite}
   .cl-fecha.est-naranja{color:#ff7a00;animation:crono-naranja .7s infinite}
   .cl-fecha.est-amarillo{color:#f0b400;animation:crono-amarillo 1.5s infinite}
+  /* Calendario (modal) */
+  table.cal-tabla{border-collapse:collapse;width:100%}
+  table.cal-tabla th,table.cal-tabla td{border:1px solid #111;padding:8px 10px;text-align:center;font-size:15px}
+  table.cal-tabla th{background:#111;color:#fff;font-weight:800}
+  table.cal-tabla td.cal-tipo{text-align:left;font-weight:800}
+  table.cal-tabla td.cal-actual{font-weight:800}
+  table.cal-tabla td.cal-actual.est-verde{color:#0a7a2f}
+  table.cal-tabla td.cal-actual.est-rojo{color:#c00}
+  table.cal-tabla td.cal-actual.est-naranja{color:#ff7a00}
+  table.cal-tabla td.cal-actual.est-amarillo{color:#f0b400}
+  table.cal-tabla td.cal-sig{color:#3a4653}
 </style>
 </head>
 <body>
@@ -177,6 +188,7 @@
   <div class="topbar">
     <h1>📋 Relevamiento</h1>
     <span class="spacer"></span>
+    <button class="btn btn-ghost" id="btnCalendario">📅 Calendario</button>
     <a class="btn btn-ghost" href="../Inicio/index.html">← Inicio</a>
   </div>
 
@@ -242,6 +254,17 @@
     </div>
   </div>
 
+  <!-- Modal: calendario de fechas (actuales y siguientes) -->
+  <div id="modalCalendario" class="modal-bg" style="display:none">
+    <div class="modal" style="max-width:640px">
+      <h3>📅 Calendario de relevamientos</h3>
+      <div id="calBody" class="tbl-scroll"></div>
+      <div class="modal-actions">
+        <button class="btn btn-dark" id="calCerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: agregar otro lugar al mismo relevamiento -->
   <div id="modalAgregar" class="modal-bg" style="display:none">
     <div class="modal">
@@ -261,6 +284,6 @@
 <script src="../version.js?v=20260617b"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../tandas-popup.js?v=20260730i"></script>
-<script src="relevamiento.js?v=20260731m"></script>
+<script src="relevamiento.js?v=20260731n"></script>
 </body>
 </html>
