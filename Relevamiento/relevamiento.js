@@ -364,14 +364,22 @@
       const estados = plantas.map(p => Object.assign({ p }, estadoLugar(t.key, p, px.cicloInicio)));
       const cervHecho = (estados.find(e => e.p === "Cervantes") || {}).hecho;
       const todosHechos = estados.every(e => e.hecho);
-      const vibra = !cervHecho && bizDiasHasta(px.adj) <= 3;
+      // Estado (color + movimiento) de la fecha:
+      //  verde = relevamiento completo · rojo = venció sin hacer · naranja = es hoy ·
+      //  amarillo = faltan ≤3 días hábiles · (vacío) = falta más de 3 días.
+      const hoy = hoyDate(), f = px.adj;
+      let estFecha = "";
+      if (todosHechos) estFecha = "verde";
+      else if (f < hoy) estFecha = "rojo";
+      else if (+f === +hoy) estFecha = "naranja";
+      else if (bizDiasHasta(f) <= 3) estFecha = "amarillo";
       const chips = estados.map(e => {
         const extra = t.key === "plasticos" ? " " + (PLASTICO_LUGAR[e.p] || "") : "";
         return `<span class="crono-chip ${e.hecho ? "ok" : "falta"}">${esc((ABREV_PLANTA[e.p] || e.p) + extra)} ${e.hecho ? "✓" : "✗"}${e.encargado ? `<span class="crono-enc">${esc(e.encargado)}</span>` : ""}</span>`;
       }).join("");
       return `<div class="crono-linea${todosHechos ? " completo" : ""}" data-tipo="${t.key}" title="Ver el total (por lugar)">
         <div class="cl-tipo">${esc(t.label)}</div>
-        <div class="cl-fecha${vibra ? " vibra" : ""}"><span class="cl-lbl">${cervHecho ? "Próximo" : "A realizar"}</span>${fmtFecha(toYmd(px.adj))}</div>
+        <div class="cl-fecha${estFecha ? " est-" + estFecha : ""}"><span class="cl-lbl">${cervHecho ? "Próximo" : "A realizar"}</span>${fmtFecha(toYmd(px.adj))}</div>
         <div class="cl-chips">${chips}</div>
         <button class="btn btn-green sm cl-btn" data-realizar="${t.key}">Realizar</button>
       </div>`;
@@ -699,8 +707,7 @@
     $("detLugares").innerHTML = rels.map(r => {
       const rojo = !(r.items > 0 && r.cargados >= r.items);
       return `<span class="lug-tag ${rojo ? "incompleto" : "ok"}"><b>${esc(r.planta)}</b> <span class="cnt">${r.cargados}/${r.items}</span>
-        <button class="btn btn-ghost sm" data-act="ver-lugar" data-id="${r.id}">Detalle</button>
-        <button class="btn btn-red sm" data-act="borrar" data-id="${r.id}" title="Borrar este lugar">✕</button></span>`;
+        <button class="btn btn-ghost sm" data-act="ver-lugar" data-id="${r.id}">Detalle</button></span>`;
     }).join("");
     $("detLugares").style.display = "flex";
     renderCombinado(rels[0].tipo, rels, items);
