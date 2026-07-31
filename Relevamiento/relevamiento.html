@@ -174,15 +174,16 @@
   #modalCalendario .modal{border-radius:10px}
   .cal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
   #modalCalendario h3{font-size:24px}
-  .cal-head .cal-mes{font-size:26px;font-weight:800;text-transform:capitalize}
-  .cal-nav{border:1px solid #111;background:#fff;border-radius:8px;width:48px;height:48px;font-size:26px;font-weight:800;cursor:pointer}
-  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
-  .cal-dow{text-align:center;font-size:19px;font-weight:800;color:#5a6672;text-transform:uppercase;padding:6px 0}
-  .cal-dia{min-height:110px;border:1px solid #ccd3da;border-radius:8px;padding:6px 7px;display:flex;flex-direction:column;align-items:center;gap:4px;background:#fff}
+  .cal-head .cal-mes{font-size:clamp(22px,3vw,36px);font-weight:800;text-transform:capitalize}
+  .cal-nav{border:1px solid #111;background:#fff;border-radius:8px;width:48px;height:48px;font-size:26px;font-weight:800;cursor:pointer;flex:none}
+  /* 7 columnas que SIEMPRE entran (minmax 0) -> nunca hay scroll horizontal. */
+  .cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+  .cal-dow{text-align:center;font-size:clamp(12px,1.9vw,26px);font-weight:800;color:#5a6672;text-transform:uppercase;padding:6px 0;min-width:0;overflow:hidden}
+  .cal-dia{min-height:110px;border:1px solid #ccd3da;border-radius:8px;padding:6px 5px;display:flex;flex-direction:column;align-items:center;gap:4px;background:#fff;min-width:0;overflow:hidden}
   .cal-dia.cal-vacio{background:#f4f6f8;border-color:#e6eaee}
   .cal-dia.cal-hoy{border-color:#111;border-width:2px}
-  .cal-dnum{font-size:20px;font-weight:800;color:#3a4653;align-self:center;text-align:center;line-height:1}
-  .cal-ev{font-size:17px;font-weight:800;border-radius:6px;padding:3px 8px;background:#eef1f4;color:#3a4653;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .cal-dnum{font-size:clamp(16px,2vw,32px);font-weight:800;color:#3a4653;align-self:center;text-align:center;line-height:1}
+  .cal-ev{font-size:clamp(11px,1.7vw,28px);font-weight:800;border-radius:6px;padding:3px 6px;background:#eef1f4;color:#3a4653;text-align:center;max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .cal-ev.est-verde{background:#dff3e6;color:#0a7a2f}
   .cal-ev.est-rojo{background:#fbe0e0;color:#c00}
   .cal-ev.est-naranja{background:#ffe6cc;color:#c65a00}
@@ -263,7 +264,7 @@
 
   <!-- Modal: calendario de fechas (actuales y siguientes) -->
   <div id="modalCalendario" class="modal-bg" style="display:none">
-    <div class="modal" style="max-width:100%;width:100%;max-height:94vh;overflow:auto">
+    <div class="modal" style="max-width:100%;width:100%;max-height:94vh;overflow-x:hidden;overflow-y:auto">
       <h3>📅 Calendario de relevamientos</h3>
       <div id="calBody"></div>
       <div class="modal-actions">
