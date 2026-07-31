@@ -398,30 +398,65 @@
     box.innerHTML = lineas || `<div class="empty">Sin cronograma.</div>`;
   }
 
-  // Calendario (modal): por cada tipo, la próxima fecha a realizar + las siguientes.
-  function renderCalendario() {
-    const hoy = hoyDate();
-    const orden = TIPOS.filter(t => CRONOGRAMA[t.key])
-      .map(t => ({ t, px: proximaCervantes(t.key) }))
-      .sort((a, b) => a.px.adj - b.px.adj);
-    const rows = orden.map(({ t, px }) => {
+  // Calendario en formato MES: grilla con los días; cada día marca los relevamientos
+  // programados (grilla fija). La PRÓXIMA de cada tipo se pinta con su color de estado.
+  const CAL_MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  const CAL_DOW = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+  const CAL_ABBR = { garage: "Garage", remaches: "Remach.", flejes: "Flejes", bombillas: "Bombil.", cajas: "Cajas", plasticos: "Plástic.", cartones: "Cartón" };
+  let CAL = { y: 0, m: 0, map: null };
+
+  // Mapa ymd -> [{label, abbr, est}] con las próximas ocurrencias de cada tipo (horizonte ~6).
+  function calcCalMap() {
+    const map = {}, hoy = hoyDate();
+    TIPOS.filter(t => CRONOGRAMA[t.key]).forEach(t => {
+      const px = proximaCervantes(t.key);
       const plantas = PLANTAS_TIPO[t.key] || ["Cervantes"];
       const todosHechos = plantas.every(p => estadoLugar(t.key, p, px.cicloInicio).hecho);
-      const fechas = proximasFechas(t.key, 3);      // próxima + 2 siguientes
-      const f = fechas[0];
-      let est = "";
-      if (todosHechos) est = "verde";
-      else if (f < hoy) est = "rojo";
-      else if (+f === +hoy) est = "naranja";
-      else if (bizDiasHasta(f) <= 3) est = "amarillo";
-      const sig = fechas.slice(1).map(d => fmtFecha(toYmd(d))).join("<br>") || "—";
-      return `<tr>
-        <td class="cal-tipo">${esc(t.label)}</td>
-        <td class="cal-actual${est ? " est-" + est : ""}">${fmtFecha(toYmd(f))}</td>
-        <td class="cal-sig">${sig}</td>
-      </tr>`;
-    }).join("");
-    $("calBody").innerHTML = `<table class="cal-tabla"><thead><tr><th>Relevamiento</th><th>Próxima</th><th>Siguientes</th></tr></thead><tbody>${rows}</tbody></table>`;
+      proximasFechas(t.key, 6).forEach((f, i) => {
+        let est = "";
+        if (i === 0) {
+          if (todosHechos) est = "verde";
+          else if (f < hoy) est = "rojo";
+          else if (+f === +hoy) est = "naranja";
+          else if (bizDiasHasta(f) <= 3) est = "amarillo";
+        }
+        const ymd = toYmd(f);
+        (map[ymd] = map[ymd] || []).push({ abbr: CAL_ABBR[t.key] || t.label, est });
+      });
+    });
+    return map;
+  }
+
+  function drawCal() {
+    const y = CAL.y, m = CAL.m, hoyY = toYmd(hoyDate());
+    const primero = new Date(y, m, 1);
+    const offset = (primero.getDay() + 6) % 7;               // 0 = lunes
+    const dias = new Date(y, m + 1, 0).getDate();
+    const celdas = Math.ceil((offset + dias) / 7) * 7;
+    let cells = "";
+    for (let i = 0; i < celdas; i++) {
+      const dnum = i - offset + 1;
+      if (dnum < 1 || dnum > dias) { cells += `<div class="cal-dia cal-vacio"></div>`; continue; }
+      const ymd = toYmd(new Date(y, m, dnum));
+      const evs = (CAL.map[ymd] || []).map(e => `<span class="cal-ev${e.est ? " est-" + e.est : ""}" title="${esc(e.abbr)}">${esc(e.abbr)}</span>`).join("");
+      cells += `<div class="cal-dia${ymd === hoyY ? " cal-hoy" : ""}"><span class="cal-dnum">${dnum}</span>${evs}</div>`;
+    }
+    $("calBody").innerHTML =
+      `<div class="cal-head">
+         <button class="cal-nav" data-cal="prev">‹</button>
+         <span class="cal-mes">${CAL_MESES[m]} ${y}</span>
+         <button class="cal-nav" data-cal="next">›</button>
+       </div>
+       <div class="cal-grid">${CAL_DOW.map(d => `<div class="cal-dow">${d}</div>`).join("")}${cells}</div>`;
+  }
+
+  function renderCalendario() {
+    CAL.map = calcCalMap();
+    // Empezar en el mes de la próxima fecha más cercana (o el mes actual si no hay).
+    const proximas = TIPOS.filter(t => CRONOGRAMA[t.key]).map(t => proximaCervantes(t.key).adj);
+    const base = proximas.length ? proximas.reduce((a, b) => (a < b ? a : b)) : hoyDate();
+    CAL.y = base.getFullYear(); CAL.m = base.getMonth();
+    drawCal();
     $("modalCalendario").style.display = "flex";
   }
 
@@ -1124,6 +1159,12 @@
   $("btnCalendario").addEventListener("click", renderCalendario);
   $("calCerrar").addEventListener("click", () => { $("modalCalendario").style.display = "none"; });
   $("modalCalendario").addEventListener("click", (e) => { if (e.target.id === "modalCalendario") $("modalCalendario").style.display = "none"; });
+  $("calBody").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-cal]"); if (!b) return;
+    CAL.m += (b.dataset.cal === "next" ? 1 : -1);
+    if (CAL.m > 11) { CAL.m = 0; CAL.y++; } else if (CAL.m < 0) { CAL.m = 11; CAL.y--; }
+    drawCal();
+  });
 
   // Cronograma: botón "Realizar" -> elegir lugar + encargado y abrir la carga.
   // Click en el resto de la línea -> ver el TOTAL (combinada por lugar, o detalle
