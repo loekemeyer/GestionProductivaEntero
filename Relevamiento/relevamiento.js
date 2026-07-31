@@ -333,23 +333,25 @@
     return { raw, adj: proxHabil(raw), cicloInicio: addDias(ancla, (k - 1) * X) };
   }
 
-  // Horizonte de ocurrencias a resolver de una vez (para que la anti-colisión sea consistente
-  // entre el cronograma y el calendario).
-  const HORIZONTE_FECHAS = 6;
+  // Meses hacia adelante que cubre el cálculo de fechas (para que TODOS los tipos —incluido
+  // garage, semanal— aparezcan en cualquier mes que se navegue en el calendario).
+  const MESES_HORIZONTE = 15;
 
-  // Fechas próximas de TODOS los tipos con ANTI-COLISIÓN: dos relevamientos NO pueden caer el
-  // mismo día. Se generan las próximas N ocurrencias de cada tipo (grilla fija desde ancla),
-  // se procesan en orden cronológico (desempate por orden de TIPOS) y a cada una se le asigna
-  // el primer día HÁBIL >= su fecha que no esté ya ocupado por otro relevamiento.
+  // Fechas de TODOS los tipos con ANTI-COLISIÓN, hasta la fecha límite `hasta`: dos relevamientos
+  // NO pueden caer el mismo día. Se generan todas las ocurrencias de cada tipo (grilla fija desde
+  // ancla) hasta `hasta`, se procesan en orden cronológico (desempate por orden de TIPOS) y a cada
+  // una se le asigna el primer día HÁBIL >= su fecha que no esté ocupado por otro relevamiento.
   // Devuelve { tipo: [fecha0, fecha1, ...] } (fecha0 = próxima a realizar).
-  function fechasGlobales(n) {
+  function fechasGlobales(hasta) {
     const tipos = TIPOS.filter(t => CRONOGRAMA[t.key]);
     const orderIdx = {}; tipos.forEach((t, idx) => orderIdx[t.key] = idx);
     const MS = 86400000, events = [];
     tipos.forEach(t => {
       const cfg = CRONOGRAMA[t.key], ancla = parseYmd(cfg.ancla), X = cfg.frecuencia;
       const k0 = Math.round((proximaCervantes(t.key).raw - ancla) / (X * MS));
-      for (let i = 0; i < n; i++) events.push({ tipo: t.key, raw: addDias(ancla, (k0 + i) * X) });
+      let i = 0, raw = addDias(ancla, k0 * X);
+      // Al menos la próxima; después todas las que entren hasta `hasta`.
+      while (i === 0 || (raw <= hasta && i < 5000)) { events.push({ tipo: t.key, raw }); i++; raw = addDias(ancla, (k0 + i) * X); }
     });
     events.sort((a, b) => (a.raw - b.raw) || (orderIdx[a.tipo] - orderIdx[b.tipo]));
     const taken = new Set(), res = {}; tipos.forEach(t => res[t.key] = []);
@@ -360,8 +362,8 @@
     });
     return res;
   }
-  // Próximas N fechas de un tipo (ya resueltas sin colisión).
-  function proximasFechas(tipo, n) { return (fechasGlobales(Math.max(n, HORIZONTE_FECHAS))[tipo] || []).slice(0, n); }
+  // Fecha límite del horizonte de cálculo (hoy + MESES_HORIZONTE meses).
+  function horizonteFechas() { const h = hoyDate(); return new Date(h.getFullYear(), h.getMonth() + MESES_HORIZONTE, h.getDate()); }
 
   // Estado de un lugar para el ciclo actual. HECHO solo si se COMPLETÓ el relevamiento de este ciclo
   // (fecha estrictamente posterior al inicio del ciclo). El ancla NO cuenta como hecho para la fecha que viene.
@@ -384,7 +386,7 @@
   // y la fecha VIBRA si faltan ≤3 días hábiles (o ya venció) y no se completó.
   function renderCronograma() {
     const box = $("cronoBox"); if (!box) return;
-    const glob = fechasGlobales(HORIZONTE_FECHAS);   // fechas sin colisión (2 tipos no caen el mismo día)
+    const glob = fechasGlobales(horizonteFechas());   // fechas sin colisión (2 tipos no caen el mismo día)
     // Ordenar por FECHA a realizar: más cercana primero.
     const orden = TIPOS.filter(t => CRONOGRAMA[t.key])
       .map(t => ({ t, px: proximaCervantes(t.key), adj: (glob[t.key] || [])[0] }))
@@ -472,7 +474,7 @@
   }
 
   function renderCalendario() {
-    const glob = fechasGlobales(HORIZONTE_FECHAS);
+    const glob = fechasGlobales(horizonteFechas());
     CAL.map = calcCalMap(glob);
     // Empezar en el mes de la próxima fecha más cercana (o el mes actual si no hay).
     const primeras = TIPOS.filter(t => CRONOGRAMA[t.key]).map(t => (glob[t.key] || [])[0]).filter(Boolean);

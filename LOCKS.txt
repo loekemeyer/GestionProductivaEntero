@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-07-31 - Relevamiento (?v=20260731t): FIX garage desaparecía en meses lejanos — el horizonte era 6 ocurrencias FIJAS por tipo, así garage (semanal) solo cubría ~6 semanas y los de 40 días ~8 meses. Ahora fechasGlobales(hasta) genera todas las ocurrencias de cada tipo hasta una FECHA límite (hoy + MESES_HORIZONTE=15 meses), igual para todos -> garage aparece en cualquier mes que se navegue. proximasFechas se elimina (sin uso). loekemeyer.
 2026-07-31 - Relevamiento (?v=20260731s): calendario SIN scroll vertical — el modal es alto fijo (94vh) y las filas de días se reparten el alto restante (grid-auto-rows:1fr), así entra el mes completo (incluida la fila del 31) sin scroll. drawCal separa la fila de encabezados (Lun..Dom, .cal-dowrow) de la grilla de días (.cal-grid flex:1). #calBody flex column. loekemeyer.
 2026-07-31 - Relevamiento (HTML/CSS): calendario — texto RESPONSIVO al tamaño de celda (font-size clamp con vw: mes 22-36, DOW 12-26, día 16-32, evento 11-28) y SIN scroll horizontal: grid 7 columnas minmax(0,1fr), celdas min-width:0 overflow hidden, chip nowrap+ellipsis, modal overflow-x:hidden. Así entra siempre a lo ancho y las letras crecen con la celda. loekemeyer.
 2026-07-31 - Relevamiento (HTML/CSS): contenido del calendario CENTRADO — .cal-dia align-items center; numero de día centrado (antes a la derecha); chips de evento text-align center. Solo estilos. loekemeyer.
