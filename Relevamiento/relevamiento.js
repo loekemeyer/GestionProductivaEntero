@@ -49,7 +49,7 @@
     plasticos: [],
     remaches:  [["sector_crudo", "S.Crudo"]],
     bombillas: [],
-    garage:    [],
+    garage:    [["uni_x_caja", "Uni x Caja"]],
   };
 
   // Columnas de CONTEO (input). plantas => solo se muestra en esas plantas.
@@ -83,6 +83,7 @@
     ],
     garage: [
       { key: "stock_actual_cajon", label: "Cajones" },
+      { key: "uni_suelta", label: "Uni sueltas" },
     ],
   };
 
@@ -92,7 +93,7 @@
   const computedFor = (tipo, planta) => (COMPUTED[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
 
   // Unidad base para el TOTAL de la vista combinada, y aporte de cada lugar en esa unidad.
-  const BASE_UNIT = { flejes: "kg", cajas: "uni", plasticos: "uni" };
+  const BASE_UNIT = { flejes: "kg", cajas: "uni", plasticos: "uni", garage: "uni" };
   function aporteBase(tipo, planta, conteo, info) {
     const num = x => { const n = parseFloat(String(x == null ? "" : x).replace(",", ".")); return isNaN(n) ? 0 : n; };
     const c = conteo || {}, i = info || {};
@@ -101,6 +102,9 @@
     // Si el ítem no tiene "uni x bolsa" (Master Bach, materias primas, etc.), la cuenta es
     // por BOLSA: 1 bolsa = 1 (no multiplicar por 0, que borraba lo cargado).
     if (tipo === "plasticos") { const ub = num(i.uni_x_bolsa); return num(c.stock_relev_bolsa) * (ub || 1) + num(c.uni_suelta); }
+    // Garage: cepillos con "uni x caja" -> cajones × uni_x_caja + uni sueltas. Si no tiene uni_x_caja
+    // (ensambles GRJ), el total es el conteo de cajones.
+    if (tipo === "garage") { const uc = num(i.uni_x_caja); return num(c.stock_actual_cajon) * (uc || 1) + num(c.uni_suelta); }
     return 0;
   }
   function fmtNum(n, tipo) {
@@ -185,7 +189,13 @@
     if (tipo === "remaches") {
       return { lineas: [L("Bolsas níquel", num(c.bolsas_niquel)), L("Stock crudo Kg", num(c.stock_crudo_kg))], total: null };
     }
-    if (tipo === "garage") return { lineas: [L("Cajones", num(c.stock_actual_cajon))], total: num(c.stock_actual_cajon), unidad: "cajón" };
+    if (tipo === "garage") {
+      const caj = num(c.stock_actual_cajon), uc = num(i.uni_x_caja), sueltas = num(c.uni_suelta);
+      // Sin "uni x caja" (ensambles GRJ): se cuenta por cajón. Con uni_x_caja (cepillos): cajones × uni/caja + sueltas.
+      if (!uc) return { lineas: [L("Cajones", caj)], total: caj, unidad: "cajón" };
+      const sub = caj * uc;
+      return { lineas: [L("Cajones", caj), L("Uni x caja", uc), L("Cajones × Uni/caja", sub, "sub"), L("Uni sueltas", sueltas)], total: sub + sueltas, unidad: "uni" };
+    }
     return { lineas: [], total: null };
   }
 
