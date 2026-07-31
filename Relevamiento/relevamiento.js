@@ -48,8 +48,8 @@
     cartones:  [["cod", "Cód"], ["linea", "Linea"]],
     plasticos: [],
     remaches:  [["sector_crudo", "S.Crudo"]],
-    bombillas: [],
-    garage:    [["uni_x_caja", "Uni x Caja"]],
+    bombillas: [["uni_x_bc", "Uni x B/C"]],
+    garage:    [],
   };
 
   // Columnas de CONTEO (input). plantas => solo se muestra en esas plantas.
