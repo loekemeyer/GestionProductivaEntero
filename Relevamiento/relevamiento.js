@@ -396,9 +396,14 @@
     const pendiente = RELS.find(r => r.tipo === tipo && r.planta === planta && !(r.items > 0 && r.cargados >= r.items));
     if (pendiente) { cerrarRealizar(); abrirDetalle(pendiente.id, false); return; }
     const btn = $("rzConfirmar"); btn.disabled = true;
-    // Si la tanda actual del tipo está en progreso y le falta este lugar, sumamos el lugar; si no, tanda nueva.
+    // El "ciclo" del tipo abarca TODAS sus plantas (ej. plásticos = Cervantes + Virgilio).
+    // Sumamos este lugar a la tanda actual mientras el ciclo no esté completo (aunque el/los
+    // lugar(es) ya cargado(s) estén completos) y no tenga ya este lugar; si no, tanda nueva.
+    const req = PLANTAS_TIPO[tipo] || [];
     const ult = ultimasTandasPorTipo()[tipo];
-    const enProgreso = ult && !ult.rels.every(r => r.items > 0 && r.cargados >= r.items) && !ult.rels.some(r => r.planta === planta);
+    const cicloCompleto = !!ult && req.every(p => { const r = ult.rels.find(x => x.planta === p); return r && r.items > 0 && r.cargados >= r.items; });
+    const yaTiene = !!ult && ult.rels.some(r => r.planta === planta);
+    const enProgreso = !!ult && !cicloCompleto && !yaTiene;
     let data, error;
     if (enProgreso) ({ data, error } = await sb.rpc("rc_agregar_lugar", { p_grupo_id: ult.g, p_planta: planta, p_fecha: fecha, p_encargado: encargado }));
     else ({ data, error } = await sb.rpc("rc_generar", { p_tipo: tipo, p_planta: planta, p_fecha: fecha, p_encargado: encargado }));
