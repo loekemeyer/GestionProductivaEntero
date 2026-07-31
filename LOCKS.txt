@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-07-31 - Relevamiento (HTML/CSS): contenido del calendario CENTRADO — .cal-dia align-items center; numero de día centrado (antes a la derecha); chips de evento text-align center. Solo estilos. loekemeyer.
 2026-07-31 - Relevamiento (HTML/CSS): calendario con LETRAS MÁS GRANDES — titulo 24, mes 26, nav 26 (48x48), encabezados DOW 19, numero de día 20, chip de evento 17; celda min-height 96->110. Solo estilos. loekemeyer.
 2026-07-31 - Relevamiento (HTML/CSS): el modal del CALENDARIO ahora ocupa TODO EL ANCHO del dispositivo (modal max-width:100% width:100%, backdrop #modalCalendario padding 6px, max-height 94vh con scroll). Celdas de día más grandes (min-height 64->96, fuentes día 12->15, evento 11->13, encabezados DOW 12->15). Solo estilos, sin cambio de JS. loekemeyer.
 2026-07-31 - Relevamiento (?v=20260731r): ANTI-COLISIÓN de fechas — dos relevamientos ya NO caen el mismo día (antes, ej. flejes y bombillas 18/08 juntos). Nueva fechasGlobales(n): genera las próximas N ocurrencias de TODOS los tipos (grilla fija desde ancla), las ordena cronológicamente (desempate por orden de TIPOS) y a cada una le asigna el primer día hábil >= su fecha que no esté ocupado por otro relevamiento. El cronograma y el calendario usan las mismas fechas resueltas (HORIZONTE_FECHAS=6). proximasFechas pasa a ser wrapper. loekemeyer.
