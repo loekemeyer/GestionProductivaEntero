@@ -333,16 +333,35 @@
     return { raw, adj: proxHabil(raw), cicloInicio: addDias(ancla, (k - 1) * X) };
   }
 
-  // Próximas N fechas (grilla fija desde ancla) empezando por la próxima a realizar.
-  function proximasFechas(tipo, n) {
-    const cfg = CRONOGRAMA[tipo]; if (!cfg) return [];
-    const ancla = parseYmd(cfg.ancla), X = cfg.frecuencia, MS = 86400000;
-    const first = proximaCervantes(tipo);
-    const k0 = Math.round((first.raw - ancla) / (X * MS));
-    const out = [];
-    for (let i = 0; i < n; i++) out.push(proxHabil(addDias(ancla, (k0 + i) * X)));
-    return out;
+  // Horizonte de ocurrencias a resolver de una vez (para que la anti-colisión sea consistente
+  // entre el cronograma y el calendario).
+  const HORIZONTE_FECHAS = 6;
+
+  // Fechas próximas de TODOS los tipos con ANTI-COLISIÓN: dos relevamientos NO pueden caer el
+  // mismo día. Se generan las próximas N ocurrencias de cada tipo (grilla fija desde ancla),
+  // se procesan en orden cronológico (desempate por orden de TIPOS) y a cada una se le asigna
+  // el primer día HÁBIL >= su fecha que no esté ya ocupado por otro relevamiento.
+  // Devuelve { tipo: [fecha0, fecha1, ...] } (fecha0 = próxima a realizar).
+  function fechasGlobales(n) {
+    const tipos = TIPOS.filter(t => CRONOGRAMA[t.key]);
+    const orderIdx = {}; tipos.forEach((t, idx) => orderIdx[t.key] = idx);
+    const MS = 86400000, events = [];
+    tipos.forEach(t => {
+      const cfg = CRONOGRAMA[t.key], ancla = parseYmd(cfg.ancla), X = cfg.frecuencia;
+      const k0 = Math.round((proximaCervantes(t.key).raw - ancla) / (X * MS));
+      for (let i = 0; i < n; i++) events.push({ tipo: t.key, raw: addDias(ancla, (k0 + i) * X) });
+    });
+    events.sort((a, b) => (a.raw - b.raw) || (orderIdx[a.tipo] - orderIdx[b.tipo]));
+    const taken = new Set(), res = {}; tipos.forEach(t => res[t.key] = []);
+    events.forEach(ev => {
+      let d = proxHabil(ev.raw), g = 0;
+      while (taken.has(toYmd(d)) && g++ < 400) d = proxHabil(addDias(d, 1));
+      taken.add(toYmd(d)); res[ev.tipo].push(d);
+    });
+    return res;
   }
+  // Próximas N fechas de un tipo (ya resueltas sin colisión).
+  function proximasFechas(tipo, n) { return (fechasGlobales(Math.max(n, HORIZONTE_FECHAS))[tipo] || []).slice(0, n); }
 
   // Estado de un lugar para el ciclo actual. HECHO solo si se COMPLETÓ el relevamiento de este ciclo
   // (fecha estrictamente posterior al inicio del ciclo). El ancla NO cuenta como hecho para la fecha que viene.
@@ -365,12 +384,12 @@
   // y la fecha VIBRA si faltan ≤3 días hábiles (o ya venció) y no se completó.
   function renderCronograma() {
     const box = $("cronoBox"); if (!box) return;
+    const glob = fechasGlobales(HORIZONTE_FECHAS);   // fechas sin colisión (2 tipos no caen el mismo día)
     // Ordenar por FECHA a realizar: más cercana primero.
     const orden = TIPOS.filter(t => CRONOGRAMA[t.key])
-      .map(t => ({ t, px: proximaCervantes(t.key) }))
-      .sort((a, b) => a.px.adj - b.px.adj);
-    const lineas = orden.map(({ t, px }) => {
-      const cfg = CRONOGRAMA[t.key];
+      .map(t => ({ t, px: proximaCervantes(t.key), adj: (glob[t.key] || [])[0] }))
+      .sort((a, b) => a.adj - b.adj);
+    const lineas = orden.map(({ t, px, adj }) => {
       const plantas = PLANTAS_TIPO[t.key] || ["Cervantes"];
       const estados = plantas.map(p => Object.assign({ p }, estadoLugar(t.key, p, px.cicloInicio)));
       const cervHecho = (estados.find(e => e.p === "Cervantes") || {}).hecho;
@@ -378,7 +397,7 @@
       // Estado (color + movimiento) de la fecha:
       //  verde = relevamiento completo · rojo = venció sin hacer · naranja = es hoy ·
       //  amarillo = faltan ≤3 días hábiles · (vacío) = falta más de 3 días.
-      const hoy = hoyDate(), f = px.adj;
+      const hoy = hoyDate(), f = adj;
       let estFecha = "";
       if (todosHechos) estFecha = "verde";
       else if (f < hoy) estFecha = "rojo";
@@ -390,7 +409,7 @@
       }).join("");
       return `<div class="crono-linea${todosHechos ? " completo" : ""}" data-tipo="${t.key}" title="Ver el total (por lugar)">
         <div class="cl-tipo">${esc(t.label)}</div>
-        <div class="cl-fecha${estFecha ? " est-" + estFecha : ""}"><span class="cl-lbl">${cervHecho ? "Próximo" : "A realizar"}</span>${fmtFecha(toYmd(px.adj))}</div>
+        <div class="cl-fecha${estFecha ? " est-" + estFecha : ""}"><span class="cl-lbl">${cervHecho ? "Próximo" : "A realizar"}</span>${fmtFecha(toYmd(f))}</div>
         <div class="cl-chips">${chips}</div>
         <button class="btn btn-green sm cl-btn" data-realizar="${t.key}">Realizar</button>
       </div>`;
@@ -405,14 +424,15 @@
   const CAL_ABBR = { garage: "Garage", remaches: "Remach.", flejes: "Flejes", bombillas: "Bombil.", cajas: "Cajas", plasticos: "Plástic.", cartones: "Cartón" };
   let CAL = { y: 0, m: 0, map: null };
 
-  // Mapa ymd -> [{label, abbr, est}] con las próximas ocurrencias de cada tipo (horizonte ~6).
-  function calcCalMap() {
+  // Mapa ymd -> [{abbr, est}] con las próximas ocurrencias de cada tipo, ya SIN colisión
+  // (mismas fechas que el cronograma: dos relevamientos no caen el mismo día).
+  function calcCalMap(glob) {
     const map = {}, hoy = hoyDate();
     TIPOS.filter(t => CRONOGRAMA[t.key]).forEach(t => {
       const px = proximaCervantes(t.key);
       const plantas = PLANTAS_TIPO[t.key] || ["Cervantes"];
       const todosHechos = plantas.every(p => estadoLugar(t.key, p, px.cicloInicio).hecho);
-      proximasFechas(t.key, 6).forEach((f, i) => {
+      (glob[t.key] || []).forEach((f, i) => {
         let est = "";
         if (i === 0) {
           if (todosHechos) est = "verde";
@@ -451,10 +471,11 @@
   }
 
   function renderCalendario() {
-    CAL.map = calcCalMap();
+    const glob = fechasGlobales(HORIZONTE_FECHAS);
+    CAL.map = calcCalMap(glob);
     // Empezar en el mes de la próxima fecha más cercana (o el mes actual si no hay).
-    const proximas = TIPOS.filter(t => CRONOGRAMA[t.key]).map(t => proximaCervantes(t.key).adj);
-    const base = proximas.length ? proximas.reduce((a, b) => (a < b ? a : b)) : hoyDate();
+    const primeras = TIPOS.filter(t => CRONOGRAMA[t.key]).map(t => (glob[t.key] || [])[0]).filter(Boolean);
+    const base = primeras.length ? primeras.reduce((a, b) => (a < b ? a : b)) : hoyDate();
     CAL.y = base.getFullYear(); CAL.m = base.getMonth();
     drawCal();
     $("modalCalendario").style.display = "flex";
