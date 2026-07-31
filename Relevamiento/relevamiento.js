@@ -467,7 +467,8 @@
          <span class="cal-mes">${CAL_MESES[m]} ${y}</span>
          <button class="cal-nav" data-cal="next">›</button>
        </div>
-       <div class="cal-grid">${CAL_DOW.map(d => `<div class="cal-dow">${d}</div>`).join("")}${cells}</div>`;
+       <div class="cal-dowrow">${CAL_DOW.map(d => `<div class="cal-dow">${d}</div>`).join("")}</div>
+       <div class="cal-grid">${cells}</div>`;
   }
 
   function renderCalendario() {
