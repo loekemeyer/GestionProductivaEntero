@@ -159,8 +159,16 @@
   .crono-chip.ok{background:#dff3e6;color:#0a7a2f}
   .crono-chip.falta{background:#fbe0e0;color:#c00}
   .crono-chip .crono-enc{font-size:12px;font-weight:700;color:#3a4653}
-  @keyframes cronovibra{0%,68%,100%{transform:translateX(0)}72%{transform:translateX(-3px)}76%{transform:translateX(3px)}80%{transform:translateX(-3px)}84%{transform:translateX(3px)}88%{transform:translateX(-2px)}92%{transform:translateX(2px)}}
-  .cl-fecha.vibra{color:#c00;animation:cronovibra 1.4s infinite}
+  /* Estados de la FECHA (color + movimiento distinto por estado):
+     VERDE=relevamiento completo (sin movimiento) · ROJO=venció sin hacer (rápido/amplio)
+     NARANJA=es hoy (medio) · AMARILLO=faltan ≤3 días hábiles (suave/lento). */
+  @keyframes crono-rojo{0%,100%{transform:translateX(0)}15%{transform:translateX(-5px)}30%{transform:translateX(5px)}45%{transform:translateX(-5px)}60%{transform:translateX(5px)}75%{transform:translateX(-4px)}90%{transform:translateX(4px)}}
+  @keyframes crono-naranja{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}50%{transform:translateX(3px)}75%{transform:translateX(-3px)}}
+  @keyframes crono-amarillo{0%,55%,100%{transform:translateX(0)}68%{transform:translateX(-2px)}80%{transform:translateX(2px)}92%{transform:translateX(-2px)}}
+  .cl-fecha.est-verde{color:#0a7a2f}
+  .cl-fecha.est-rojo{color:#c00;animation:crono-rojo .4s infinite}
+  .cl-fecha.est-naranja{color:#e8730c;animation:crono-naranja .7s infinite}
+  .cl-fecha.est-amarillo{color:#b07d00;animation:crono-amarillo 1.5s infinite}
 </style>
 </head>
 <body>
@@ -253,6 +261,6 @@
 <script src="../version.js?v=20260617b"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../tandas-popup.js?v=20260730i"></script>
-<script src="relevamiento.js?v=20260731k"></script>
+<script src="relevamiento.js?v=20260731l"></script>
 </body>
 </html>
