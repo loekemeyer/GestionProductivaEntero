@@ -392,41 +392,59 @@
     return n;
   }
 
-  // Cronograma LÍNEA POR LÍNEA (no tabla). Cada línea muestra la próxima fecha, el estado por lugar,
-  // y la fecha VIBRA si faltan ≤3 días hábiles (o ya venció) y no se completó.
+  // Cronograma LÍNEA POR LÍNEA. Muestra: (a) cada tanda YA GUARDADA (hecha=verde ✓, o en
+  // progreso) y (b) la PRÓXIMA a realizar por tipo (si no hay una en progreso). Todo ordenado
+  // por FECHA. La fecha "a realizar" vibra/colorea según urgencia (rojo/naranja/amarillo).
   function renderCronograma() {
     const box = $("cronoBox"); if (!box) return;
     const glob = fechasGlobales(horizonteFechas());   // fechas sin colisión (2 tipos no caen el mismo día)
-    // Ordenar por FECHA a realizar: más cercana primero.
-    const orden = TIPOS.filter(t => CRONOGRAMA[t.key])
-      .map(t => ({ t, px: proximaCervantes(t.key), adj: (glob[t.key] || [])[0] }))
-      .sort((a, b) => a.adj - b.adj);
-    const lineas = orden.map(({ t, px, adj }) => {
-      const plantas = PLANTAS_TIPO[t.key] || ["Cervantes"];
-      const estados = plantas.map(p => Object.assign({ p }, estadoLugar(t.key, p, px.cicloInicio)));
-      const cervHecho = (estados.find(e => e.p === "Cervantes") || {}).hecho;
-      const todosHechos = estados.every(e => e.hecho);
-      // Estado (color + movimiento) de la fecha:
-      //  verde = relevamiento completo · rojo = venció sin hacer · naranja = es hoy ·
-      //  amarillo = faltan ≤3 días hábiles · (vacío) = falta más de 3 días.
-      const hoy = hoyDate(), f = adj;
-      let estFecha = "";
-      if (todosHechos) estFecha = "verde";
-      else if (f < hoy) estFecha = "rojo";
-      else if (+f === +hoy) estFecha = "naranja";
-      else if (bizDiasHasta(f) <= 3) estFecha = "amarillo";
-      const chips = estados.map(e => {
-        const extra = t.key === "plasticos" ? " " + (PLASTICO_LUGAR[e.p] || "") : "";
-        return `<span class="crono-chip ${e.hecho ? "ok" : "falta"}">${esc((ABREV_PLANTA[e.p] || e.p) + extra)} ${e.hecho ? "✓" : "✗"}${e.encargado ? `<span class="crono-enc">${esc(e.encargado)}</span>` : ""}</span>`;
-      }).join("");
-      return `<div class="crono-linea${todosHechos ? " completo" : ""}" data-tipo="${t.key}" title="Ver el total (por lugar)">
-        <div class="cl-tipo">${esc(t.label)}</div>
-        <div class="cl-fecha${estFecha ? " est-" + estFecha : ""}"><span class="cl-lbl">${cervHecho ? "Próximo" : "A realizar"}</span>${fmtFecha(toYmd(f))}</div>
-        <div class="cl-chips">${chips}</div>
-        <button class="btn btn-green sm cl-btn" data-realizar="${t.key}">Realizar</button>
-      </div>`;
-    }).join("");
-    box.innerHTML = lineas || `<div class="empty">Sin cronograma.</div>`;
+    const hoy = hoyDate();
+    const chip = (tipo, planta, hecho, encargado) => {
+      const extra = tipo === "plasticos" ? " " + (PLASTICO_LUGAR[planta] || "") : "";
+      return `<span class="crono-chip ${hecho ? "ok" : "falta"}">${esc((ABREV_PLANTA[planta] || planta) + extra)} ${hecho ? "✓" : "✗"}${encargado ? `<span class="crono-enc">${esc(encargado)}</span>` : ""}</span>`;
+    };
+    const urg = (f) => (f < hoy ? "rojo" : (+f === +hoy ? "naranja" : (bizDiasHasta(f) <= 3 ? "amarillo" : "")));
+    const lineas = []; // { fecha: Date, html }
+
+    // (a) Tandas ya guardadas: una línea por grupo.
+    const grupos = new Map();
+    for (const r of RELS) { const g = r.grupo_id || r.id; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(r); }
+    const enProgresoTipo = {};
+    for (const [g, rels] of grupos) {
+      const tipo = rels[0].tipo, label = TIPO_LABEL[tipo] || tipo;
+      const req = PLANTAS_TIPO[tipo] || ["Cervantes"];
+      const maxFecha = rels.reduce((m, r) => (r.fecha > m ? r.fecha : m), rels[0].fecha);
+      const chips = req.map(p => { const rel = rels.find(r => r.planta === p); return chip(tipo, p, !!(rel && rel.items > 0 && rel.cargados >= rel.items), rel ? rel.encargado : null); }).join("");
+      const completo = req.every(p => { const rel = rels.find(r => r.planta === p); return rel && rel.items > 0 && rel.cargados >= rel.items; });
+      if (!completo) enProgresoTipo[tipo] = true;
+      const est = completo ? "verde" : urg(parseYmd(maxFecha));
+      lineas.push({ fecha: parseYmd(maxFecha), html:
+        `<div class="crono-linea${completo ? " completo" : ""}" data-grupo="${g}" title="Ver el total (por lugar)">
+          <div class="cl-tipo">${esc(label)}</div>
+          <div class="cl-fecha${est ? " est-" + est : ""}"><span class="cl-lbl">${completo ? "Hecho" : "En progreso"}</span>${fmtFecha(maxFecha)}</div>
+          <div class="cl-chips">${chips}</div>
+          ${completo ? "" : `<button class="btn btn-green sm cl-btn" data-realizar="${tipo}">Continuar</button>`}
+        </div>` });
+    }
+
+    // (b) Próxima a realizar por tipo (salvo que ya haya una en progreso).
+    TIPOS.filter(t => CRONOGRAMA[t.key]).forEach(t => {
+      if (enProgresoTipo[t.key]) return;
+      const adj = (glob[t.key] || [])[0]; if (!adj) return;
+      const req = PLANTAS_TIPO[t.key] || ["Cervantes"];
+      const est = urg(adj);
+      const chips = req.map(p => chip(t.key, p, false, null)).join("");
+      lineas.push({ fecha: adj, html:
+        `<div class="crono-linea" data-tipo="${t.key}" title="Próximo relevamiento (aún sin cargar)">
+          <div class="cl-tipo">${esc(t.label)}</div>
+          <div class="cl-fecha${est ? " est-" + est : ""}"><span class="cl-lbl">A realizar</span>${fmtFecha(toYmd(adj))}</div>
+          <div class="cl-chips">${chips}</div>
+          <button class="btn btn-green sm cl-btn" data-realizar="${t.key}">Realizar</button>
+        </div>` });
+    });
+
+    lineas.sort((a, b) => a.fecha - b.fecha);
+    box.innerHTML = lineas.map(l => l.html).join("") || `<div class="empty">Sin cronograma.</div>`;
   }
 
   // Calendario en formato MES: grilla con los días; cada día marca los relevamientos
@@ -1264,13 +1282,16 @@
   $("cronoBox").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-realizar]");
     if (b) { abrirRealizar(b.dataset.realizar); return; }
-    const linea = e.target.closest(".crono-linea[data-tipo]");
-    if (linea) {
-      const ult = ultimasTandasPorTipo()[linea.dataset.tipo];
-      if (!ult) { showMsg("Todavía no hay ningún relevamiento cargado de este tipo.", "err"); return; }
-      if (ult.rels.length === 1) abrirDetalle(ult.rels[0].id, true);
-      else abrirCombinado(ult.g);
+    // Línea de una tanda YA guardada -> ver su total (por lugar) de ESE grupo.
+    const done = e.target.closest(".crono-linea[data-grupo]");
+    if (done) {
+      const g = Number(done.dataset.grupo);
+      const rels = RELS.filter(r => (r.grupo_id || r.id) === g);
+      if (rels.length === 1) abrirDetalle(rels[0].id, true);
+      else if (rels.length > 1) abrirCombinado(g);
+      return;
     }
+    // Línea "a realizar" (aún sin cargar) -> no hay total que mostrar.
   });
   $("rzConfirmar").addEventListener("click", confirmarRealizar);
   $("rzCancelar").addEventListener("click", cerrarRealizar);
