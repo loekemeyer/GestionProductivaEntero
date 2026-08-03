@@ -225,11 +225,11 @@ body {
   text-align: center;
 }
 
-/* ===== FASE 1 (nuevo orden): Cajón envío | SC | KG Neto | (espacio) | Parte | Online PS | Max | Online SP | Cajones a Enviar | T | F ===== */
+/* ===== FASE 1 (nuevo orden): SC | Cajón envío | KG Neto | (espacio) | Parte | Online PS | Max | Online SP | Caj | T | F ===== */
 #fase1 .table thead th:nth-child(1),
-#fase1 .table tbody td:nth-child(1) { width: 8ch; text-align: center; }
+#fase1 .table tbody td:nth-child(1) { width: 6ch; text-align: center; }
 #fase1 .table thead th:nth-child(2),
-#fase1 .table tbody td:nth-child(2) { width: 6ch; text-align: center; }
+#fase1 .table tbody td:nth-child(2) { width: 8ch; text-align: center; white-space: normal; }
 #fase1 .table thead th:nth-child(3),
 #fase1 .table tbody td:nth-child(3) { width: 9ch; text-align: center; white-space: normal; }
 #fase1 .table thead th:nth-child(4),
@@ -243,7 +243,7 @@ body {
 #fase1 .table thead th:nth-child(8),
 #fase1 .table tbody td:nth-child(8) { width: 8ch; text-align: center; white-space: normal; }
 #fase1 .table thead th:nth-child(9),
-#fase1 .table tbody td:nth-child(9) { width: 10ch; text-align: center; white-space: normal; }
+#fase1 .table tbody td:nth-child(9) { width: 8ch; text-align: center; }
 /* Columna "espacio" separadora */
 #fase1 .table .sep { background: #eef1f4; border-left: 2px solid #cbd3da; border-right: 2px solid #cbd3da; }
 
