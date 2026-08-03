@@ -57,6 +57,11 @@
 
   .search-box{margin:12px 0;padding:12px;background:#f6f8fa;border-radius:8px}
   .search-box input{width:100%;padding:10px;font-size:18px;border:2px solid #d0d7de;border-radius:6px}
+  /* Buscador de medida (flejes): 3 inputs a mm x b mm x c mm */
+  #flejesSearch{display:none;align-items:center;flex-wrap:wrap;gap:6px;font-size:19px;font-weight:800}
+  #flejesSearch .fm{width:78px;padding:8px;text-align:center;border:2px solid #d0d7de;border-radius:6px;font-size:20px;font-weight:800}
+  #flejesSearch .fm.on{border-color:#0a7a2f;background:#f3fbf6}
+  #flejesSearch .x{background:#fff;border:2px solid #d0d7de;border-radius:6px;padding:8px 12px;font-weight:800;cursor:pointer}
 
   .items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin:12px 0}
   .item-btn{padding:12px;background:#fff;border:2px solid #d0d7de;border-radius:8px;cursor:pointer;text-align:center;font-weight:600;font-size:16px;transition:all .2s}
@@ -147,6 +152,15 @@
 
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="Buscar por código, medida o ISIS..." />
+      <div id="flejesSearch">
+        <span>Medida:</span>
+        <input class="fm" id="fm_a" type="text" inputmode="decimal" placeholder="a"> mm
+        <span>×</span>
+        <input class="fm" id="fm_b" type="text" inputmode="decimal" placeholder="b"> mm
+        <span>×</span>
+        <input class="fm" id="fm_c" type="text" inputmode="decimal" placeholder="c"> mm
+        <button class="x" id="fmClear" type="button">✕</button>
+      </div>
     </div>
 
     <div id="lines" class="items-grid"></div>
@@ -227,7 +241,7 @@ function esDecimal(unidad) {
 
 // Tablas fuente por rubro
 const TABLAS = {
-  Flejes:    { tabla: "Flejes",           colCod: "N Fleje",  colDesc: "Descripción", colIsis: "Cod_ISIS", colMedida: "Medida", colProv: "Proveedor" },
+  Flejes:    { tabla: "Flejes",           colCod: "N Fleje",  colDesc: "Descripción", colIsis: "Cod_ISIS", colMedida: "Medida mm", colProv: "Proveedor" },
   Cajas:     { tabla: "Cajas",            colCod: "N_Caja",   colDesc: "Cod_ISIS_LK",          colProv: null },
   Plasticos: { tabla: "Partes_Plasticas", colCod: "Cod_ISIS", colDesc: "Descripcion",          colProv: "Proveedor" },
   Cartones:  { tabla: "Despiece x Articulo", colCod: "COD",  colDesc: "Descripcion de partes", colProv: null, filtro: { col: "Rubro", val: "Cartones" } },
@@ -405,24 +419,53 @@ function renderItems() {
 }
 
 function filterItems() {
-  const q = searchInput.value.toLowerCase();
-  filteredItems = items.filter(it => {
-    const text = (it.codigo + " " + it.descripcion + " " + it.isis + " " + it.medida).toLowerCase();
-    return text.includes(q);
-  });
+  if (rubroSel === "Flejes") {
+    // Buscador por MEDIDA (3 inputs a mm × b mm × c mm): muestra los que contienen TODOS los valores.
+    const vals = ["fm_a","fm_b","fm_c"].map(id => {
+      const el = document.getElementById(id);
+      const v = el.value.trim().replace(/,/g, ".");
+      el.classList.toggle("on", v !== "");
+      return v;
+    }).filter(v => v !== "");
+    filteredItems = items.filter(it => {
+      const m = (it.medida || "").toLowerCase().replace(/,/g, ".");
+      return vals.every(v => m.includes(v));
+    });
+  } else {
+    const q = searchInput.value.toLowerCase();
+    filteredItems = items.filter(it => {
+      const text = (it.codigo + " " + it.descripcion + " " + it.isis + " " + it.medida).toLowerCase();
+      return text.includes(q);
+    });
+  }
   renderItems();
 }
 
 function buildModal() {
   linesWrap.innerHTML = "";
   modalMsg.textContent = "";
+  const esFlejes = rubroSel === "Flejes";
+  // En flejes el buscador son 3 inputs de MEDIDA; en el resto, el buscador de texto.
+  searchInput.style.display = esFlejes ? "none" : "";
+  document.getElementById("flejesSearch").style.display = esFlejes ? "flex" : "none";
   searchInput.value = "";
+  ["fm_a","fm_b","fm_c"].forEach(id => { const el = document.getElementById(id); el.value = ""; el.classList.remove("on"); });
   filteredItems = [...items];
 
   searchInput.addEventListener("input", filterItems);
   renderItems();
-  setTimeout(() => searchInput.focus(), 100);
+  setTimeout(() => (esFlejes ? document.getElementById("fm_a") : searchInput).focus(), 100);
 }
+
+// Listeners del buscador de medida (flejes) — se registran una vez (elementos estáticos).
+["fm_a","fm_b","fm_c"].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener("input", () => { el.value = el.value.replace(/[^0-9.,]/g, ""); filterItems(); });
+});
+document.getElementById("fmClear").addEventListener("click", () => {
+  ["fm_a","fm_b","fm_c"].forEach(id => { const el = document.getElementById(id); el.value = ""; el.classList.remove("on"); });
+  filterItems();
+});
 
 function openKgPopup(item) {
   selectedItem = item;
