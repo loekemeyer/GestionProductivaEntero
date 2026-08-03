@@ -471,6 +471,7 @@ function openKgPopup(item) {
   selectedItem = item;
   kgItemInfo.innerHTML = `<strong>${esc(item.codigo)}</strong> - ${esc(item.descripcion)}`;
   if (item.isis) kgItemInfo.innerHTML += ` <br><small>ISIS: ${esc(item.isis)}</small>`;
+  if (rubroSel === "Flejes") kgItemInfo.innerHTML += ` <br>Medida: <strong>${esc(item.medida || "—")}</strong>`;
 
   // Mostrar campos según rubro
   const isFlejes = rubroSel === "Flejes";
