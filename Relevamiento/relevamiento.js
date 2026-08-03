@@ -418,7 +418,7 @@
       const completo = req.every(p => { const rel = rels.find(r => r.planta === p); return rel && rel.items > 0 && rel.cargados >= rel.items; });
       if (!completo) enProgresoTipo[tipo] = true;
       const est = completo ? "verde" : urg(parseYmd(maxFecha));
-      lineas.push({ fecha: parseYmd(maxFecha), html:
+      lineas.push({ fecha: parseYmd(maxFecha), done: completo, html:
         `<div class="crono-linea${completo ? " completo" : ""}" data-grupo="${g}" title="Ver el total (por lugar)">
           <div class="cl-tipo">${esc(label)}</div>
           <div class="cl-fecha${est ? " est-" + est : ""}"><span class="cl-lbl">${completo ? "Hecho" : "En progreso"}</span>${fmtFecha(maxFecha)}</div>
@@ -434,7 +434,7 @@
       const req = PLANTAS_TIPO[t.key] || ["Cervantes"];
       const est = urg(adj);
       const chips = req.map(p => chip(t.key, p, false, null)).join("");
-      lineas.push({ fecha: adj, html:
+      lineas.push({ fecha: adj, done: false, html:
         `<div class="crono-linea" data-tipo="${t.key}" title="Próximo relevamiento (aún sin cargar)">
           <div class="cl-tipo">${esc(t.label)}</div>
           <div class="cl-fecha${est ? " est-" + est : ""}"><span class="cl-lbl">A realizar</span>${fmtFecha(toYmd(adj))}</div>
@@ -443,7 +443,8 @@
         </div>` });
     });
 
-    lineas.sort((a, b) => a.fecha - b.fecha);
+    // PENDIENTE ("lo que falta") primero, por fecha más próxima; las HECHAS al fondo (más reciente arriba).
+    lineas.sort((a, b) => (a.done !== b.done ? (a.done ? 1 : -1) : (a.done ? b.fecha - a.fecha : a.fecha - b.fecha)));
     box.innerHTML = lineas.map(l => l.html).join("") || `<div class="empty">Sin cronograma.</div>`;
   }
 
