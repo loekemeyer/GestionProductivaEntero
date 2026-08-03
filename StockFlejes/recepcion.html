@@ -154,7 +154,7 @@
       <input type="text" id="searchInput" placeholder="Buscar por código, medida o ISIS..." />
       <div id="flejesSearch">
         <span>Medida:</span>
-        <input class="fm" id="fm_a" type="text" inputmode="decimal" placeholder="a"> mm
+        <input class="fm" id="fm_a" type="text" placeholder="a / N°"> mm
         <span>×</span>
         <input class="fm" id="fm_b" type="text" inputmode="decimal" placeholder="b"> mm
         <span>×</span>
@@ -420,16 +420,16 @@ function renderItems() {
 
 function filterItems() {
   if (rubroSel === "Flejes") {
-    // Buscador por MEDIDA (3 inputs a mm × b mm × c mm): muestra los que contienen TODOS los valores.
-    const vals = ["fm_a","fm_b","fm_c"].map(id => {
-      const el = document.getElementById(id);
-      const v = el.value.trim().replace(/,/g, ".");
-      el.classList.toggle("on", v !== "");
-      return v;
-    }).filter(v => v !== "");
+    // Buscador flejes: a mm × b mm × c mm. El input "a" ADEMÁS busca por N° de fleje (código).
+    const rd = (id) => { const el = document.getElementById(id); const v = el.value.trim().toLowerCase().replace(/,/g, "."); el.classList.toggle("on", v !== ""); return v; };
+    const a = rd("fm_a"), b = rd("fm_b"), c = rd("fm_c");
     filteredItems = items.filter(it => {
       const m = (it.medida || "").toLowerCase().replace(/,/g, ".");
-      return vals.every(v => m.includes(v));
+      const cod = (it.codigo || "").toLowerCase();
+      if (a && !(m.includes(a) || cod.includes(a))) return false;   // a: medida O N° de fleje
+      if (b && !m.includes(b)) return false;
+      if (c && !m.includes(c)) return false;
+      return true;
     });
   } else {
     const q = searchInput.value.toLowerCase();
@@ -460,7 +460,9 @@ function buildModal() {
 // Listeners del buscador de medida (flejes) — se registran una vez (elementos estáticos).
 ["fm_a","fm_b","fm_c"].forEach(id => {
   const el = document.getElementById(id);
-  el.addEventListener("input", () => { el.value = el.value.replace(/[^0-9.,]/g, ""); filterItems(); });
+  // "a" permite letras (para N° de fleje tipo "90B"); "b"/"c" son solo numéricos (medida).
+  const re = id === "fm_a" ? /[^0-9a-zA-Z.,]/g : /[^0-9.,]/g;
+  el.addEventListener("input", () => { el.value = el.value.replace(re, ""); filterItems(); });
 });
 document.getElementById("fmClear").addEventListener("click", () => {
   ["fm_a","fm_b","fm_c"].forEach(id => { const el = document.getElementById(id); el.value = ""; el.classList.remove("on"); });
