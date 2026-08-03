@@ -136,7 +136,8 @@
   const norm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const fmtFecha = (f) => { if (!f) return ""; const [y, m, d] = String(f).slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
   // Orden NATURAL (A1 < A2 < A10 < B1). Se parte en tramos de letras/numeros y se comparan por tramo.
-  const natKey = (s) => String(s == null ? "" : s).toUpperCase().match(/\d+|\D+/g) || [];
+  // Se ignoran los espacios para que "GRJ 1" y "GRJ18" ordenen juntos (garage tiene espaciado inconsistente).
+  const natKey = (s) => String(s == null ? "" : s).toUpperCase().replace(/\s+/g, "").match(/\d+|\D+/g) || [];
   function cmpNat(a, b) {
     const ka = natKey(a), kb = natKey(b), n = Math.min(ka.length, kb.length);
     for (let i = 0; i < n; i++) {
