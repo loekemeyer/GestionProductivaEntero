@@ -202,6 +202,7 @@ body {
 
 .table {
   width: auto;
+  margin: 0 auto;
   border-collapse: collapse;
   background: #fff;
   border-radius: 12px;
@@ -229,19 +230,19 @@ body {
 #fase1 .table thead th:nth-child(1),
 #fase1 .table tbody td:nth-child(1) { width: 6ch; text-align: center; }               /* SC */
 #fase1 .table thead th:nth-child(2),
-#fase1 .table tbody td:nth-child(2) { width: 30ch; text-align: left; }                /* Parte */
+#fase1 .table tbody td:nth-child(2) { width: 8ch; text-align: center; white-space: normal; }  /* Cajón envío (sug) */
 #fase1 .table thead th:nth-child(3),
-#fase1 .table tbody td:nth-child(3) { width: 8ch; text-align: center; white-space: normal; }  /* Cajón envío (sug) */
+#fase1 .table tbody td:nth-child(3) { width: 8ch; text-align: center; white-space: normal; }  /* Cajón Envío (input) */
 #fase1 .table thead th:nth-child(4),
-#fase1 .table tbody td:nth-child(4) { width: 8ch; text-align: center; white-space: normal; }  /* Cajón Envío (input) */
+#fase1 .table tbody td:nth-child(4) { width: 9ch; text-align: center; white-space: normal; }  /* Cajón envío KG Neto */
 #fase1 .table thead th:nth-child(5),
-#fase1 .table tbody td:nth-child(5) { width: 9ch; text-align: center; white-space: normal; }  /* Cajón envío KG Neto */
+#fase1 .table tbody td:nth-child(5) { width: 5ch; text-align: center; }               /* T */
 #fase1 .table thead th:nth-child(6),
-#fase1 .table tbody td:nth-child(6) { width: 5ch; text-align: center; }               /* T */
+#fase1 .table tbody td:nth-child(6) { width: 5ch; text-align: center; }               /* F */
 #fase1 .table thead th:nth-child(7),
-#fase1 .table tbody td:nth-child(7) { width: 5ch; text-align: center; }               /* F */
+#fase1 .table tbody td:nth-child(7) { width: 2ch; padding: 0; }                       /* separador */
 #fase1 .table thead th:nth-child(8),
-#fase1 .table tbody td:nth-child(8) { width: 2ch; padding: 0; }                       /* separador */
+#fase1 .table tbody td:nth-child(8) { width: 30ch; text-align: center; }              /* Parte */
 #fase1 .table thead th:nth-child(9),
 #fase1 .table tbody td:nth-child(9) { width: 9ch; text-align: center; white-space: normal; }  /* Online PS Cajón */
 #fase1 .table thead th:nth-child(10),
@@ -472,7 +473,7 @@ body {
 
 /* ===== FASE 2: Parte | Proceso | SC | Caj | Kg Bruto | Kg Neto ===== */
 #fase2 .table thead th:nth-child(1),
-#fase2 .table tbody td:nth-child(1) { width: 26ch; text-align: left; }
+#fase2 .table tbody td:nth-child(1) { width: 26ch; text-align: center; }
 #fase2 .table thead th:nth-child(2),
 #fase2 .table tbody td:nth-child(2) { width: 8ch; text-align: center; }
 #fase2 .table thead th:nth-child(3),

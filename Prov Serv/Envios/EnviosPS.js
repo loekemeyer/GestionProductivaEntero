@@ -982,13 +982,13 @@ function renderizarFase1() {
     return `
       <tr class="${rowClass}" data-idx="${i}" data-sug="${sug ?? ""}" data-sp="${escapeHtml(item.sp)}" data-parte="${escapeHtml(item.parte)}" data-cajones="${bufCajVal}" data-peso-cajones="${bufPesoCaj}">
         <td>${escapeHtml(item.sc)}</td>
-        <td>${escapeHtml(item.parte)}</td>
         <td class="right sug-cell col-caj-only"><b>${sugTxt}</b></td>
         <td class="right">${cajCellHtml}</td>
         <td class="right col-caj-only">${kgCellHtml}</td>
         <td class="center col-caj-only">${tandaCellHtml}</td>
         <td class="center col-caj-only"><div class="${faltClass}">${faltTxt}</div></td>
         <td class="sep col-caj-only"></td>
+        <td>${escapeHtml(item.parte)}</td>
         <td class="right col-caj-only">
           <div class="cell-combo">
             <span><b>${onlinePSTxt}</b></span>
