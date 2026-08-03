@@ -381,7 +381,8 @@ btnContinuar.addEventListener("click", async () => {
         cod: String(r[cfg.colCod] ?? "").trim(),
         desc: String(r[cfg.colDesc] ?? "").trim(),
         isis: cfg.colIsis ? String(r[cfg.colIsis] ?? "").trim() : "",
-        medida: cfg.colMedida ? String(r[cfg.colMedida] ?? "").trim() : ""
+        medida: cfg.colMedida ? String(r[cfg.colMedida] ?? "").trim() : "",
+        rowData: r
       }));
     }
 
@@ -397,7 +398,8 @@ btnContinuar.addEventListener("click", async () => {
         descripcion: String(r.desc ?? "").trim(),
         isis: String(r.isis ?? "").trim(),
         medida: String(r.medida ?? "").trim(),
-        _cant: ""
+        _cant: "",
+        rowData: r.rowData || {}
       };
       if (rubroSel === "Flejes") {
         // Para flejes, inicializar con un grupo vacío
@@ -685,7 +687,8 @@ document.getElementById("sendModal").addEventListener("click", async () => {
               unidad: "Kg",
               remito: remito || null,
               rollos: Number(grupo.rollos) || 0,
-              peso_x_rollo: Number(grupo.kg) || 0
+              peso_x_rollo: Number(grupo.kg) || 0,
+              medida: it.medida || null
             });
           }
         });
@@ -699,7 +702,8 @@ document.getElementById("sendModal").addEventListener("click", async () => {
           descripcion: it.descripcion,
           cantidad: parseCant(it._cant),
           unidad: unidad,
-          remito: remito || null
+          remito: remito || null,
+          medida: it.medida || null
         });
       }
     });

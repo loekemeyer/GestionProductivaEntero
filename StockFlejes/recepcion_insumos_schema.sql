@@ -18,15 +18,17 @@ CREATE TABLE IF NOT EXISTS "Recepcion_Insumos" (
   created_at timestamp with time zone DEFAULT now()
 );
 
--- Opción 2: Si la tabla YA EXISTE, solo agregar las columnas de flejes
+-- Opción 2: Si la tabla YA EXISTE, solo agregar las columnas de flejes y medida
 -- (descomenta esto si ya tienes Recepcion_Insumos)
 /*
 ALTER TABLE "Recepcion_Insumos"
 ADD COLUMN IF NOT EXISTS "rollos" integer,
-ADD COLUMN IF NOT EXISTS "peso_x_rollo" numeric;
+ADD COLUMN IF NOT EXISTS "peso_x_rollo" numeric,
+ADD COLUMN IF NOT EXISTS "medida" text;
 
 COMMENT ON COLUMN "Recepcion_Insumos"."rollos" IS 'Número de rollos recibidos (solo para Flejes)';
 COMMENT ON COLUMN "Recepcion_Insumos"."peso_x_rollo" IS 'Peso individual de cada rollo en kg (solo para Flejes)';
+COMMENT ON COLUMN "Recepcion_Insumos"."medida" IS 'Medida del fleje (ancho x espesor) o especificación técnica del artículo';
 */
 
 -- Índices para mejorar búsquedas
