@@ -981,20 +981,20 @@ function renderizarFase1() {
 
     return `
       <tr class="${rowClass}" data-idx="${i}" data-sug="${sug ?? ""}" data-sp="${escapeHtml(item.sp)}" data-parte="${escapeHtml(item.parte)}" data-cajones="${bufCajVal}" data-peso-cajones="${bufPesoCaj}">
+        <td class="right">${cajCellHtml}</td>
+        <td>${escapeHtml(item.sc)}</td>
+        <td class="right col-caj-only">${kgCellHtml}</td>
+        <td class="sep"></td>
         <td>${escapeHtml(item.parte)}</td>
-        <td>${escapeHtml(item.proceso)}</td>
-        <td class="right col-caj-only"><b>${maxTxt}</b></td>
-        <td class="${onlineSPClass} col-caj-only"><b>${onlineSPTxt}</b></td>
         <td class="right col-caj-only">
           <div class="cell-combo">
             <span><b>${onlinePSTxt}</b></span>
             <button type="button" class="mini-popup-btn" data-action="popup-online">+</button>
           </div>
         </td>
+        <td class="right col-caj-only"><b>${maxTxt}</b></td>
+        <td class="${onlineSPClass} col-caj-only"><b>${onlineSPTxt}</b></td>
         <td class="right sug-cell col-caj-only"><b>${sugTxt}</b></td>
-        <td>${escapeHtml(item.sc)}</td>
-        <td class="right">${cajCellHtml}</td>
-        <td class="right col-caj-only">${kgCellHtml}</td>
         <td class="center col-caj-only">${tandaCellHtml}</td>
         <td class="center col-caj-only"><div class="${faltClass}">${faltTxt}</div></td>
       </tr>
@@ -1010,7 +1010,7 @@ function renderizarFase1() {
   if (hdrCant) {
     hdrCant.textContent = sinCajones
       ? (cargaPorUnidades ? "Uni" : "Kg")
-      : "Caj";
+      : "Cajón envío";
   }
 
   fase1TableBody.querySelectorAll("tr").forEach((row, idx) => {
