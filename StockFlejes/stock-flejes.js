@@ -77,7 +77,12 @@ async function init() {
       comprasFlejesMap.set(cod, (comprasFlejesMap.get(cod) || 0) + cant);
       if (!comprasFlejesDetalleMap.has(cod)) comprasFlejesDetalleMap.set(cod, []);
       comprasFlejesDetalleMap.get(cod).push({
-        proveedor: r.proveedor, fecha: r.fecha, cantidad: cant, remito: r.remito
+        proveedor: r.proveedor,
+        fecha: r.fecha,
+        cantidad: cant,
+        remito: r.remito,
+        rollos: r.rollos,
+        peso_x_rollo: r.peso_x_rollo
       });
     });
 
@@ -357,8 +362,9 @@ function renderTabla(rows) {
           <td class="col-number">${st.pedido.toLocaleString("es-AR")}</td>
           <td></td>
           <td class="col-number" style="font-weight:400;font-size:11px;color:#666">mín ${minProv.toLocaleString("es-AR")}</td>
+          <td colspan="2"></td>
         </tr>`;
-        html += `<tr class="row-sep"><td colspan="7"></td></tr>`;
+        html += `<tr class="row-sep"><td colspan="9"></td></tr>`;
       }
 
       // Header del nuevo grupo
@@ -370,9 +376,23 @@ function renderTabla(rows) {
         <td style="text-align:right;font-size:11px">Meses</td>
         <td><input id="meses_${gId}" type="number" value="${mVal}" min="1" max="24"
           onchange="setMesesGrupo('${esc(grupo)}')" /></td>
+        <td colspan="2"></td>
       </tr>`;
       prevGrupo = grupo;
     }
+
+    // Agregar rollos y peso_x_rollo desde comprasDetalle
+    let totalRollos = 0;
+    let totalPeso = 0;
+    if (r.comprasDetalle && r.comprasDetalle.length) {
+      r.comprasDetalle.forEach(det => {
+        const rollos = Number(det.rollos) || 0;
+        const pesoXRollo = Number(det.peso_x_rollo) || 0;
+        totalRollos += rollos;
+        totalPeso += rollos * pesoXRollo;
+      });
+    }
+    const promedioPesoRollo = totalRollos > 0 ? (totalPeso / totalRollos).toFixed(3) : 0;
 
     const pedidoClass = r.pedido > 0 ? "col-number col-pedido col-clickable" : "col-number col-clickable";
     html += `<tr>
@@ -383,6 +403,8 @@ function renderTabla(rows) {
       <td class="${pedidoClass}" onclick="popupPedido(${i})">${r.pedido.toLocaleString("es-AR")}</td>
       <td class="col-number col-clickable" onclick="popupStockMax(${i})">${r.stockMax.toFixed(1)}</td>
       <td class="col-number col-clickable" onclick="popupStockOnline(${i})">${r.stockOnline.toLocaleString("es-AR")}</td>
+      <td class="col-number">${totalRollos || "—"}</td>
+      <td class="col-number">${totalRollos > 0 ? promedioPesoRollo : "—"}</td>
     </tr>`;
   });
 
@@ -395,10 +417,11 @@ function renderTabla(rows) {
       <td class="col-number">${st.pedido.toLocaleString("es-AR")}</td>
       <td></td>
       <td class="col-number" style="font-weight:400;font-size:11px;color:#666">mín ${minProv.toLocaleString("es-AR")}</td>
+      <td colspan="2"></td>
     </tr>`;
   }
 
-  tblBody.innerHTML = html || `<tr><td colspan="7" class="empty">No hay flejes cargados</td></tr>`;
+  tblBody.innerHTML = html || `<tr><td colspan="9" class="empty">No hay flejes cargados</td></tr>`;
 }
 
 /* ================= POPUPS ================= */
