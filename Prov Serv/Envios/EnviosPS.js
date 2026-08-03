@@ -1230,12 +1230,15 @@ async function setearStockInicialPS(sp, parte, inpEl, btnEl, msgEl) {
   // 2) Avisar por WhatsApp (plantilla ajuste_stock_inicial)
   let waTxt = "";
   let waOk = false;
+  let fechaHora = "";
+  try { fechaHora = new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }); } catch (e) {}
   const parametros = [
     "Online PS",                              // {{1}} tipo
     `${selectedPS} - ${parte}`,               // {{2}} referencia
     String(sp),                               // {{3}} sector
     `${n} cajones`,                           // {{4}} stock inicial
-    usuario || "-"                            // {{5}} responsable
+    usuario || "-",                           // {{5}} responsable
+    fechaHora || "-"                          // {{6}} fecha y hora
   ];
   try {
     const res = await fetch(SUPABASE_URL + "/functions/v1/send-whatsapp", {
