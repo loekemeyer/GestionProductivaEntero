@@ -82,7 +82,8 @@ async function init() {
         cantidad: cant,
         remito: r.remito,
         rollos: r.rollos,
-        peso_x_rollo: r.peso_x_rollo
+        peso_x_rollo: r.peso_x_rollo,
+        medida: r.medida
       });
     });
 
