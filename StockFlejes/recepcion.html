@@ -435,14 +435,23 @@ function renderItems() {
     const btn = document.createElement("button");
     const hasData = rubroSel === "Flejes" ? (item._rollos && item._rollos.length > 0) : item._cant;
     btn.className = "item-btn" + (hasData ? " active" : "");
+
     btn.innerHTML = `<div class="code">${esc(item.codigo)}</div>`;
-    if (item.isis) btn.innerHTML += `<div class="isis">ISIS: ${esc(item.isis)}</div>`;
-    if (item.medida) btn.innerHTML += `<div class="medida">${esc(item.medida)}</div>`;
+
+    if (item.isis) {
+      btn.innerHTML += `<div class="isis">ISIS: ${esc(item.isis)}</div>`;
+    }
+
+    if (item.medida) {
+      btn.innerHTML += `<div class="medida" style="font-weight:600;color:#111;margin-top:4px">${esc(item.medida)}</div>`;
+    }
+
     if (hasData && rubroSel === "Flejes") {
       const totalRollos = (item._rollos || []).reduce((s, g) => s + (Number(g.rollos) || 0), 0);
       const totalKg = (item._rollos || []).reduce((s, g) => s + (Number(g.rollos) || 0) * (Number(g.kg) || 0), 0);
-      btn.innerHTML += `<div class="medida" style="color:#0a7a2f;margin-top:8px">${totalRollos} rollos · ${totalKg.toFixed(1)} kg</div>`;
+      btn.innerHTML += `<div style="color:#0a7a2f;font-weight:700;margin-top:6px;font-size:14px">${totalRollos} rollos · ${totalKg.toFixed(1)} kg</div>`;
     }
+
     btn.addEventListener("click", () => openKgPopup(item, i));
     linesWrap.appendChild(btn);
   });
