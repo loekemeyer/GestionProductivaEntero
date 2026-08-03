@@ -389,7 +389,7 @@ async function precargarDatosStock() {
     // Cajones SUMA DIRECTA. Stock inicial y fabricacion derivan de Kg (no son movimientos).
     const [
       spKgRows, entregasPSRows, enviosTallRows, enviosAPSRows,
-      entregasLogRows, despieceRows, causaEfectoRows, dbEspejoRows
+      entregasLogRows, despieceRows, causaEfectoRows, dbEspejoRows, ajustesRows
     ] = await Promise.all([
       sb.from("SP Kg").select("*").then(r => r.data || []),
       cargarTablaPaginada("Entregas PS").then(r => r),
@@ -402,7 +402,8 @@ async function precargarDatosStock() {
       })),
       sb.from("Despiece x Articulo").select('"COD","Sector Proce"').then(r => r.data || []),
       sb.from("Causa-Efecto").select("*").then(r => r.data || []),
-      cargarTablaPaginada("db_n8n_espejo", [{ col: "Legajo", val: "1" }])
+      cargarTablaPaginada("db_n8n_espejo", [{ col: "Legajo", val: "1" }]),
+      cargarTablaPaginada("Ajustes Online PS").then(r => r)
     ]);
 
     // SP Kg index: spKgByKey y maps auxiliares
@@ -519,51 +520,61 @@ async function precargarDatosStock() {
       }
     }
 
-    // Online PS POR (PS, SP) y global por SP
-    // global = suma todos los PSs (todos los provs que entregan esa parte)
-    // Cajones para columna numerica + Kg para popup desglose
+    // ===== Online PS con PUNTO DE CORTE (stock inicial / ajuste) =====
+    // "Ajustes Online PS" fija un piso por (Prov_Serv, Sector SP) a partir de created_at.
+    // Online PS = Cajones(baseline) + envios posteriores al corte - entregas posteriores al corte.
+    // Sin ajuste -> comportamiento historico (todos los movimientos).
+    const baselineByKey = new Map(); // `${ps}||${spNorm}` -> { caj, cutoff:Date }
+    (ajustesRows || []).forEach(r => {
+      const ps = String(r["Prov_Serv"] || "").trim();
+      const sp = normalizeText(r["Sector SP"]);
+      if (!ps || !sp) return;
+      const cutoff = new Date(r["created_at"]);
+      if (isNaN(cutoff.getTime())) return;
+      const k = `${ps}||${sp}`;
+      const prev = baselineByKey.get(k);
+      if (!prev || cutoff > prev.cutoff) baselineByKey.set(k, { caj: Number(r["Cajones"] || 0), cutoff });
+    });
+
+    // Cajones (columna) — global por SP + por (PS,SP), respetando baseline y corte
     const onlinePSCajGlobalBySP = new Map();
     const onlinePSCajByPSAndSP = new Map(); // key: `${ps}||${sp}` -> caj
-    const onlinePSKgByPSAndSP = new Map();  // key: `${ps}||${sp}` -> kg
-    const onlinePSUniByPSAndSP = new Map(); // key: `${ps}||${sp}` -> uni (solo para PSs cargaPorUnidades)
-
-    const addRow = (ps, sp, caj, kg, uni, signo) => {
-      if (!sp) return;
-      if (caj) {
-        onlinePSCajGlobalBySP.set(sp, (onlinePSCajGlobalBySP.get(sp) || 0) + caj * signo);
-        if (ps) {
-          const k = `${ps}||${sp}`;
-          onlinePSCajByPSAndSP.set(k, (onlinePSCajByPSAndSP.get(k) || 0) + caj * signo);
-        }
+    // sembrar con el stock inicial de cada ajuste
+    for (const [k, b] of baselineByKey) {
+      const sp = k.slice(k.indexOf("||") + 2);
+      onlinePSCajByPSAndSP.set(k, b.caj);
+      onlinePSCajGlobalBySP.set(sp, (onlinePSCajGlobalBySP.get(sp) || 0) + b.caj);
+    }
+    const addCaj = (ps, sp, caj, createdAt, signo) => {
+      if (!sp || !caj) return;
+      const b = ps ? baselineByKey.get(`${ps}||${sp}`) : null;
+      if (b && createdAt) {
+        const t = new Date(createdAt);
+        if (!isNaN(t.getTime()) && t <= b.cutoff) return; // anterior al corte -> ya esta en el baseline
       }
-      if (kg && ps) {
+      onlinePSCajGlobalBySP.set(sp, (onlinePSCajGlobalBySP.get(sp) || 0) + caj * signo);
+      if (ps) {
         const k = `${ps}||${sp}`;
-        onlinePSKgByPSAndSP.set(k, (onlinePSKgByPSAndSP.get(k) || 0) + kg * signo);
-      }
-      if (uni && ps) {
-        const k = `${ps}||${sp}`;
-        onlinePSUniByPSAndSP.set(k, (onlinePSUniByPSAndSP.get(k) || 0) + uni * signo);
+        onlinePSCajByPSAndSP.set(k, (onlinePSCajByPSAndSP.get(k) || 0) + caj * signo);
       }
     };
-    enviosAPSRows.forEach(r => addRow(
-      String(r["Prov_Serv"] || "").trim(),
-      normalizeText(r["Sector SP"]),
-      Number(r["Cajones"] || 0),
-      Number(r["KG"] || 0),
-      Number(r["Unidades"] || 0),
-      +1
-    ));
-    entregasPSRows.forEach(r => addRow(
-      String(r["Prov_Serv"] || "").trim(),
-      normalizeText(r["Sector SP"]),
-      Number(r["Cajones"] || 0),
-      Number(r["KG"] || 0),
-      0, // Entregas PS no tiene columna Unidades
-      -1
-    ));
+    enviosAPSRows.forEach(r => addCaj(String(r["Prov_Serv"] || "").trim(), normalizeText(r["Sector SP"]), Number(r["Cajones"] || 0), r["created_at"], +1));
+    entregasPSRows.forEach(r => addCaj(String(r["Prov_Serv"] || "").trim(), normalizeText(r["Sector SP"]), Number(r["Cajones"] || 0), r["created_at"], -1));
+
+    // Kg / Uni (para el popup de desglose) — historico completo, no dependen del baseline
+    const onlinePSKgByPSAndSP = new Map();
+    const onlinePSUniByPSAndSP = new Map();
+    const addKgUni = (ps, sp, kg, uni, signo) => {
+      if (!ps || !sp) return;
+      const k = `${ps}||${sp}`;
+      if (kg) onlinePSKgByPSAndSP.set(k, (onlinePSKgByPSAndSP.get(k) || 0) + kg * signo);
+      if (uni) onlinePSUniByPSAndSP.set(k, (onlinePSUniByPSAndSP.get(k) || 0) + uni * signo);
+    };
+    enviosAPSRows.forEach(r => addKgUni(String(r["Prov_Serv"] || "").trim(), normalizeText(r["Sector SP"]), Number(r["KG"] || 0), Number(r["Unidades"] || 0), +1));
+    entregasPSRows.forEach(r => addKgUni(String(r["Prov_Serv"] || "").trim(), normalizeText(r["Sector SP"]), Number(r["KG"] || 0), 0, -1));
 
     stockDataCache = { mvBySP, onlinePSCajGlobalBySP, onlinePSCajByPSAndSP, onlinePSKgByPSAndSP, onlinePSUniByPSAndSP,
-      enviosAPSRows, entregasPSRows };
+      enviosAPSRows, entregasPSRows, baselineByKey };
     return stockDataCache;
   })();
 
@@ -1137,8 +1148,9 @@ function abrirPopupOnlinePS(sp, parte) {
 
   const linea = (x) => `<div class="popup-line"><span style="display:inline-block;min-width:48px">${escapeHtml(x.fecha||"")}</span> <b>${escapeHtml(x.ps)}</b> — ${Math.round(x.caj)} caj · ${formatKg(x.kg)} kg</div>`;
 
+  let movHtml;
   if (!envios.length && !entregas.length) {
-    body.innerHTML = `<div class="popup-line">Sin envíos ni entregas en ${mesNombre}</div>`;
+    movHtml = `<div class="popup-line">Sin envíos ni entregas en ${mesNombre}</div>`;
   } else {
     const sumCaj = arr => arr.reduce((s,x)=>s+x.caj,0);
     const sumKg  = arr => arr.reduce((s,x)=>s+x.kg,0);
@@ -1151,9 +1163,104 @@ function abrirPopupOnlinePS(sp, parte) {
     html += `<div class="popup-line"><b>Subtotal: ${Math.round(sumCaj(entregas))} caj · ${formatKg(sumKg(entregas))} kg</b></div>`;
     const netoCaj = sumCaj(envios) - sumCaj(entregas);
     html += `<div class="popup-line popup-total" style="margin-top:8px"><b>En proceso (envíos − entregas): ${Math.round(netoCaj)} caj</b></div>`;
-    body.innerHTML = html;
+    movHtml = html;
   }
+
+  // ===== Ajuste / Stock inicial del proveedor seleccionado =====
+  const bKey = `${String(selectedPS||"").trim()}||${spKey}`;
+  const baseline = (d.baselineByKey && d.baselineByKey.get(bKey)) || null;
+  const onlineActual = d.onlinePSCajGlobalBySP ? Math.round(d.onlinePSCajGlobalBySP.get(spKey) || 0) : 0;
+  const fmtFH = (dt) => { try { return new Date(dt).toLocaleString("es-AR", { timeZone:"America/Argentina/Buenos_Aires", day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }); } catch(e){ return ""; } };
+  let ajusteHtml = `<div class="ajuste-box">`;
+  ajusteHtml += `<div class="ajuste-title">🔧 Stock inicial · <b>${escapeHtml(aliasPS(selectedPS))}</b></div>`;
+  ajusteHtml += baseline
+    ? `<div class="ajuste-info">Último ajuste: <b>${baseline.caj}</b> caj · corte ${fmtFH(baseline.cutoff)}</div>`
+    : `<div class="ajuste-info">Sin ajuste previo (se cuenta todo el histórico).</div>`;
+  ajusteHtml += `<div class="ajuste-info">Online PS actual: <b>${onlineActual}</b> caj</div>`;
+  ajusteHtml += `<div class="ajuste-row">
+      <input type="text" inputmode="numeric" id="ajusteInput" class="ajuste-input" placeholder="Cajones que tiene ahora" autocomplete="off">
+      <button type="button" id="ajusteBtn" class="ajuste-btn">💾 Setear y avisar</button>
+    </div>`;
+  ajusteHtml += `<div class="ajuste-hint">Fija el stock inicial ahora; desde este momento se cuentan envíos y entregas sobre ese valor. Avisa por WhatsApp a Damián, Logística y Thomy.</div>`;
+  ajusteHtml += `<div id="ajusteMsg" class="ajuste-msg"></div>`;
+  ajusteHtml += `</div>`;
+
+  body.innerHTML = ajusteHtml + `<div class="popup-sep"></div>` + movHtml;
+
+  const inpEl = body.querySelector("#ajusteInput");
+  const btnEl = body.querySelector("#ajusteBtn");
+  const msgEl = body.querySelector("#ajusteMsg");
+  if (inpEl) inpEl.addEventListener("input", () => { inpEl.value = inpEl.value.replace(/\D/g, ""); });
+  if (btnEl) btnEl.addEventListener("click", () => setearStockInicialPS(sp, parte, inpEl, btnEl, msgEl));
+  if (_ajusteFlash && msgEl) { msgEl.textContent = _ajusteFlash.txt; msgEl.className = "ajuste-msg " + (_ajusteFlash.cls || "ok"); _ajusteFlash = null; }
+
   overlay.classList.remove("hidden");
+}
+
+let _ajusteFlash = null;
+
+// Setea el stock inicial (punto de corte) del proveedor+SP y avisa por WhatsApp (plantilla).
+async function setearStockInicialPS(sp, parte, inpEl, btnEl, msgEl) {
+  const raw = String(inpEl && inpEl.value || "").trim();
+  const setMsg = (t, cls) => { if (msgEl) { msgEl.textContent = t; msgEl.className = "ajuste-msg " + (cls || ""); } };
+  if (raw === "" || isNaN(Number(raw))) { setMsg("Ingresá la cantidad de cajones.", "err"); return; }
+  const n = parseInt(raw, 10);
+  if (n < 0) { setMsg("No puede ser negativo.", "err"); return; }
+  if (!selectedPS) { setMsg("No hay proveedor seleccionado.", "err"); return; }
+
+  const txtOrig = btnEl ? btnEl.textContent : "";
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = "Guardando…"; }
+
+  let usuario = "";
+  try { usuario = sessionStorage.getItem("gp_user") || sessionStorage.getItem("gp_role") || ""; } catch (e) {}
+
+  // 1) Guardar baseline (punto de corte = created_at por defecto)
+  const { error } = await sb.from("Ajustes Online PS").insert({
+    "Prov_Serv": selectedPS,
+    "Sector SP": sp,
+    "Cajones": n,
+    "usuario": usuario || null
+  });
+  if (error) {
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = txtOrig; }
+    setMsg("Error al guardar: " + error.message, "err");
+    return;
+  }
+
+  // 2) Avisar por WhatsApp (plantilla ajuste_stock_inicial)
+  let waTxt = "";
+  let waOk = false;
+  const parametros = [
+    "Online PS",                              // {{1}} tipo
+    `${selectedPS} - ${parte}`,               // {{2}} referencia
+    String(sp),                               // {{3}} sector
+    `${n} cajones`,                           // {{4}} stock inicial
+    usuario || "-"                            // {{5}} responsable
+  ];
+  try {
+    const res = await fetch(SUPABASE_URL + "/functions/v1/send-whatsapp", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ plantilla: "ajuste_stock_inicial", idioma: "es_AR", parametros })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && (data.enviados ?? 0) > 0) {
+      waOk = true;
+      waTxt = ` · WhatsApp ${data.enviados}/${data.total}`;
+    } else {
+      const det = (data.resultados && data.resultados[0] && data.resultados[0].error) || data.error || "";
+      waTxt = " · WhatsApp no enviado" + (det ? " (" + String(det).slice(0, 60) + ")" : "");
+    }
+  } catch (e) {
+    waTxt = " · WhatsApp falló (red)";
+  }
+
+  // 3) Refrescar cache + tabla + popup
+  stockDataCache = null; stockDataPromise = null;
+  try { await precargarDatosStock(); } catch (e) {}
+  try { renderizarFase1(); } catch (e) {}
+  _ajusteFlash = { txt: `Guardado: stock inicial ${n} caj.${waTxt}`, cls: waOk ? "ok" : "err" };
+  abrirPopupOnlinePS(sp, parte);
 }
 
 function actualizarFaltanteAuto(row) {

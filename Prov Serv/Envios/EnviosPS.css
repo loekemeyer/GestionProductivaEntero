@@ -252,6 +252,20 @@ body {
 /* Columna "espacio" separadora */
 #fase1 .table .sep { background: #eef1f4; border-left: 2px solid #cbd3da; border-right: 2px solid #cbd3da; }
 
+/* ===== Popup: setear stock inicial (ajuste Online PS) ===== */
+.ajuste-box { background: #f0f7ff; border: 1px solid #b6d4f2; border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; }
+.ajuste-title { font-weight: 800; font-size: 14px; margin-bottom: 6px; color: #123; }
+.ajuste-info { font-size: 13px; color: #334; margin: 2px 0; }
+.ajuste-row { display: flex; gap: 8px; margin-top: 8px; }
+.ajuste-input { flex: 1; height: 40px; border: 2px solid #b6d4f2; border-radius: 8px; padding: 0 10px; font-size: 15px; text-align: center; }
+.ajuste-btn { height: 40px; border: 0; border-radius: 8px; background: #1769aa; color: #fff; font-weight: 800; font-size: 14px; padding: 0 14px; cursor: pointer; white-space: nowrap; }
+.ajuste-btn:disabled { opacity: .6; cursor: default; }
+.ajuste-hint { font-size: 11.5px; color: #567; margin-top: 6px; line-height: 1.35; }
+.ajuste-msg { font-size: 13px; font-weight: 700; margin-top: 6px; min-height: 16px; }
+.ajuste-msg.ok { color: #137333; }
+.ajuste-msg.err { color: #b91c1c; }
+.popup-sep { height: 1px; background: #dde3ea; margin: 4px 0 10px; }
+
 /* Online SP en rojo cuando es negativo (data quality flag) */
 #fase1 .neg-online b { color: #b91c1c; }
 
