@@ -227,23 +227,27 @@ body {
 
 /* ===== FASE 1 (nuevo orden): SC | Cajón envío | KG Neto | (espacio) | Parte | Online PS | Max | Online SP | Caj | T | F ===== */
 #fase1 .table thead th:nth-child(1),
-#fase1 .table tbody td:nth-child(1) { width: 6ch; text-align: center; }
+#fase1 .table tbody td:nth-child(1) { width: 6ch; text-align: center; }               /* SC */
 #fase1 .table thead th:nth-child(2),
-#fase1 .table tbody td:nth-child(2) { width: 8ch; text-align: center; white-space: normal; }
+#fase1 .table tbody td:nth-child(2) { width: 30ch; text-align: left; }                /* Parte */
 #fase1 .table thead th:nth-child(3),
-#fase1 .table tbody td:nth-child(3) { width: 9ch; text-align: center; white-space: normal; }
+#fase1 .table tbody td:nth-child(3) { width: 8ch; text-align: center; white-space: normal; }  /* Cajón envío (sug) */
 #fase1 .table thead th:nth-child(4),
-#fase1 .table tbody td:nth-child(4) { width: 2ch; padding: 0; }
+#fase1 .table tbody td:nth-child(4) { width: 8ch; text-align: center; white-space: normal; }  /* Cajón Envío (input) */
 #fase1 .table thead th:nth-child(5),
-#fase1 .table tbody td:nth-child(5) { width: 30ch; text-align: left; }
+#fase1 .table tbody td:nth-child(5) { width: 9ch; text-align: center; white-space: normal; }  /* Cajón envío KG Neto */
 #fase1 .table thead th:nth-child(6),
-#fase1 .table tbody td:nth-child(6) { width: 9ch; text-align: center; white-space: normal; }
+#fase1 .table tbody td:nth-child(6) { width: 5ch; text-align: center; }               /* T */
 #fase1 .table thead th:nth-child(7),
-#fase1 .table tbody td:nth-child(7) { width: 5ch; text-align: center; }
+#fase1 .table tbody td:nth-child(7) { width: 5ch; text-align: center; }               /* F */
 #fase1 .table thead th:nth-child(8),
-#fase1 .table tbody td:nth-child(8) { width: 8ch; text-align: center; white-space: normal; }
+#fase1 .table tbody td:nth-child(8) { width: 2ch; padding: 0; }                       /* separador */
 #fase1 .table thead th:nth-child(9),
-#fase1 .table tbody td:nth-child(9) { width: 8ch; text-align: center; }
+#fase1 .table tbody td:nth-child(9) { width: 9ch; text-align: center; white-space: normal; }  /* Online PS Cajón */
+#fase1 .table thead th:nth-child(10),
+#fase1 .table tbody td:nth-child(10) { width: 9ch; text-align: center; white-space: normal; } /* Online SP Cajón */
+#fase1 .table thead th:nth-child(11),
+#fase1 .table tbody td:nth-child(11) { width: 8ch; text-align: center; white-space: normal; } /* Max Cajón */
 /* Columna "espacio" separadora */
 #fase1 .table .sep { background: #eef1f4; border-left: 2px solid #cbd3da; border-right: 2px solid #cbd3da; }
 
