@@ -74,6 +74,23 @@
   .kg-modal input{width:100%;padding:12px;font-size:20px;border:2px solid #d0d7de;border-radius:6px;margin-bottom:16px;text-align:center}
   .kg-modal .actions{display:flex;gap:8px}
   .kg-modal button{flex:1;padding:12px;font-size:18px;font-weight:700;border:none;border-radius:6px;cursor:pointer}
+
+  /* Modal de flejes con grupos de rollos */
+  .rollos-modal{background:#fff;border-radius:12px;padding:24px;width:90%;max-width:600px;box-shadow:0 10px 40px rgba(0,0,0,.3);max-height:85vh;overflow-y:auto}
+  .rollos-modal h3{margin-bottom:16px;font-size:22px;font-weight:700}
+  .rollos-modal .item-info{background:#f6f8fa;padding:12px;border-radius:6px;margin-bottom:20px;font-size:16px}
+  .rollos-tabla{width:100%;border-collapse:collapse;margin-bottom:20px}
+  .rollos-tabla th,.rollos-tabla td{padding:12px;border:1px solid #d0d7de;text-align:center;font-size:16px}
+  .rollos-tabla th{background:#f6f8fa;font-weight:700;font-size:15px}
+  .rollos-tabla input{width:100%;padding:8px;font-size:18px;border:2px solid #d0d7de;border-radius:6px;text-align:center;font-weight:600}
+  .rollos-tabla .total-row{background:#f0f0f0;font-weight:700;font-size:17px}
+  .rollos-tabla .total-row td{border-top:2px solid #333;border-bottom:2px solid #333}
+  .btn-remove-grupo{background:#b42318;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;font-size:14px;font-weight:700}
+  .btn-remove-grupo:hover{background:#8b1a13}
+  .btn-add-grupo{background:#0a7a2f;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-size:16px;font-weight:700;margin-bottom:16px;width:100%}
+  .btn-add-grupo:hover{background:#067a28}
+  .rollos-actions{display:flex;gap:8px;margin-top:20px}
+  .rollos-actions button{flex:1;padding:12px;font-size:18px;font-weight:700;border:none;border-radius:6px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -159,15 +176,46 @@
   </div>
 </div>
 
-<!-- Modal para ingresar kg -->
+<!-- Modal para ingresar kg (todos rubros) -->
 <div id="inputKgPopup" class="input-kg-popup">
-  <div class="kg-modal">
+  <div class="kg-modal" id="kgModalContainer">
     <h3>Cantidad en KG</h3>
     <div class="item-info" id="kgItemInfo"></div>
     <input type="text" id="inputKgValue" inputmode="decimal" placeholder="0,0" />
     <div class="actions">
       <button class="btn btn-secondary" id="kgCancelBtn">Cancelar</button>
       <button class="btn btn-primary" id="kgConfirmBtn">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para flejes con grupos de rollos -->
+<div id="inputRollosPopup" class="input-kg-popup">
+  <div class="rollos-modal">
+    <h3>Carga de Rollos</h3>
+    <div class="item-info" id="rollosItemInfo"></div>
+    <button class="btn-add-grupo" id="btnAddGrupo">+ Agregar grupo de rollo</button>
+    <table class="rollos-tabla">
+      <thead>
+        <tr>
+          <th style="width:15%">Rollo</th>
+          <th style="width:30%">Cant</th>
+          <th style="width:30%">Kg c/u</th>
+          <th style="width:20%">Total Kg</th>
+          <th style="width:5%"></th>
+        </tr>
+      </thead>
+      <tbody id="rollosBody"></tbody>
+    </table>
+    <div class="rollos-tabla" style="margin-top:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:18px;font-weight:700">
+        <div>Kg TOTAL: <span id="totalKgFinal">0</span></div>
+        <div>Rollos TOTAL: <span id="totalRollosFinal">0</span></div>
+      </div>
+    </div>
+    <div class="rollos-actions">
+      <button class="btn btn-secondary" id="rollosCancelBtn">Cancelar</button>
+      <button class="btn btn-primary" id="rollosConfirmBtn">Confirmar</button>
     </div>
   </div>
 </div>
@@ -226,6 +274,7 @@ let provSel = "";
 let items = [];
 let filteredItems = [];
 let selectedItem = null;
+let selectedItemIdx = -1;
 
 const rubroGrid = document.getElementById("rubroGrid");
 const provSection = document.getElementById("provSection");
@@ -260,6 +309,8 @@ rubroGrid.querySelectorAll(".prov-btn").forEach(btn => {
     rubroSel = btn.dataset.rubro;
     rubroGrid.querySelectorAll(".prov-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
+    items = [];
+    filteredItems = [];
     renderProveedores();
   });
 });
@@ -340,13 +391,20 @@ btnContinuar.addEventListener("click", async () => {
       if (!cod || seen.has(cod)) return false;
       seen.add(cod);
       return true;
-    }).map(r => ({
-      codigo: String(r.cod).trim(),
-      descripcion: String(r.desc ?? "").trim(),
-      isis: String(r.isis ?? "").trim(),
-      medida: String(r.medida ?? "").trim(),
-      _cant: ""
-    }));
+    }).map(r => {
+      const item = {
+        codigo: String(r.cod).trim(),
+        descripcion: String(r.desc ?? "").trim(),
+        isis: String(r.isis ?? "").trim(),
+        medida: String(r.medida ?? "").trim(),
+        _cant: ""
+      };
+      if (rubroSel === "Flejes") {
+        // Para flejes, inicializar con un grupo vacío
+        item._rollos = [{ rollos: "", kg: "" }];
+      }
+      return item;
+    });
 
     if (!items.length) {
       statusMsg.textContent = "No hay artículos para este proveedor.";
@@ -373,11 +431,17 @@ function renderItems() {
   linesWrap.innerHTML = "";
   filteredItems.forEach((item, i) => {
     const btn = document.createElement("button");
-    btn.className = "item-btn" + (item._cant ? " active" : "");
+    const hasData = rubroSel === "Flejes" ? (item._rollos && item._rollos.length > 0) : item._cant;
+    btn.className = "item-btn" + (hasData ? " active" : "");
     btn.innerHTML = `<div class="code">${esc(item.codigo)}</div>`;
     if (item.isis) btn.innerHTML += `<div class="isis">ISIS: ${esc(item.isis)}</div>`;
     if (item.medida) btn.innerHTML += `<div class="medida">${esc(item.medida)}</div>`;
-    btn.addEventListener("click", () => openKgPopup(item));
+    if (hasData && rubroSel === "Flejes") {
+      const totalRollos = (item._rollos || []).reduce((s, g) => s + (Number(g.rollos) || 0), 0);
+      const totalKg = (item._rollos || []).reduce((s, g) => s + (Number(g.rollos) || 0) * (Number(g.kg) || 0), 0);
+      btn.innerHTML += `<div class="medida" style="color:#0a7a2f;margin-top:8px">${totalRollos} rollos · ${totalKg.toFixed(1)} kg</div>`;
+    }
+    btn.addEventListener("click", () => openKgPopup(item, i));
     linesWrap.appendChild(btn);
   });
 }
@@ -402,18 +466,101 @@ function buildModal() {
   setTimeout(() => searchInput.focus(), 100);
 }
 
-function openKgPopup(item) {
+function openKgPopup(item, idx) {
   selectedItem = item;
-  kgItemInfo.innerHTML = `<strong>${esc(item.codigo)}</strong> - ${esc(item.descripcion)}`;
-  if (item.isis) kgItemInfo.innerHTML += ` <br><small>ISIS: ${esc(item.isis)}</small>`;
-  inputKgValue.value = item._cant || "";
-  inputKgPopup.classList.add("open");
-  setTimeout(() => inputKgValue.focus(), 100);
+  selectedItemIdx = idx;
+
+  if (rubroSel === "Flejes") {
+    // Modal de flejes con grupos de rollos
+    document.getElementById("rollosItemInfo").innerHTML = `<strong>${esc(item.codigo)}</strong> - ${esc(item.descripcion)}`;
+    if (item.isis) document.getElementById("rollosItemInfo").innerHTML += ` <br><small>ISIS: ${esc(item.isis)}</small>`;
+    if (item.medida) document.getElementById("rollosItemInfo").innerHTML += ` <br><small>Medida: ${esc(item.medida)}</small>`;
+
+    renderRollosTabla();
+    document.getElementById("inputRollosPopup").classList.add("open");
+  } else {
+    // Modal simple para otros rubros
+    kgItemInfo.innerHTML = `<strong>${esc(item.codigo)}</strong> - ${esc(item.descripcion)}`;
+    if (item.isis) kgItemInfo.innerHTML += ` <br><small>ISIS: ${esc(item.isis)}</small>`;
+    inputKgValue.value = item._cant || "";
+    document.getElementById("inputKgPopup").classList.add("open");
+    setTimeout(() => inputKgValue.focus(), 100);
+  }
 }
 
 function closeKgPopup() {
-  inputKgPopup.classList.remove("open");
+  document.getElementById("inputKgPopup").classList.remove("open");
+  document.getElementById("inputRollosPopup").classList.remove("open");
   selectedItem = null;
+  selectedItemIdx = -1;
+}
+
+// ===== Manejo de Flejes con grupos de rollos =====
+function renderRollosTabla() {
+  const item = selectedItem;
+  if (!item || !item._rollos) return;
+
+  const tbody = document.getElementById("rollosBody");
+  tbody.innerHTML = "";
+
+  item._rollos.forEach((grupo, i) => {
+    const tr = document.createElement("tr");
+    const totalKgGrupo = (Number(grupo.rollos) || 0) * (Number(grupo.kg) || 0);
+
+    tr.innerHTML = `
+      <td>${i + 1}</td>
+      <td><input type="number" class="inp-rollos" value="${grupo.rollos || ""}" min="0" step="1" data-idx="${i}"></td>
+      <td><input type="number" class="inp-kg" value="${grupo.kg || ""}" min="0" step="0.01" data-idx="${i}"></td>
+      <td>${totalKgGrupo.toFixed(2)}</td>
+      <td>${i === 0 ? "" : `<button class="btn-remove-grupo" data-idx="${i}">✕</button>`}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Listeners para inputs
+  document.querySelectorAll(".inp-rollos, .inp-kg").forEach(inp => {
+    inp.addEventListener("input", actualizarRollosTabla);
+  });
+
+  // Listeners para botones remove
+  document.querySelectorAll(".btn-remove-grupo").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const idx = Number(e.target.dataset.idx);
+      if (selectedItem._rollos[idx]) {
+        selectedItem._rollos.splice(idx, 1);
+        renderRollosTabla();
+      }
+    });
+  });
+
+  actualizarRollosTabla();
+}
+
+function actualizarRollosTabla() {
+  const item = selectedItem;
+  if (!item || !item._rollos) return;
+
+  // Guardar valores de inputs
+  document.querySelectorAll(".inp-rollos").forEach(inp => {
+    const idx = Number(inp.dataset.idx);
+    item._rollos[idx].rollos = inp.value ? Number(inp.value) : 0;
+  });
+
+  document.querySelectorAll(".inp-kg").forEach(inp => {
+    const idx = Number(inp.dataset.idx);
+    item._rollos[idx].kg = inp.value ? parseFloat(inp.value) : 0;
+  });
+
+  // Calcular totales
+  let totalRollos = 0;
+  let totalKg = 0;
+  item._rollos.forEach(grupo => {
+    totalRollos += Number(grupo.rollos) || 0;
+    totalKg += (Number(grupo.rollos) || 0) * (Number(grupo.kg) || 0);
+  });
+
+  document.getElementById("totalRollosFinal").textContent = totalRollos;
+  document.getElementById("totalKgFinal").textContent = totalKg.toFixed(2);
 }
 
 function closeModalFn() {
@@ -447,8 +594,38 @@ kgConfirmBtn.addEventListener("click", () => {
 
 kgCancelBtn.addEventListener("click", closeKgPopup);
 
-inputKgPopup.addEventListener("click", e => {
-  if (e.target === inputKgPopup) closeKgPopup();
+document.getElementById("inputKgPopup").addEventListener("click", e => {
+  if (e.target === document.getElementById("inputKgPopup")) closeKgPopup();
+});
+
+// Botones de flejes
+document.getElementById("btnAddGrupo").addEventListener("click", () => {
+  if (!selectedItem || !selectedItem._rollos) return;
+  selectedItem._rollos.push({ rollos: "", kg: "" });
+  renderRollosTabla();
+});
+
+document.getElementById("rollosCancelBtn").addEventListener("click", closeKgPopup);
+
+document.getElementById("rollosConfirmBtn").addEventListener("click", () => {
+  if (!selectedItem || !selectedItem._rollos) return;
+
+  // Guardar valores finales
+  actualizarRollosTabla();
+
+  // Validar que haya al menos un grupo con datos
+  const tieneData = selectedItem._rollos.some(g => (Number(g.rollos) || 0) > 0 && (Number(g.kg) || 0) > 0);
+  if (!tieneData) {
+    alert("Completá al menos un grupo de rollos con cantidad y peso.");
+    return;
+  }
+
+  renderItems();
+  closeKgPopup();
+});
+
+document.getElementById("inputRollosPopup").addEventListener("click", e => {
+  if (e.target === document.getElementById("inputRollosPopup")) closeKgPopup();
 });
 
 // ===== Enviar =====
@@ -456,14 +633,32 @@ document.getElementById("sendModal").addEventListener("click", async () => {
   const unidad = getUnidad(rubroSel, provSel);
   const parseCant = (s) => Number(String(s || "").replace(",", ".")) || 0;
 
-  const toSend = items.filter(it => parseCant(it._cant) > 0);
+  // Filtrar items que tengan datos (según el rubro)
+  let toSend;
+  if (rubroSel === "Flejes") {
+    toSend = items.filter(it => it._rollos && it._rollos.length > 0 && it._rollos.some(g => (Number(g.rollos) || 0) > 0));
+  } else {
+    toSend = items.filter(it => parseCant(it._cant) > 0);
+  }
+
   if (!toSend.length) {
-    modalMsg.textContent = "Completá al menos una cantidad.";
+    modalMsg.textContent = rubroSel === "Flejes" ? "Completá al menos un artículo con rollos." : "Completá al menos una cantidad.";
     modalMsg.className = "status bad";
     return;
   }
 
-  const resumen = toSend.map(it => `${it.codigo}: ${it._cant} ${unidad}`).join("\n");
+  // Resumen
+  let resumen;
+  if (rubroSel === "Flejes") {
+    resumen = toSend.map(it => {
+      const totalRollos = it._rollos.reduce((s, g) => s + (Number(g.rollos) || 0), 0);
+      const totalKg = it._rollos.reduce((s, g) => s + (Number(g.rollos) || 0) * (Number(g.kg) || 0), 0);
+      return `${it.codigo}: ${totalRollos} rollos · ${totalKg.toFixed(1)} kg`;
+    }).join("\n");
+  } else {
+    resumen = toSend.map(it => `${it.codigo}: ${it._cant} ${unidad}`).join("\n");
+  }
+
   if (!confirm(`Registrar recepción de ${provSel}?\n\n${resumen}`)) return;
 
   const sendBtn = document.getElementById("sendModal");
@@ -473,16 +668,41 @@ document.getElementById("sendModal").addEventListener("click", async () => {
 
   try {
     const remito = txtRemito.value.trim();
-    const registros = toSend.map(it => ({
-      fecha: arDateISO(),
-      proveedor: provSel,
-      rubro: rubroSel,
-      codigo: it.codigo,
-      descripcion: it.descripcion,
-      cantidad: parseCant(it._cant),
-      unidad: unidad,
-      remito: remito || null
-    }));
+    const registros = [];
+
+    toSend.forEach(it => {
+      if (rubroSel === "Flejes") {
+        // Para flejes, crear un registro por grupo de rollo
+        it._rollos.forEach(grupo => {
+          if (Number(grupo.rollos) > 0) {
+            registros.push({
+              fecha: arDateISO(),
+              proveedor: provSel,
+              rubro: rubroSel,
+              codigo: it.codigo,
+              descripcion: it.descripcion,
+              cantidad: (Number(grupo.rollos) || 0) * (Number(grupo.kg) || 0),
+              unidad: "Kg",
+              remito: remito || null,
+              rollos: Number(grupo.rollos) || 0,
+              peso_x_rollo: Number(grupo.kg) || 0
+            });
+          }
+        });
+      } else {
+        // Para otros rubros, un registro por item
+        registros.push({
+          fecha: arDateISO(),
+          proveedor: provSel,
+          rubro: rubroSel,
+          codigo: it.codigo,
+          descripcion: it.descripcion,
+          cantidad: parseCant(it._cant),
+          unidad: unidad,
+          remito: remito || null
+        });
+      }
+    });
 
     const { data, error } = await sb.from("Recepcion_Insumos").insert(registros).select();
     if (error) throw error;
