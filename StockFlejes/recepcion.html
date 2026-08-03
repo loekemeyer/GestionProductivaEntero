@@ -159,13 +159,28 @@
   </div>
 </div>
 
-<!-- Modal para ingresar kg -->
+<!-- Modal para ingresar datos -->
 <div id="inputKgPopup" class="input-kg-popup">
   <div class="kg-modal">
-    <h3>Cantidad en KG</h3>
+    <h3 id="kgModalTitle">Cantidad en KG</h3>
     <div class="item-info" id="kgItemInfo"></div>
-    <input type="text" id="inputKgValue" inputmode="decimal" placeholder="0,0" />
-    <div class="actions">
+
+    <div id="kgInputGroup">
+      <label style="display:block;margin-bottom:8px;font-size:16px;font-weight:700">KG</label>
+      <input type="text" id="inputKgValue" inputmode="decimal" placeholder="0,0" />
+    </div>
+
+    <div id="rollosInputGroup" style="display:none;margin-top:14px">
+      <label style="display:block;margin-bottom:8px;font-size:16px;font-weight:700">Rollos</label>
+      <input type="text" id="inputRollos" inputmode="numeric" placeholder="0" />
+    </div>
+
+    <div id="pesoRolloInputGroup" style="display:none;margin-top:14px">
+      <label style="display:block;margin-bottom:8px;font-size:16px;font-weight:700">Peso x Rollo</label>
+      <input type="text" id="inputPesoRollo" inputmode="decimal" placeholder="0,0" />
+    </div>
+
+    <div class="actions" style="margin-top:20px">
       <button class="btn btn-secondary" id="kgCancelBtn">Cancelar</button>
       <button class="btn btn-primary" id="kgConfirmBtn">Confirmar</button>
     </div>
@@ -345,7 +360,9 @@ btnContinuar.addEventListener("click", async () => {
       descripcion: String(r.desc ?? "").trim(),
       isis: String(r.isis ?? "").trim(),
       medida: String(r.medida ?? "").trim(),
-      _cant: ""
+      _cant: "",
+      _rollos: "",
+      _pesoRollo: ""
     }));
 
     if (!items.length) {
@@ -377,6 +394,11 @@ function renderItems() {
     btn.innerHTML = `<div class="code">${esc(item.codigo)}</div>`;
     if (item.isis) btn.innerHTML += `<div class="isis">ISIS: ${esc(item.isis)}</div>`;
     if (item.medida) btn.innerHTML += `<div class="medida">${esc(item.medida)}</div>`;
+    if (item._cant) {
+      btn.innerHTML += `<div class="medida" style="margin-top:8px;color:#0a7a2f;font-weight:700">${esc(item._cant)} kg`;
+      if (item._rollos) btn.innerHTML += ` · ${item._rollos} rollos`;
+      btn.innerHTML += `</div>`;
+    }
     btn.addEventListener("click", () => openKgPopup(item));
     linesWrap.appendChild(btn);
   });
@@ -406,7 +428,17 @@ function openKgPopup(item) {
   selectedItem = item;
   kgItemInfo.innerHTML = `<strong>${esc(item.codigo)}</strong> - ${esc(item.descripcion)}`;
   if (item.isis) kgItemInfo.innerHTML += ` <br><small>ISIS: ${esc(item.isis)}</small>`;
+
+  // Mostrar campos según rubro
+  const isFlejes = rubroSel === "Flejes";
+  document.getElementById("rollosInputGroup").style.display = isFlejes ? "block" : "none";
+  document.getElementById("pesoRolloInputGroup").style.display = isFlejes ? "block" : "none";
+  document.getElementById("kgModalTitle").textContent = isFlejes ? "Recepción de Fleje" : "Cantidad en KG";
+
   inputKgValue.value = item._cant || "";
+  document.getElementById("inputRollos").value = item._rollos || "";
+  document.getElementById("inputPesoRollo").value = item._pesoRollo || "";
+
   inputKgPopup.classList.add("open");
   setTimeout(() => inputKgValue.focus(), 100);
 }
@@ -431,15 +463,38 @@ inputKgValue.addEventListener("input", () => {
   inputKgValue.value = inputKgValue.value.replace(/[^0-9.,]/g, "").replace(/([.,].*)[.,]/g, "$1");
 });
 
+document.getElementById("inputRollos").addEventListener("input", () => {
+  document.getElementById("inputRollos").value = document.getElementById("inputRollos").value.replace(/\D/g, "");
+});
+
+document.getElementById("inputPesoRollo").addEventListener("input", () => {
+  const el = document.getElementById("inputPesoRollo");
+  el.value = el.value.replace(/[^0-9.,]/g, "").replace(/([.,].*)[.,]/g, "$1");
+});
+
 inputKgValue.addEventListener("keydown", e => {
+  if (e.key === "Enter") kgConfirmBtn.click();
+});
+
+document.getElementById("inputRollos").addEventListener("keydown", e => {
+  if (e.key === "Enter") kgConfirmBtn.click();
+});
+
+document.getElementById("inputPesoRollo").addEventListener("keydown", e => {
   if (e.key === "Enter") kgConfirmBtn.click();
 });
 
 kgConfirmBtn.addEventListener("click", () => {
   if (!selectedItem) return;
   const val = inputKgValue.value.trim();
+  const isFlejes = rubroSel === "Flejes";
+
   if (val && Number(val.replace(",", ".")) > 0) {
     selectedItem._cant = val;
+    if (isFlejes) {
+      selectedItem._rollos = document.getElementById("inputRollos").value.trim();
+      selectedItem._pesoRollo = document.getElementById("inputPesoRollo").value.trim();
+    }
     renderItems();
   }
   closeKgPopup();
@@ -473,16 +528,24 @@ document.getElementById("sendModal").addEventListener("click", async () => {
 
   try {
     const remito = txtRemito.value.trim();
-    const registros = toSend.map(it => ({
-      fecha: arDateISO(),
-      proveedor: provSel,
-      rubro: rubroSel,
-      codigo: it.codigo,
-      descripcion: it.descripcion,
-      cantidad: parseCant(it._cant),
-      unidad: unidad,
-      remito: remito || null
-    }));
+    const registros = toSend.map(it => {
+      const reg = {
+        fecha: arDateISO(),
+        proveedor: provSel,
+        rubro: rubroSel,
+        codigo: it.codigo,
+        descripcion: it.descripcion,
+        cantidad: parseCant(it._cant),
+        unidad: unidad,
+        remito: remito || null
+      };
+      // Agregar campos adicionales para Flejes
+      if (rubroSel === "Flejes") {
+        reg.rollos = it._rollos ? parseInt(it._rollos) || null : null;
+        reg.peso_x_rollo = it._pesoRollo ? parseFloat(it._pesoRollo.replace(",", ".")) || null : null;
+      }
+      return reg;
+    });
 
     const { data, error } = await sb.from("Recepcion_Insumos").insert(registros).select();
     if (error) throw error;
