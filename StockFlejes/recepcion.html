@@ -762,11 +762,23 @@ inputKgPopup.addEventListener("click", e => {
 
 // Aviso por Telegram (grupo de alertas) si un fleje difiere > 5% de lo estipulado (remito).
 // La diferencia puede ser positiva o negativa. Encola por RPC (rc_alerta_recepcion_fleje).
+// Rubro -> nombre singular para el título / etiqueta del ítem.
+const RUBRO_SINGULAR = { Flejes: "FLEJE", Cajas: "CAJA", Plasticos: "PLÁSTICO", "Plásticos": "PLÁSTICO", Cartones: "CARTÓN", Remaches: "REMACHE" };
+
 async function avisarDiferenciasFlejesTelegram(flejes, remito) {
   const parse = (s) => Number(String(s == null ? "" : s).replace(",", ".")) || 0;
   const fmt = (n) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 3 });
-  let hoy = "";
+  let hoy = "", fechaHora = "";
   try { hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }); } catch (e) {}
+  try { fechaHora = new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }); } catch (e) {}
+  // Responsable (quién cargó): usuario logueado (Google/Supabase) o sessionStorage.
+  let responsable = "";
+  try { const { data } = await sb.auth.getUser(); responsable = (data && data.user && (data.user.email || data.user.user_metadata?.full_name)) || ""; } catch (e) {}
+  if (!responsable) { try { responsable = sessionStorage.getItem("gp_user") || sessionStorage.getItem("gp_role") || ""; } catch (e) {} }
+
+  const rubroUp = RUBRO_SINGULAR[rubroSel] || String(rubroSel).toUpperCase();
+  const rubroCap = rubroUp.charAt(0) + rubroUp.slice(1).toLowerCase();
+
   for (const it of flejes) {
     const estip = parse(it._estipulado);
     if (!estip) continue;                       // sin estipulado no se compara
@@ -779,15 +791,17 @@ async function avisarDiferenciasFlejesTelegram(flejes, remito) {
     const desglose = (Array.isArray(it._rollosBreak) ? it._rollosBreak : [])
       .map(c => `${c.count}×${fmt(c.kg)}`).join(" + ") || "—";
     const text =
-      `📦⚠️ RECEPCIÓN DE FLEJE — diferencia ${pctTxt}% vs remito\n` +
+      `📦⚠️ RECEPCIÓN DE ${rubroUp} — diferencia ${pctTxt}% vs remito\n` +
       `Proveedor: ${provSel}\n` +
-      `Fleje: ${it.codigo} - ${it.descripcion}\n` +
+      `${rubroCap}: ${it.codigo} - ${it.descripcion}\n` +
       `Medida: ${it.medida || "—"}\n` +
       `KG remito (estipulado): ${fmt(estip)} kg\n` +
       `KG recibido (real): ${fmt(real)} kg\n` +
       `Diferencia: ${signo}${fmt(dif)} kg (${pctTxt}%)\n` +
       `Rollos: ${desglose}\n` +
-      `Remito: ${remito || "—"}`;
+      `Remito: ${remito || "—"}\n` +
+      `Cargó: ${responsable || "—"}\n` +
+      `Fecha: ${fechaHora || "—"}`;
     const dedup = `recep_dif_fleje_${String(remito || "sr").replace(/\s+/g, "")}_${it.codigo}_${hoy}`;
     try { await sb.rpc("rc_alerta_recepcion_fleje", { p_text: text, p_dedup: dedup }); }
     catch (e) { console.error("aviso telegram dif fleje:", e); }
