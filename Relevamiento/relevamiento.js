@@ -149,9 +149,18 @@
   }
   // Ordena las filas del relevamiento por SECTOR (natural), con el orden del catalogo como desempate.
   const cmpSector = (a, b) => cmpNat(a.sector, b.sector) || ((a.orden || 0) - (b.orden || 0));
-  // Para remaches el sector "real" de orden es el CRUDO (el proc suele ser "S/S" repetido).
-  const sectorOrdKey = (r) => (r && r.tipo === "remaches" && r.info && r.info.sector_crudo) ? r.info.sector_crudo : (r ? r.sector : "");
-  const cmpSectorRow = (a, b) => cmpNat(sectorOrdKey(a), sectorOrdKey(b)) || ((a.orden || 0) - (b.orden || 0));
+  // Remaches ordena por sector CRUDO; los "sin sector" (S/S o vacío) van al FINAL.
+  const esSinSector = (s) => { const v = String(s == null ? "" : s).trim().toUpperCase(); return v === "" || v === "S/S"; };
+  const cmpSectorRow = (a, b) => {
+    if (a.tipo === "remaches") {
+      const ka = (a.info && a.info.sector_crudo) || "", kb = (b.info && b.info.sector_crudo) || "";
+      const va = esSinSector(ka), vb = esSinSector(kb);
+      if (va !== vb) return va ? 1 : -1;                    // sin sector -> al final
+      if (va && vb) return (a.orden || 0) - (b.orden || 0); // ambos sin sector -> por orden de catálogo
+      return cmpNat(ka, kb) || ((a.orden || 0) - (b.orden || 0));
+    }
+    return cmpNat(a.sector, b.sector) || ((a.orden || 0) - (b.orden || 0));
+  };
 
   function colsFor(tipo, planta) {
     return (CONTEO_COLS[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
