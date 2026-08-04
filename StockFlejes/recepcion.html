@@ -87,10 +87,11 @@
   table.rollos-grid td{padding:6px 6px;text-align:center;vertical-align:middle}
   table.rollos-grid input{width:104px;padding:14px 6px;font-size:28px;border:2px solid #d0d7de;border-radius:8px;margin:0;text-align:center}
   table.rollos-grid .rg-one{display:inline-block;min-width:104px;font-size:28px;font-weight:700}
+  table.rollos-grid .rg-onecol{display:flex;flex-direction:column;align-items:center;gap:4px}
   table.rollos-grid .rg-row-kgtot td{font-size:23px;font-weight:700;color:#1769aa}
   table.rollos-grid .rg-row-total th,table.rollos-grid .rg-row-total td{font-size:28px;font-weight:800;padding-top:14px}
   table.rollos-grid .rg-row-total td{text-align:center}
-  .rg-rm{border:none;background:#f0d2d2;color:#b91c1c;border-radius:50%;width:30px;height:30px;font-size:19px;line-height:1;padding:0;cursor:pointer;margin-left:3px;flex:none}
+  .rg-rm{border:none;background:#f0d2d2;color:#b91c1c;border-radius:50%;width:30px;height:30px;font-size:19px;line-height:1;padding:0;cursor:pointer;flex:none}
   #rgPlus{border:none;background:#1769aa;color:#fff;border-radius:50%;width:50px;height:50px;font-size:32px;line-height:1;padding:0;cursor:pointer}
   .rg-estip{margin-top:12px;text-align:center;font-size:21px;font-weight:800}
   .rg-estip.rg-est-ok{color:#0a7a2f}
@@ -553,7 +554,7 @@ function renderFlejesGrid() {
   const n = flejesCols.length;
   const rolloTds = flejesCols.map((c, i) => i === 0
     ? `<td><input class="rg-count" inputmode="numeric" value="${esc(String(c.count || ""))}" placeholder="0"></td>`
-    : `<td><span class="rg-one">1</span><button class="rg-rm" type="button" data-i="${i}" title="Quitar rollo">×</button></td>`
+    : `<td><div class="rg-onecol"><button class="rg-rm" type="button" data-i="${i}" title="Quitar rollo">×</button><span class="rg-one">1</span></div></td>`
   ).join("");
   const kgTds = flejesCols.map((c, i) =>
     `<td><input class="rg-kg" data-i="${i}" inputmode="decimal" value="${esc(String(c.kg || ""))}" placeholder="0,0"></td>`
@@ -645,7 +646,7 @@ function openKgPopup(item) {
   if (isFlejes) {
     flejesCols = (Array.isArray(item._rollosBreak) && item._rollosBreak.length)
       ? item._rollosBreak.map((c, i) => ({ count: i === 0 ? String(c.count) : 1, kg: (c.kg || c.kg === 0) ? String(c.kg) : "" }))
-      : [{ count: "", kg: "" }, { count: 1, kg: "" }];
+      : [{ count: "", kg: "" }];
     renderFlejesGrid();
   } else {
     inputKgValue.value = item._cant || "";
@@ -725,6 +726,18 @@ kgConfirmBtn.addEventListener("click", () => {
   const val = inputKgValue.value.trim();
 
   if (val && Number(val.replace(",", ".")) > 0) {
+    if (isFlejes) {
+      // Confirmación si el total difiere > 5% de lo estipulado (remito).
+      const estip = Number(String(selectedItem._estipulado || "").replace(",", ".")) || 0;
+      const real = Number(val.replace(",", ".")) || 0;
+      if (estip && Math.abs(real - estip) > 0.05 * estip) {
+        const dif = real - estip;
+        const detalle = dif < 0 ? `faltan ${rgFmt(-dif)} kg` : `sobran ${rgFmt(dif)} kg`;
+        if (!confirm(`¿Seguro? Difiere del remito.\nEstipulado: ${rgFmt(estip)} kg · cargaste: ${rgFmt(real)} kg (${detalle}).`)) {
+          return; // "No": vuelve a la grilla (no cierra ni guarda)
+        }
+      }
+    }
     selectedItem._cant = val;
     if (isFlejes) {
       selectedItem._rollos = document.getElementById("inputRollos").value.trim();
@@ -735,8 +748,10 @@ kgConfirmBtn.addEventListener("click", () => {
       })).filter(c => c.count > 0);
     }
     renderItems();
+    closeKgPopup();
+  } else {
+    closeKgPopup();
   }
-  closeKgPopup();
 });
 
 kgCancelBtn.addEventListener("click", closeKgPopup);
@@ -744,6 +759,40 @@ kgCancelBtn.addEventListener("click", closeKgPopup);
 inputKgPopup.addEventListener("click", e => {
   if (e.target === inputKgPopup) closeKgPopup();
 });
+
+// Aviso por Telegram (grupo de alertas) si un fleje difiere > 5% de lo estipulado (remito).
+// La diferencia puede ser positiva o negativa. Encola por RPC (rc_alerta_recepcion_fleje).
+async function avisarDiferenciasFlejesTelegram(flejes, remito) {
+  const parse = (s) => Number(String(s == null ? "" : s).replace(",", ".")) || 0;
+  const fmt = (n) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 3 });
+  let hoy = "";
+  try { hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }); } catch (e) {}
+  for (const it of flejes) {
+    const estip = parse(it._estipulado);
+    if (!estip) continue;                       // sin estipulado no se compara
+    const real = parse(it._cant);
+    const dif = real - estip;
+    if (Math.abs(dif) <= 0.05 * estip) continue; // dentro del 5%
+    const pct = dif / estip * 100;
+    const signo = dif > 0 ? "+" : "";
+    const pctTxt = signo + pct.toFixed(1).replace(".", ",");
+    const desglose = (Array.isArray(it._rollosBreak) ? it._rollosBreak : [])
+      .map(c => `${c.count}×${fmt(c.kg)}`).join(" + ") || "—";
+    const text =
+      `📦⚠️ RECEPCIÓN DE FLEJE — diferencia ${pctTxt}% vs remito\n` +
+      `Proveedor: ${provSel}\n` +
+      `Fleje: ${it.codigo} - ${it.descripcion}\n` +
+      `Medida: ${it.medida || "—"}\n` +
+      `KG remito (estipulado): ${fmt(estip)} kg\n` +
+      `KG recibido (real): ${fmt(real)} kg\n` +
+      `Diferencia: ${signo}${fmt(dif)} kg (${pctTxt}%)\n` +
+      `Rollos: ${desglose}\n` +
+      `Remito: ${remito || "—"}`;
+    const dedup = `recep_dif_fleje_${String(remito || "sr").replace(/\s+/g, "")}_${it.codigo}_${hoy}`;
+    try { await sb.rpc("rc_alerta_recepcion_fleje", { p_text: text, p_dedup: dedup }); }
+    catch (e) { console.error("aviso telegram dif fleje:", e); }
+  }
+}
 
 // ===== Enviar =====
 document.getElementById("sendModal").addEventListener("click", async () => {
@@ -796,6 +845,9 @@ document.getElementById("sendModal").addEventListener("click", async () => {
       sendBtn.disabled = false;
       return;
     }
+
+    // Aviso Telegram (grupo de alertas) si algún fleje difiere > 5% del remito.
+    if (rubroSel === "Flejes") { try { await avisarDiferenciasFlejesTelegram(toSend, remito); } catch (e) { console.error(e); } }
 
     overlay.classList.remove("open");
     successDetail.textContent = `${data.length} artículo(s) de ${provSel} · Remito: ${remito || "—"}`;
