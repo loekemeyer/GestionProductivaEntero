@@ -59,7 +59,7 @@
   .search-box input{width:100%;padding:10px;font-size:18px;border:2px solid #d0d7de;border-radius:6px}
   /* Buscador de medida (flejes): 3 inputs a mm x b mm x c mm */
   #flejesSearch{display:none;align-items:center;flex-wrap:wrap;gap:6px;font-size:19px;font-weight:800}
-  #flejesSearch .fm{width:78px;padding:8px;text-align:center;border:2px solid #d0d7de;border-radius:6px;font-size:20px;font-weight:800}
+  #flejesSearch .fm{flex:1;min-width:0;padding:8px 12px;text-align:center;border:2px solid #d0d7de;border-radius:6px;font-size:20px;font-weight:800}
   #flejesSearch .fm.on{border-color:#0a7a2f;background:#f3fbf6}
   #flejesSearch .x{background:#fff;border:2px solid #d0d7de;border-radius:6px;padding:8px 12px;font-weight:800;cursor:pointer}
 
@@ -166,12 +166,8 @@
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="Buscar por código, medida o ISIS..." />
       <div id="flejesSearch">
-        <span>Medida:</span>
-        <input class="fm" id="fm_a" type="text" placeholder="a / N°"> mm
-        <span>×</span>
-        <input class="fm" id="fm_b" type="text" inputmode="decimal" placeholder="b"> mm
-        <span>×</span>
-        <input class="fm" id="fm_c" type="text" inputmode="decimal" placeholder="c"> mm
+        <span>Medida / N°:</span>
+        <input class="fm" id="fm_a" type="text" placeholder="19 x 2,1   ·   o N° de fleje">
         <button class="x" id="fmClear" type="button">✕</button>
       </div>
     </div>
@@ -435,16 +431,17 @@ function renderItems() {
 
 function filterItems() {
   if (rubroSel === "Flejes") {
-    // Buscador flejes: a mm × b mm × c mm. El input "a" ADEMÁS busca por N° de fleje (código).
-    const rd = (id) => { const el = document.getElementById(id); const v = el.value.trim().toLowerCase().replace(/,/g, "."); el.classList.toggle("on", v !== ""); return v; };
-    const a = rd("fm_a"), b = rd("fm_b"), c = rd("fm_c");
+    // Buscador flejes: UN solo input. Ignora espacios y trata coma y punto igual.
+    // Busca por MEDIDA (substring) o por N° de fleje (código).
+    const el = document.getElementById("fm_a");
+    const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, "").replace(/,/g, ".").replace(/×/g, "x");
+    const q = norm(el.value);
+    el.classList.toggle("on", q !== "");
     filteredItems = items.filter(it => {
-      const m = (it.medida || "").toLowerCase().replace(/,/g, ".");
-      const cod = (it.codigo || "").toLowerCase();
-      if (a && !(m.includes(a) || cod.includes(a))) return false;   // a: medida O N° de fleje
-      if (b && !m.includes(b)) return false;
-      if (c && !m.includes(c)) return false;
-      return true;
+      if (!q) return true;
+      const m = norm(it.medida);
+      const cod = norm(it.codigo);
+      return m.includes(q) || cod.includes(q);
     });
   } else {
     const q = searchInput.value.toLowerCase();
@@ -460,11 +457,11 @@ function buildModal() {
   linesWrap.innerHTML = "";
   modalMsg.textContent = "";
   const esFlejes = rubroSel === "Flejes";
-  // En flejes el buscador son 3 inputs de MEDIDA; en el resto, el buscador de texto.
+  // En flejes el buscador es UN input de medida/N°; en el resto, el buscador de texto.
   searchInput.style.display = esFlejes ? "none" : "";
   document.getElementById("flejesSearch").style.display = esFlejes ? "flex" : "none";
   searchInput.value = "";
-  ["fm_a","fm_b","fm_c"].forEach(id => { const el = document.getElementById(id); el.value = ""; el.classList.remove("on"); });
+  { const el = document.getElementById("fm_a"); el.value = ""; el.classList.remove("on"); }
   filteredItems = [...items];
 
   searchInput.addEventListener("input", filterItems);
@@ -472,15 +469,17 @@ function buildModal() {
   setTimeout(() => (esFlejes ? document.getElementById("fm_a") : searchInput).focus(), 100);
 }
 
-// Listeners del buscador de medida (flejes) — se registran una vez (elementos estáticos).
-["fm_a","fm_b","fm_c"].forEach(id => {
-  const el = document.getElementById(id);
-  // "a" permite letras (para N° de fleje tipo "90B"); "b"/"c" son solo numéricos (medida).
-  const re = id === "fm_a" ? /[^0-9a-zA-Z.,]/g : /[^0-9.,]/g;
-  el.addEventListener("input", () => { el.value = el.value.replace(re, ""); filterItems(); });
-});
+// Listener del buscador de flejes (1 input) — se registra una vez (elemento estático).
+// Permite dígitos, letras (N° tipo "90B"), coma, punto, "x"/"×" y espacios.
+(() => {
+  const el = document.getElementById("fm_a");
+  el.addEventListener("input", () => {
+    el.value = el.value.replace(/[^0-9a-zA-Z.,x×\s]/g, "");
+    filterItems();
+  });
+})();
 document.getElementById("fmClear").addEventListener("click", () => {
-  ["fm_a","fm_b","fm_c"].forEach(id => { const el = document.getElementById(id); el.value = ""; el.classList.remove("on"); });
+  const el = document.getElementById("fm_a"); el.value = ""; el.classList.remove("on");
   filterItems();
 });
 
