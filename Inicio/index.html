@@ -1307,6 +1307,16 @@
   </div>
 
   <div id="appVersion" style="position:fixed;right:12px;bottom:10px;color:#94a3b8;font-size:12px;font-weight:600;letter-spacing:.5px;z-index:50;pointer-events:none"></div>
+  <!-- Píxeles UTILIZABLES de la página (viewport del navegador), no la resolución de pantalla. -->
+  <div id="viewportPx" style="position:fixed;right:12px;bottom:26px;color:#94a3b8;font-size:12px;font-weight:600;letter-spacing:.5px;z-index:50;pointer-events:none"></div>
+  <script>
+    (function () {
+      var el = document.getElementById("viewportPx");
+      function upd() { if (el) el.textContent = document.documentElement.clientWidth + "×" + document.documentElement.clientHeight + " px"; }
+      window.addEventListener("resize", upd);
+      upd();
+    })();
+  </script>
 
   <script src="../version.js?v=20260617b"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
