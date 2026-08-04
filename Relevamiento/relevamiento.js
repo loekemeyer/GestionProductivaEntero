@@ -940,7 +940,8 @@
     // Columnas congeladas lateralmente (identificadores): Descripción + Sector + info
     // Ancho de Sector = al máximo de caracteres del contenido (mín. 5), con la letra grande del contenido (22px).
     const secLens = rows.map(r => String(r.sector == null ? "" : r.sector).length);
-    const maxSec = Math.max(5, secLens.length ? Math.max.apply(null, secLens) : 5);
+    // El ancho se calcula por el CONTENIDO (no por el encabezado). En compact (remaches) el piso baja.
+    const maxSec = Math.max(compact ? 3 : 5, secLens.length ? Math.max.apply(null, secLens) : 3);
     // Plasticos: la descripcion se corta por palabra al pasar 10 chars -> ancho natural = a la linea mas larga.
     const descChunk = rel.tipo === "plasticos";
     let W_DESC_NAT = 165;
@@ -952,7 +953,8 @@
     // Ancho de cada columna de info = al token mas largo (tras partir en espacio/guion, ya que el contenido va en doble linea).
     const wInfo = (k, lbl) => {
       const toks = [];
-      String(lbl == null ? "" : lbl).split(/[\s-]+/).forEach(t => toks.push(t.length));
+      // En compact (remaches) el ancho va SOLO por el contenido, no por el encabezado.
+      if (!compact) String(lbl == null ? "" : lbl).split(/[\s-]+/).forEach(t => toks.push(t.length));
       rows.forEach(r => { const v = String((r.info && r.info[k] != null) ? r.info[k] : ""); v.split(k === "cod" ? "-" : /\s+/).forEach(t => toks.push(t.length)); });
       const max = Math.max(3, toks.length ? Math.max.apply(null, toks) : 3);
       return Math.min(compact ? 92 : 140, max * (compact ? 11 : 14) + (compact ? 12 : 18));
