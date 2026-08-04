@@ -149,6 +149,9 @@
   }
   // Ordena las filas del relevamiento por SECTOR (natural), con el orden del catalogo como desempate.
   const cmpSector = (a, b) => cmpNat(a.sector, b.sector) || ((a.orden || 0) - (b.orden || 0));
+  // Para remaches el sector "real" de orden es el CRUDO (el proc suele ser "S/S" repetido).
+  const sectorOrdKey = (r) => (r && r.tipo === "remaches" && r.info && r.info.sector_crudo) ? r.info.sector_crudo : (r ? r.sector : "");
+  const cmpSectorRow = (a, b) => cmpNat(sectorOrdKey(a), sectorOrdKey(b)) || ((a.orden || 0) - (b.orden || 0));
 
   function colsFor(tipo, planta) {
     return (CONTEO_COLS[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
@@ -536,8 +539,9 @@
     const hoyMismo = RELS.find(r => r.tipo === tipo && r.planta === planta && String(r.fecha).slice(0, 10) === hoy);
     if (hoyMismo) {
       const completo = hoyMismo.items > 0 && hoyMismo.cargados >= hoyMismo.items;
-      if (completo) { cerrarRealizar(); showMsg(`Ya se hizo hoy el relevamiento de ${TIPO_LABEL[tipo] || tipo} en ${planta}. No se puede hacer otro el mismo día.`, "err"); return; }
-      cerrarRealizar(); abrirDetalle(hoyMismo.id, false); return; // el de hoy sin terminar: se retoma
+      // El de hoy sin terminar se retoma. Si ya está completo, se PERMITE crear otro el mismo día
+      // (para poder ver/testear cambios; antes se bloqueaba).
+      if (!completo) { cerrarRealizar(); abrirDetalle(hoyMismo.id, false); return; }
     }
     // Si ya hay un relevamiento de este tipo+lugar SIN completar (de otro día), lo retomamos (no duplicar).
     const pendiente = RELS.find(r => r.tipo === tipo && r.planta === planta && !(r.items > 0 && r.cargados >= r.items));
@@ -773,7 +777,7 @@
       .eq("relevamiento_id", relId)
       .order("orden", { ascending: true });
     if (error) { showMsg("Error leyendo detalle: " + error.message, "err"); return; }
-    const filas = (data || []).slice().sort(cmpSector);  // ordenado por sector
+    const filas = (data || []).slice().sort(cmpSectorRow);  // ordenado por sector (remaches: por crudo)
     DET = { rel, rows: filas, cols: colsFor(rel.tipo, rel.planta), dirty: new Set(), readonly: !!readonly, onBack: onBack || null, rollos: {} };
     // Flejes: cargar el desglose de rollos guardado (para reabrir las tandas sin combinar).
     filas.forEach(row => {
@@ -804,7 +808,7 @@
     if (error) { showMsg("Error leyendo el catálogo: " + error.message, "err"); return; }
     let filas = data || [];
     if (tipo === "plasticos") filas = filas.filter(r => planta === "Cervantes" ? r.en_cervantes : (planta === "Virgilio" ? r.en_virgilio : true));
-    filas = filas.map(r => ({ det_id: -r.cat_id, cat_id: r.cat_id, relevamiento_id: null, tipo, orden: r.orden, descripcion: r.descripcion, sector: r.sector, info: r.info, conteo: {}, cargado: false })).sort(cmpSector);
+    filas = filas.map(r => ({ det_id: -r.cat_id, cat_id: r.cat_id, relevamiento_id: null, tipo, orden: r.orden, descripcion: r.descripcion, sector: r.sector, info: r.info, conteo: {}, cargado: false })).sort(cmpSectorRow);
     const rel = { id: null, nuevo: true, grupoId: grupoId || null, tipo, planta, fecha: toYmd(hoyDate()), encargado, items: filas.length, cargados: 0 };
     DET = { rel, rows: filas, cols: colsFor(tipo, planta), dirty: new Set(), readonly: false, onBack: null, rollos: {} };
     pintarDetalle();
@@ -930,6 +934,8 @@
     const { rel, rows, cols } = DET;
     const info = INFO_COLS[rel.tipo] || [];
     const comps = computedFor(rel.tipo, rel.planta);
+    // Remaches: Sector y S.Crudo más chicos (letra 15px) para dar más lugar a Descripción.
+    const compact = rel.tipo === "remaches";
 
     // Columnas congeladas lateralmente (identificadores): Descripción + Sector + info
     // Ancho de Sector = al máximo de caracteres del contenido (mín. 5), con la letra grande del contenido (22px).
@@ -942,14 +948,14 @@
       const maxLine = rows.reduce((m, r) => { const ls = wrapLines(r.descripcion, 10); return ls.reduce((mm, l) => Math.max(mm, l.length), m); }, 8);
       W_DESC_NAT = Math.min(210, Math.max(90, maxLine * 10 + 18));
     }
-    const W_SECTOR = Math.min(190, maxSec * 15 + 20);
+    const W_SECTOR = compact ? Math.min(110, maxSec * 11 + 12) : Math.min(190, maxSec * 15 + 20);
     // Ancho de cada columna de info = al token mas largo (tras partir en espacio/guion, ya que el contenido va en doble linea).
     const wInfo = (k, lbl) => {
       const toks = [];
       String(lbl == null ? "" : lbl).split(/[\s-]+/).forEach(t => toks.push(t.length));
       rows.forEach(r => { const v = String((r.info && r.info[k] != null) ? r.info[k] : ""); v.split(k === "cod" ? "-" : /\s+/).forEach(t => toks.push(t.length)); });
       const max = Math.max(3, toks.length ? Math.max.apply(null, toks) : 3);
-      return Math.min(140, max * 14 + 18);
+      return Math.min(compact ? 92 : 140, max * (compact ? 11 : 14) + (compact ? 12 : 18));
     };
     // Anchos de columnas de conteo/calculadas (input 82 + padding; +tandas).
     const cW = c => (c.tandas ? 150 : 104);
@@ -979,7 +985,7 @@
     const fz = (f, i, head) => {
       let s = `position:sticky;left:${f.left}px;width:${f.w}px;min-width:${f.w}px;max-width:${f.w}px;white-space:normal;word-break:break-word;line-height:1.15;background:${head ? "#e9eef3" : "#fff"};z-index:${head ? 6 : 2};`;
       if (head) s += "top:0;";
-      if (!head && f.big) s += "font-size:22px;font-weight:700;";
+      if (!head && f.big) s += `font-size:${compact ? 15 : 22}px;font-weight:700;`;
       if (i === lastFz) s += "border-right:2px solid #111;";
       return s;
     };
