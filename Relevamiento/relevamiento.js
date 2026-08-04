@@ -997,6 +997,7 @@
       let s = `position:sticky;left:${f.left}px;width:${f.w}px;min-width:${f.w}px;max-width:${f.w}px;white-space:normal;word-break:break-word;line-height:1.15;background:${head ? "#e9eef3" : "#fff"};z-index:${head ? 6 : 2};`;
       if (head) s += "top:0;";
       if (!head && f.big) s += `font-size:${compact ? 15 : 22}px;font-weight:700;`;
+      if (!head && f.cls === "desc") s += "font-size:16px;"; // descripción un poco más grande
       if (i === lastFz) s += "border-right:2px solid #111;";
       return s;
     };
