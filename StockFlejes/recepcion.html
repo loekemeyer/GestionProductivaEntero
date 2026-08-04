@@ -437,11 +437,17 @@ function filterItems() {
     const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, "").replace(/,/g, ".").replace(/×/g, "x");
     const q = norm(el.value);
     el.classList.toggle("on", q !== "");
+    // La "x" separa dimensiones: cada parte se busca por separado y SIN importar el orden
+    // (ej. "1.25x77" == "77x1.25", y "1.25x" == "1.25"). Con una sola parte, matchea
+    // también el N° de fleje (código).
+    const tokens = q.split("x").filter(t => t !== "");
     filteredItems = items.filter(it => {
-      if (!q) return true;
+      if (!tokens.length) return true;
       const m = norm(it.medida);
       const cod = norm(it.codigo);
-      return m.includes(q) || cod.includes(q);
+      const enMedida = tokens.every(t => m.includes(t));
+      const enCodigo = tokens.length === 1 && cod.includes(tokens[0]);
+      return enMedida || enCodigo;
     });
   } else {
     const q = searchInput.value.toLowerCase();
