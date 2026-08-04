@@ -87,8 +87,9 @@
   table.rollos-grid td{padding:6px 6px;text-align:center;vertical-align:middle}
   table.rollos-grid input{width:104px;padding:14px 6px;font-size:28px;border:2px solid #d0d7de;border-radius:8px;margin:0;text-align:center}
   table.rollos-grid .rg-one{display:inline-block;min-width:104px;font-size:28px;font-weight:700}
-  table.rollos-grid .rg-onecol{display:flex;flex-direction:column;align-items:center;gap:4px}
-  table.rollos-grid .rg-row-kgtot td{font-size:23px;font-weight:700;color:#1769aa}
+  table.rollos-grid .rg-row-rm td{padding:0}
+  table.rollos-grid .rg-row-kgtot th{font-size:23px}
+  table.rollos-grid .rg-row-kgtot td{font-size:28px;font-weight:800;color:#1769aa}
   table.rollos-grid .rg-row-total th,table.rollos-grid .rg-row-total td{font-size:28px;font-weight:800;padding-top:14px}
   table.rollos-grid .rg-row-total td{text-align:center}
   .rg-rm{border:none;background:none;color:#b91c1c;font-size:34px;font-weight:900;line-height:1;padding:0 6px;cursor:pointer;flex:none}
@@ -552,9 +553,14 @@ function renderFlejesGrid() {
   const cont = document.getElementById("flejesRollosGrid");
   const { kt, grand, totalRollos } = rgComputa();
   const n = flejesCols.length;
+  const hayOdd = flejesCols.length > 1;
+  const rmTds = flejesCols.map((c, i) => i === 0
+    ? `<td></td>`
+    : `<td><button class="rg-rm" type="button" data-i="${i}" title="Quitar rollo">×</button></td>`
+  ).join("");
   const rolloTds = flejesCols.map((c, i) => i === 0
     ? `<td><input class="rg-count" inputmode="numeric" value="${esc(String(c.count || ""))}" placeholder="0"></td>`
-    : `<td><div class="rg-onecol"><button class="rg-rm" type="button" data-i="${i}" title="Quitar rollo">×</button><span class="rg-one">1</span></div></td>`
+    : `<td><span class="rg-one">1</span></td>`
   ).join("");
   const kgTds = flejesCols.map((c, i) =>
     `<td><input class="rg-kg" data-i="${i}" inputmode="decimal" value="${esc(String(c.kg || ""))}" placeholder="0,0"></td>`
@@ -564,6 +570,7 @@ function renderFlejesGrid() {
     <div class="rg-label">Rollos y peso</div>
     <div class="rg-scroll">
     <table class="rollos-grid">
+      ${hayOdd ? `<tr class="rg-row-rm"><th></th>${rmTds}<td class="rg-pad"></td></tr>` : ""}
       <tr class="rg-row-rollo"><th>Rollo</th>${rolloTds}<td class="rg-pad"></td></tr>
       <tr class="rg-row-kg"><th>Kg</th>${kgTds}<td class="rg-plus-cell"><button id="rgPlus" type="button" title="Agregar un rollo de otro peso">+</button></td></tr>
       <tr class="rg-row-kgtot"><th>Kg Total</th>${kgTotTds}<td class="rg-pad"></td></tr>
