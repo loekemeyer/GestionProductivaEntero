@@ -188,13 +188,12 @@ async function cargarEMadre() {
 let sectorDescMap = new Map();
 
 async function cargarSectorDesc() {
-  const [resSP, resSC, resPP, resRSC, resRSP, resBOMB, resSB] = await Promise.all([
+  const [resSP, resSC, resPP, resRSC, resRSP, resSB] = await Promise.all([
     supabaseClient.from("SP Kg").select('"Sp","Parte"'),
     supabaseClient.from("SC Kg").select('"SC","Descripcion"'),
     supabaseClient.from("Partes_Plasticas").select('"Sector","Descripcion"'),
     supabaseClient.from("Remaches SC").select("*"),
     supabaseClient.from("Remaches SP").select("*"),
-    supabaseClient.from("BOMB").select('"Sector","Descripcion"'),
     supabaseClient.from("Sector Bombilla").select('"Sector","Descripcion"'),
   ]);
 
@@ -219,10 +218,6 @@ async function cargarSectorDesc() {
   (resRSP.data || []).forEach(r => {
     const s = (r["SP"] || "").trim().toUpperCase();
     if (s && !sectorDescMap.has(s)) sectorDescMap.set(s, (r["Descripción"] || "").trim());
-  });
-  (resBOMB.data || []).forEach(r => {
-    const s = (r["Sector"] || "").trim().toUpperCase();
-    if (s) sectorDescMap.set(s, (r["Descripcion"] || "").trim());
   });
   (resSB.data || []).forEach(r => {
     const s = (r["Sector"] || "").trim().toUpperCase();

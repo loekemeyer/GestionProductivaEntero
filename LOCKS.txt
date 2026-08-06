@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-08-06 - Despiece.js + Supabase (Sector Bombilla): tabla BOMB eliminada de cargarSectorDesc(). Ahora carga SOLO de "Sector Bombilla" (fuente unica). Se agregaron BOMB12 (Limpia Bombilla) y BOMB8B (Tela Manga Repostera) a Sector Bombilla porque se usan en Despiece con ese codigo. GRJ4/5/6/13/14/15 no se agregan (ya resuelven desde SP Kg). loekemeyer.
 2026-08-06 - Recepcion Cervantes.html + Supabase (GRJ_Componentes): FIX componentes 558. Antes: componente=GRJ5 (producto armado, incorrecto). Ahora: BOM8 (Resorte), BOMB12 (Limpia Bombilla), CCV2B (Cartón 558). Al entregar 558, descuenta las 3 partes reales. BD: DELETE+INSERT 3 filas. Hardcoded: 558:["BOM8","BOMB12","CCV2B"]. loekemeyer.
 2026-08-06 - Despiece.js: Sector Bombilla integrado en Despiece. (1) cargarSectorDesc() carga "Sector Bombilla" (17 sectores) ademas de BOMB → BOM* resuelven descripcion en el form "Agregar parte". (2) getRubro() reconoce prefijo BOM* como rubro "Bombilla" (antes caian a "Otros"). (3) ORDEN_RUBRO +Bombilla (pos 8). loekemeyer.
 2026-08-06 - Recepcion Cervantes.html + Supabase (GRJ_Componentes): 558 (Bombilla Resorte Trad / GRJ5) agregado como GRJ en Martin LK. INSERT en GRJ_Componentes (cod_grj=558, componente=GRJ5, orden=1, es_transformacion_unidades=false). Fallback hardcoded: GRJ_COMPONENTES[558]=["GRJ5"], GRJ_PESOS[558]=0.0147. Al entregar, inserta Cod=GRJ5, Cod_GRJ=558. Peso 0.0147 de SP Kg. loekemeyer.
