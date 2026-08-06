@@ -370,7 +370,7 @@
   // Si la empresa tiene lista explícita → solo esos; si no tiene lista → todo menos los de la otra empresa
   const ARTICULOS_EMPRESA = {
     CARLOS: { LK: ["GRJ7","GRJ9","GRJ10"], CH: [], never: ["A10","C1","C10","A15"] }, // CH va por Virgilio
-    MARTIN: { LK: ["GRJ1","GRJ7","G3","G4","X5"], CH: [], never: ["A10","C1","C10","A15","V9","X1","Toch"] }, // CH va por Virgilio. Toch ya no aplica (Lucho lo reemplaza con JF1)
+    MARTIN: { LK: ["GRJ1","GRJ7","G3","G4","X5","558"], CH: [], never: ["A10","C1","C10","A15","V9","X1","Toch"] }, // CH va por Virgilio. Toch ya no aplica (Lucho lo reemplaza con JF1)
     POLY:   { LK: ["M6"], CH: ["M8"], never: ["M10","M9"] }, // En Cervantes Poly SOLO carga las transformaciones 1:1 (M6→M10 LK / M8→M9 CH). Los demás artículos de Poly (031/034/066/108/502/512/513/550 LK; 713/836/867 CH) se reciben en Virgilio.
     LUCHO:  { LK: ["JF1"], CH: [], never: [] } // Lucho devuelve JF1 (Tochos Zinc p/Rectificar) tras procesar F7
   };
