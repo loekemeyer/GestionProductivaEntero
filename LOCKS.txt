@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-08-06 - Tablas_Supabase_Completas_v3.xlsx (v2): 4 columnas nuevas en componente: proveedor_insumo_id (26 proveedores, +Corrugadora del Plata para carton 84/84, flejes 47/54, plasticos 33/38, remaches 15/17), tallerista_id (terminado 83/84), proveedor_servicio_id (procesado 58/84), matriz_id (crudo 72/79). Datos sacados de ruta_paso + tablas Supabase. loekemeyer.
 2026-08-06 - Tablas_Supabase_Completas_v3.xlsx: columna proveedor_insumo_id agregada en componente + proveedor_insumo expandida de 8 a 25 proveedores (17 nuevos de Supabase: Basconia, Aperam, Hermac, Brawin, etc.). 96/455 componentes mapeados (flejes 47/54, plasticos 33/38, remaches 15/17). Componentes internos (crudo/procesado/terminado) quedan sin proveedor_insumo_id. loekemeyer.
 2026-08-06 - Tablas_Supabase_Completas_v2.xlsx: columna 'proveedor' agregada a la hoja componente. 350/455 componentes mapeados (77% total, 94.3% sin carton) desde 9 fuentes: Flejes.Proveedor, SectorPlasticos.Proveedor, Remaches SP/SC, SP Kg/SC Kg, ruta_paso+proveedor_servicio, ruta_paso+tallerista, Fabrica (via matriz). Pusheado a branch claude/gestion-productiva-table-analysis-xttsrq. loekemeyer.
 2026-08-06 - Recepcion Cervantes.html + Supabase (GRJ_Componentes): 558 (Bombilla Resorte Trad / GRJ5) agregado como GRJ en Martin LK. INSERT en GRJ_Componentes (cod_grj=558, componente=GRJ5, orden=1, es_transformacion_unidades=false). Fallback hardcoded: GRJ_COMPONENTES[558]=["GRJ5"], GRJ_PESOS[558]=0.0147. Al entregar, inserta Cod=GRJ5, Cod_GRJ=558. Peso 0.0147 de SP Kg. loekemeyer.
