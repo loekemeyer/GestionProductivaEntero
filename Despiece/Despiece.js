@@ -100,6 +100,11 @@ function getRubro(sector, descripcion) {
 
   const s = String(sector ?? "").trim().toUpperCase();
 
+  // Bombilla
+  if (s.startsWith("BOM")) {
+    return "Bombilla";
+  }
+
   // Plásticos
   if (s.startsWith("P") || s.startsWith("GRJ")) {
     return "Plásticos";
@@ -183,13 +188,14 @@ async function cargarEMadre() {
 let sectorDescMap = new Map();
 
 async function cargarSectorDesc() {
-  const [resSP, resSC, resPP, resRSC, resRSP, resBOMB] = await Promise.all([
+  const [resSP, resSC, resPP, resRSC, resRSP, resBOMB, resSB] = await Promise.all([
     supabaseClient.from("SP Kg").select('"Sp","Parte"'),
     supabaseClient.from("SC Kg").select('"SC","Descripcion"'),
     supabaseClient.from("Partes_Plasticas").select('"Sector","Descripcion"'),
     supabaseClient.from("Remaches SC").select("*"),
     supabaseClient.from("Remaches SP").select("*"),
     supabaseClient.from("BOMB").select('"Sector","Descripcion"'),
+    supabaseClient.from("Sector Bombilla").select('"Sector","Descripcion"'),
   ]);
 
   sectorDescMap = new Map();
@@ -217,6 +223,10 @@ async function cargarSectorDesc() {
   (resBOMB.data || []).forEach(r => {
     const s = (r["Sector"] || "").trim().toUpperCase();
     if (s) sectorDescMap.set(s, (r["Descripcion"] || "").trim());
+  });
+  (resSB.data || []).forEach(r => {
+    const s = (r["Sector"] || "").trim().toUpperCase();
+    if (s && !sectorDescMap.has(s)) sectorDescMap.set(s, (r["Descripcion"] || "").trim());
   });
 }
 
@@ -543,7 +553,7 @@ function aplicarFiltros() {
     });
   }
   // Ordenar por COD, luego por rubro: SP, Otros, Plásticos, Cartones, Cajas
-  const ORDEN_RUBRO = { "SP": 0, "Otros": 1, "Plásticos": 2, "Cartones": 3, "Cajas": 4, "SC": 5, "Fleje": 6, "Remaches SP": 7 };
+  const ORDEN_RUBRO = { "SP": 0, "Otros": 1, "Plásticos": 2, "Cartones": 3, "Cajas": 4, "SC": 5, "Fleje": 6, "Remaches SP": 7, "Bombilla": 8 };
   rows.sort((a, b) => {
     const codA = normCod(a["COD"]), codB = normCod(b["COD"]);
     if (codA !== codB) return codA.localeCompare(codB);
