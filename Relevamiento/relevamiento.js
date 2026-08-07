@@ -13,8 +13,10 @@
   const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  // Tipos de relevamiento (orden A1..A7)
+  // Tipos de relevamiento (orden A1..A9)
   const TIPOS = [
+    { key: "sc",        label: "SC (Crudos)" },
+    { key: "sp",        label: "SP (Procesados)" },
     { key: "cajas",     label: "Cajas" },
     { key: "flejes",    label: "Flejes" },
     { key: "cartones",  label: "Cartones" },
@@ -29,6 +31,8 @@
 
   // Plantas donde aplica cada tipo (espejo de rc_plantas_tipo)
   const PLANTAS_TIPO = {
+    sc: ["Cervantes"],
+    sp: ["Cervantes"],
     flejes: ["Cervantes", "Virgilio", "San Roque"],
     cajas: ["Cervantes", "Virgilio"],
     plasticos: ["Cervantes", "Virgilio"],
@@ -43,6 +47,8 @@
 
   // Columnas de INFO a mostrar (claves del jsonb "info")
   const INFO_COLS = {
+    sc:        [["sector", "Sector"]],
+    sp:        [["sector", "Sector"]],
     cajas:     [["n_caja", "N° Caja"]],
     flejes:    [["n_fleje", "N° Fleje"]],
     cartones:  [["cod", "Cód"], ["linea", "Linea"]],
@@ -54,6 +60,12 @@
 
   // Columnas de CONTEO (input). plantas => solo se muestra en esas plantas.
   const CONTEO_COLS = {
+    sc: [
+      { key: "cajones", label: "Cajones" },
+    ],
+    sp: [
+      { key: "cajones", label: "Cajones" },
+    ],
     cajas: [
       { key: "conteo_paq", label: "Paquetes", plantas: ["Cervantes"] },
       { key: "uni_suelta", label: "Uni sueltas", plantas: ["Cervantes"], tandas: true, tandasPaqKey: "conteo_paq", tandasPaqLabel: "Paquetes" },
@@ -93,10 +105,11 @@
   const computedFor = (tipo, planta) => (COMPUTED[tipo] || []).filter(c => !c.plantas || c.plantas.includes(planta));
 
   // Unidad base para el TOTAL de la vista combinada, y aporte de cada lugar en esa unidad.
-  const BASE_UNIT = { flejes: "kg", cajas: "uni", plasticos: "uni", garage: "uni" };
+  const BASE_UNIT = { sc: "cajon", sp: "cajon", flejes: "kg", cajas: "uni", plasticos: "uni", garage: "uni" };
   function aporteBase(tipo, planta, conteo, info) {
     const num = x => { const n = parseFloat(String(x == null ? "" : x).replace(",", ".")); return isNaN(n) ? 0 : n; };
     const c = conteo || {}, i = info || {};
+    if (tipo === "sc" || tipo === "sp") return num(c.cajones);
     if (tipo === "flejes") return planta === "Cervantes" ? num(c.total_kg) : num(c.stock_kg);
     if (tipo === "cajas") return planta === "Virgilio" ? num(c.uni) : num(c.conteo_paq) * num(i.uni_x_paq) + num(c.uni_suelta);
     // Si el ítem no tiene "uni x bolsa" (Master Bach, materias primas, etc.), la cuenta es
@@ -175,6 +188,9 @@
     const num = x => { const n = parseFloat(String(x == null ? "" : x).replace(",", ".")); return isNaN(n) ? 0 : n; };
     const c = conteo || {}, i = info || {};
     const L = (label, val, tipoFila) => ({ label, val, tipoFila });
+    if (tipo === "sc" || tipo === "sp") {
+      return { lineas: [L("Cajones", num(c.cajones))], total: num(c.cajones), unidad: "cajon" };
+    }
     if (tipo === "cajas") {
       if (planta === "Virgilio") return { lineas: [L("Unidades", num(c.uni))], total: num(c.uni), unidad: "uni" };
       const paq = num(c.conteo_paq), upp = num(i.uni_x_paq), sub = paq * upp, sueltas = num(c.uni_suelta);
@@ -296,6 +312,8 @@
   // próximo día hábil. Los feriados se traen por API (con cache y fallback).
   // ===========================================================================
   const CRONOGRAMA = {
+    sc:        { frecuencia: 15, ancla: "2026-08-03" },
+    sp:        { frecuencia: 15, ancla: "2026-08-03" },
     garage:    { frecuencia: 7,  ancla: "2026-07-24" },
     remaches:  { frecuencia: 40, ancla: "2026-06-25" }, // ancla + 40 = 04/08 (próximo, aún sin hacer)
     bombillas: { frecuencia: 30, ancla: "2026-07-16" },
