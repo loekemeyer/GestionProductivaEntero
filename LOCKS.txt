@@ -1,5 +1,5 @@
 [LOCKS]
-(vacío)
+LockX | Relevamiento/relevamiento.js | Claude | 2026-08-07 08:00 | Impl relev SC y SP
 
 [WAIT QUEUE]
 (vacío)
