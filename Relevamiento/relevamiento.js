@@ -159,6 +159,10 @@
       if (va && vb) return (a.orden || 0) - (b.orden || 0); // ambos sin sector -> por orden de catálogo
       return cmpNat(ka, kb) || ((a.orden || 0) - (b.orden || 0));
     }
+    // Todos los tipos: sin sector al final
+    const sa = esSinSector(a.sector), sb = esSinSector(b.sector);
+    if (sa !== sb) return sa ? 1 : -1;
+    if (sa && sb) return (a.orden || 0) - (b.orden || 0);
     return cmpNat(a.sector, b.sector) || ((a.orden || 0) - (b.orden || 0));
   };
 
