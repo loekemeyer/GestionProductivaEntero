@@ -388,10 +388,11 @@ async function precargarDatosStock() {
     // Calc inline (legacy restaurado). Movimientos (envios/entregas PS+Tall+Log) usan
     // Cajones SUMA DIRECTA. Stock inicial y fabricacion derivan de Kg (no son movimientos).
     const [
-      spKgRows, entregasPSRows, enviosTallRows, enviosAPSRows,
+      spKgRows, flejesRows, entregasPSRows, enviosTallRows, enviosAPSRows,
       entregasLogRows, despieceRows, causaEfectoRows, dbEspejoRows, ajustesRows
     ] = await Promise.all([
       sb.from("SP Kg").select("*").then(r => r.data || []),
+      sb.from("Flejes").select("*").then(r => r.data || []),
       cargarTablaPaginada("Entregas PS").then(r => r),
       cargarTablaPaginada("Envios a Talleristas").then(r => r),
       cargarTablaPaginada("Envios a PS").then(r => r),
@@ -427,6 +428,23 @@ async function precargarDatosStock() {
       // Online SP inicial (sin movimientos): stock inicial / kg cajon
       const stockIniCaj = kgCaj > 0 ? stockIni / kgCaj : 0;
       mvBySP.set(key, { maxCajCerv: maxCaj, onlineCaj: stockIniCaj });
+    });
+
+    // Flejes: sectores de fleje que no estan en SP Kg (ej. FC3 para Charcas)
+    flejesRows.forEach(r => {
+      const sp = String(r["Sector"] || "").trim();
+      if (!sp) return;
+      const key = normalizeText(sp);
+      if (mvBySP.has(key)) return; // ya existe en SP Kg, respetar prioridad
+      const kgCaj = parseDecimal(r["KG x Cajon"] || 0);
+      const kgU = parseDecimal(r["Kg x Uni"] || 0);
+      const stockIni = parseDecimal(r["Stock Inicial"] || 0);
+      spKgByKey.set(key, { kgCaj, kgU, stockIni, maxCaj: 0 });
+      spSet.add(sp.toUpperCase());
+      kgXCajonMap.set(key, kgCaj);
+      if (kgU > 0) kgXUniMap.set(sp.toUpperCase(), kgU);
+      const stockIniCaj = kgCaj > 0 ? stockIni / kgCaj : 0;
+      mvBySP.set(key, { maxCajCerv: 0, onlineCaj: stockIniCaj });
     });
 
     // ENTREGAS PS por SP: sumar Cajones DIRECTO (suman al SP)

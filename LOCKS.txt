@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-08-07 - EnviosPS.js (v20260803f): precargarDatosStock() ahora tambien lee tabla Flejes para calcular Online SP de sectores de fleje (ej. FC3 para Charcas). Se agrega flejesRows al Promise.all y un forEach que popula spKgByKey/spSet/kgXUniMap/kgXCajonMap/mvBySP para sectores que NO estan en SP Kg (respeta prioridad SP Kg > Flejes, sin duplicar datos). Columnas mapeadas: Sector, Kg x Uni, KG x Cajon, Stock Inicial. loekemeyer.
 2026-08-07 - Relevamiento (?v=20260807a) + Supabase (cat_garage): (1) cmpSectorRow ahora manda sin sector (null/vacío) al FINAL para TODOS los tipos (antes solo remaches). (2) FIX typo cat_garage id=8: GJR10 → GRJ10. loekemeyer.
 2026-08-06 - Despiece.js + Supabase (Sector Bombilla): tabla BOMB eliminada de cargarSectorDesc(). Ahora carga SOLO de "Sector Bombilla" (fuente unica). Se agregaron BOMB12 (Limpia Bombilla) y BOMB8B (Tela Manga Repostera) a Sector Bombilla porque se usan en Despiece con ese codigo. GRJ4/5/6/13/14/15 no se agregan (ya resuelven desde SP Kg). loekemeyer.
 2026-08-06 - Recepcion Cervantes.html + Supabase (GRJ_Componentes): FIX componentes 558. Antes: componente=GRJ5 (producto armado, incorrecto). Ahora: BOM8 (Resorte), BOMB12 (Limpia Bombilla), CCV2B (Cartón 558). Al entregar 558, descuenta las 3 partes reales. BD: DELETE+INSERT 3 filas. Hardcoded: 558:["BOM8","BOMB12","CCV2B"]. loekemeyer.
