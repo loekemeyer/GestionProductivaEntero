@@ -1,7 +1,13 @@
 -- =====================================================================
 -- MIGRACION: sacar la "F" de los sectores SC  (HF1 -> H1, IF16 -> I16, LLF7B -> LL7B, ...)
--- Fecha: 2026-08-10   Autor: Claude (para revision de loekemeyer)
--- ESTADO: NO EJECUTADA. Este archivo es para REVISAR antes de correr.
+-- Fecha: 2026-08-10   Autor: Claude
+-- ESTADO: EJECUTADA el 2026-08-10 (via ALTER TABLE DISABLE TRIGGER USER en vez de
+--   session_replication_role, y recalc con triggers OFF). Verificado: 0 refs con F,
+--   COD=Sector Proce alineados, pesos > 0, Rutas firma sin F, 18 backups _bkp_20260810.
+--   Front actualizado: EnviosTall.js, ControlTall.js, Recepcion Cervantes.html, Despiece.js
+--   (sets hardcodeados KF2/LF16/KF8/LLF7B/LLF8/JF1/LLF1-4 -> sin F).
+-- Este archivo documenta la migracion (la version session_replication_role de abajo es
+-- la referencia; en la ejecucion real se uso ALTER TABLE ... DISABLE/ENABLE TRIGGER USER).
 --
 -- CONTEXTO
 --   El codigo del sector con "F" (HF/IF/JF/KF/LF/LLF + numero) es UNA identidad:

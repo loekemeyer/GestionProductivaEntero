@@ -116,7 +116,7 @@ function getRubro(sector, descripcion) {
   }
 
   // SC
-  if (["ABPM", "LLF1", "LLF2", "LLF3", "LLF4", "N7", "N8", "W9"].includes(s)) {
+  if (["ABPM", "LL1", "LL2", "LL3", "LL4", "N7", "N8", "W9"].includes(s)) {
     return "SC";
   }
 

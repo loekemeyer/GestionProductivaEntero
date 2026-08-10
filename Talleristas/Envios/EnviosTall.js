@@ -103,7 +103,7 @@ let filasFiltradas = [];
 
 // Sectores crudos (SC) que recibe Martin — clasifican como "Sector Crudo".
 // Se carga al inicio desde SC Kg.crudo_martin = TRUE. Fallback hardcoded preservado.
-let SECTORES_CRUDO_MARTIN = new Set(["KF2", "LF16", "KF8"]);
+let SECTORES_CRUDO_MARTIN = new Set(["K2", "L16", "K8"]);
 
 async function cargarSectoresCrudoMartin(){
   try {
