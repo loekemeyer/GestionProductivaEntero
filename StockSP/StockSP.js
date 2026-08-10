@@ -53,6 +53,36 @@
        .replace(/[\u0300-\u036f]/g, "")
        .replace(/\s+/g, " ");
    }
+   /* PUNTO DE CORTE por sector = ULTIMO relevamiento REAL (vista public.v_rc_cortes_stock
+      <- snapshots_stock). Un movimiento cuenta en el Online SOLO si su created_at (hora real
+      de carga) es POSTERIOR a ese corte. Sector SIN relevamiento -> no aparece -> se cuenta
+      todo (historico). NO se usa stock_inicial_updated_at (tiene ajustes manuales viejos). */
+   async function cargarCortesStock() {
+     const { data, error } = await supabaseClient
+       .from("v_rc_cortes_stock").select("sector, corte").eq("tipo", "sp");
+     if (error) { console.error("ERROR v_rc_cortes_stock:", error); return []; }
+     return data || [];
+   }
+   function armarCorteBySector(cortesRows) {
+     const m = new Map();
+     (cortesRows || []).forEach(r => {
+       const key = normalizeText(r.sector);
+       if (!key || !r.corte) return;
+       const d = new Date(r.corte);
+       if (isNaN(d.getTime())) return;
+       const prev = m.get(key);
+       if (!prev || d > prev) m.set(key, d);
+     });
+     return m;
+   }
+   // true => la fila debe DESCARTARSE por ser anterior/igual al corte del sector.
+   function anteriorAlCorte(corteMap, sectorKey, createdAt) {
+     const corte = corteMap && corteMap.get(sectorKey);
+     if (!corte) return false;        // sector sin corte -> no se descarta
+     if (!createdAt) return true;     // sin created_at -> se considera previo al corte
+     const t = new Date(createdAt);
+     return isNaN(t.getTime()) ? true : (t <= corte);
+   }
    function normalizeCod3(value) {
      let s = String(value || "").trim().toUpperCase();
      if (!s) return "";
@@ -147,7 +177,7 @@
    }
 
    async function cargarEntregasPS() {
-     return await fetchAllPaginated("Entregas PS", `"Dia-mes","Sector SP","Parte","KG","Prov_Serv"`);
+     return await fetchAllPaginated("Entregas PS", `"Dia-mes","Sector SP","Parte","KG","Prov_Serv","created_at"`);
    }
    
    /* =========================================================
@@ -155,7 +185,7 @@
       Toma KG por Sector
    ========================================================= */
    async function cargarEnviosTalleristas() {
-     return await fetchAllPaginated("Envios a Talleristas", `"Dia-mes","Sector","Descripcion","KG","Tallerista"`);
+     return await fetchAllPaginated("Envios a Talleristas", `"Dia-mes","Sector","Descripcion","KG","Tallerista","created_at"`);
    }
    
    /* =========================================================
@@ -179,7 +209,7 @@
      return all;
    }
 
-   function armarMapaEntregasLog(rows, despieceRows) {
+   function armarMapaEntregasLog(rows, despieceRows, corteMap) {
      // Construir mapa COD -> Sector SP desde despiece
      const codToSector = new Map();
      despieceRows.forEach(r => {
@@ -201,6 +231,7 @@
        const codNorm = normalizeCod3(cod);
        const sector = codToSector.get(codNorm);
        if (!sector) return;
+       if (anteriorAlCorte(corteMap, sector, r["created_at"])) return; // previo al corte
 
        totalMap.set(sector, (totalMap.get(sector) || 0) + cajas);
 
@@ -216,10 +247,10 @@
       Registros donde un SP se envía a un PS como input
    ========================================================= */
    async function cargarEnviosAPS() {
-     return await fetchAllPaginated("Envios a PS", `"Dia-mes","Prov_Serv","Sector SC","Sector SP","Parte","KG"`);
+     return await fetchAllPaginated("Envios a PS", `"Dia-mes","Prov_Serv","Sector SC","Sector SP","Parte","KG","created_at"`);
    }
 
-   function armarMapaEnviosAPS(rows, spRows) {
+   function armarMapaEnviosAPS(rows, spRows, corteMap) {
      const totalMap = new Map();
      const detalleMap = new Map();
 
@@ -238,6 +269,7 @@
 
        if (!kg || !sectorSC) return;
        if (!spValidos.has(sectorSC)) return; // Solo si el input es un SP válido
+       if (anteriorAlCorte(corteMap, sectorSC, r["created_at"])) return; // previo al corte
 
        totalMap.set(sectorSC, (totalMap.get(sectorSC) || 0) + kg);
 
@@ -266,7 +298,7 @@
      return data || [];
    }
 
-   function armarMapaEntregasGRJ(allRows, grjComps, spRows) {
+   function armarMapaEntregasGRJ(allRows, grjComps, spRows, corteMap) {
      // Set de sectores GRJ válidos en SP Kg
      const grjSectores = new Set();
      (spRows || []).forEach(r => {
@@ -299,6 +331,7 @@
        if (cod !== codGRJ && cod !== markerByGRJ.get(codGRJ)) continue;
 
        const key = normalizeText(codGRJ);
+       if (anteriorAlCorte(corteMap, key, e["created_at"])) continue; // previo al corte
        const kg = parseDecimal(e["Kg_GRJ"]);
        const tall = String(e["Nombre_Tall"] || "").trim();
        const fechaRaw = String(e["Fecha"] || "").trim();
@@ -346,7 +379,7 @@
         aumenta  = uni producidas que generan este sector
         descuenta = uni consumidas que gastan este sector
    ========================================================= */
-   function armarMapaFabricacionSP(dbRows, causaEfectoRows, spKgRows) {
+   function armarMapaFabricacionSP(dbRows, causaEfectoRows, spKgRows, corteMap) {
      // Set de sectores SP válidos
      const spSet = new Set();
      (spKgRows || []).forEach(r => {
@@ -390,8 +423,11 @@
        const legajo = String(r["Legajo"] || "").trim();
        const nombre = String(r["Nombre_Empleado"] || "").trim();
        const key = `${matriz}|||${fecha}|||${legajo}`;
-       if (!prodMap.has(key)) prodMap.set(key, { matriz, fecha, legajo, nombre, uni: 0 });
-       prodMap.get(key).uni += uni;
+       if (!prodMap.has(key)) prodMap.set(key, { matriz, fecha, legajo, nombre, uni: 0, created_at: null });
+       const acc = prodMap.get(key);
+       acc.uni += uni;
+       const ca = r["created_at"];
+       if (ca) { const t = new Date(ca); if (!isNaN(t.getTime()) && (!acc.created_at || t > acc.created_at)) acc.created_at = t; }
      });
 
      // Construir mapa por sector SP
@@ -402,16 +438,17 @@
        return sectorMap.get(k);
      };
 
-     for (const [, { matriz, fecha, legajo, nombre, uni }] of prodMap.entries()) {
+     for (const [, { matriz, fecha, legajo, nombre, uni, created_at }] of prodMap.entries()) {
        const efectos = causaMap.get(matriz) || [];
        for (const ef of efectos) {
-         if (spSet.has(ef.aumenta)) {
+         // Corte por sector: la produccion previa al relevamiento del sector no cuenta.
+         if (spSet.has(ef.aumenta) && !anteriorAlCorte(corteMap, normalizeText(ef.aumenta), created_at)) {
            const e = ensure(ef.aumenta);
            const kgU = kgXUniMap.get(ef.aumenta) || 0;
            e.aumenta += uni * kgU;
            e.detalleAumenta.push({ fecha, matriz, legajo, nombre, uni });
          }
-         if (spSet.has(ef.descuenta)) {
+         if (spSet.has(ef.descuenta) && !anteriorAlCorte(corteMap, normalizeText(ef.descuenta), created_at)) {
            const e = ensure(ef.descuenta);
            const kgU = kgXUniMap.get(ef.descuenta) || 0;
            e.descuenta += uni * kgU;
@@ -426,10 +463,10 @@
    /* =========================================================
       BLOQUE: MAPA ENTREGAS PS POR SECTOR
    ========================================================= */
-   function armarMapaEntregasPS(rows) {
+   function armarMapaEntregasPS(rows, corteMap) {
      const totalMap = new Map();
      const detalleMap = new Map();
-   
+
      rows.forEach((r) => {
        const sector = normalizeText(r["Sector SP"]);
        const kg = parseDecimal(r["KG"]);
@@ -441,6 +478,7 @@
        if (!kg) return;
 
        const key = sector;
+       if (anteriorAlCorte(corteMap, key, r["created_at"])) return; // previo al corte
 
        totalMap.set(key, (totalMap.get(key) || 0) + kg);
 
@@ -460,7 +498,7 @@
       BLOQUE: MAPA ENVIOS TALLERISTAS POR SECTOR SP
       Mapea descripción del producto a Sector SP desde tabla SP Kg
    ========================================================= */
-   function armarMapaEnviosTalleristas(rows, spRows) {
+   function armarMapaEnviosTalleristas(rows, spRows, corteMap) {
      const totalMap = new Map();
      const detalleMap = new Map();
 
@@ -480,6 +518,7 @@
 
        if (!kg || !sector) return;
        if (!spValidos.has(sector)) return; // Solo sectores SP válidos
+       if (anteriorAlCorte(corteMap, sector, r["created_at"])) return; // previo al corte
 
        const key = sector;
 
@@ -818,7 +857,8 @@
         partesPS,
         partesPSProvServ,
         causaEfectoRows,
-        grjCompsRows
+        grjCompsRows,
+        cortesRows
       ] = await Promise.all([
         cargarBaseSPKg(),
         cargarEntregasPS(),
@@ -831,6 +871,7 @@
         supabaseClient.from("Partes x PS").select('"PS", "SP"').then(r => r.data || []),
         supabaseClient.from("Causa-Efecto").select("*").then(r => r.data || []),
         cargarGRJComponentes(),
+        cargarCortesStock(),
       ]);
 
        // Filtrar entregas Log/Fabrica de los datos completos
@@ -845,12 +886,15 @@
 
    const consumoMap = armarMapaConsumo(despieceRows, eMadreRows);
 
-       const entregasPSData = armarMapaEntregasPS(entregasPSRows);
-       const enviosTallData = armarMapaEnviosTalleristas(enviosTallRows, spRows);
-       const enviosPSData = armarMapaEnviosAPS(enviosPSRows, spRows);
-       const entregasLogData = armarMapaEntregasLog(entregasLogRows, despieceRows);
-       const fabricacionSP = armarMapaFabricacionSP(dbEspejoRows, causaEfectoRows, spRows);
-       const entregasGRJData = armarMapaEntregasGRJ(allEntregasTallRows, grjCompsRows, spRows);
+       // Corte por sector = ultimo relevamiento real (vista v_rc_cortes_stock)
+       const corteBySector = armarCorteBySector(cortesRows);
+
+       const entregasPSData = armarMapaEntregasPS(entregasPSRows, corteBySector);
+       const enviosTallData = armarMapaEnviosTalleristas(enviosTallRows, spRows, corteBySector);
+       const enviosPSData = armarMapaEnviosAPS(enviosPSRows, spRows, corteBySector);
+       const entregasLogData = armarMapaEntregasLog(entregasLogRows, despieceRows, corteBySector);
+       const fabricacionSP = armarMapaFabricacionSP(dbEspejoRows, causaEfectoRows, spRows, corteBySector);
+       const entregasGRJData = armarMapaEntregasGRJ(allEntregasTallRows, grjCompsRows, spRows, corteBySector);
 
        // Mergear envíos a PS dentro de envíos tallerista (misma columna)
        for (const [key, kg] of enviosPSData.totalMap.entries()) {

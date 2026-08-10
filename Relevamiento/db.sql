@@ -127,8 +127,10 @@ end $$;
 --                            SP = round(cajones * "KG x Cajon")               [kg]
 --   3. UPDATE madre: "Stock Inicial" = nuevo, stock_inicial_updated_at = now()  (= CORTE)
 --   4. Snapshot de la fila madre DESPUES -> snapshots_stock.datos_despues
--- El CORTE (stock_inicial_updated_at) es POR SECTOR: el Online (StockSC.js/StockSP.js)
--- debe contar cada movimiento solo si created_at > stock_inicial_updated_at del sector.
+-- El CORTE es POR SECTOR y sale del ULTIMO RELEVAMIENTO REAL (snapshots_stock),
+-- NO de la columna stock_inicial_updated_at (que tiene ajustes manuales viejos que
+-- NO deben cortar el Online). El Online (StockSC.js/StockSP.js) cuenta cada movimiento
+-- solo si created_at > corte del sector; sector sin relevamiento -> cuenta todo (historico).
 -- Los movimientos NO se borran; el corte hace que el Online ignore los previos
 -- (ya reflejados en el nuevo Stock Inicial). "Se olvidaron una carga y la cargaron
 -- despues" => created_at (DB default now()) marca la hora REAL de carga, no la fecha
@@ -148,13 +150,24 @@ create table if not exists relevamiento_cervantes.snapshots_stock (
   datos_despues   jsonb,                  -- fila madre completa DESPUES del reset
   creado_en       timestamptz not null default now(),
   creado_por      text);
+-- Vista publica de cortes (la lee el modulo Stock via anon key):
+create or replace view public.v_rc_cortes_stock as
+  select tipo, sector, max(creado_en) as corte
+  from relevamiento_cervantes.snapshots_stock
+  where sector is not null
+  group by tipo, sector;
+-- grant select on public.v_rc_cortes_stock to anon, authenticated;
+--
 -- Migraciones Supabase:
 --   relev_sc_sp_snapshot_columnas_y_tabla
 --   relev_sc_sp_aplicar_stock_inicial_rpc   (aplicar_stock_inicial_sc_sp)
 --   relev_sc_sp_hook_en_rc_set_conteo       (rama sc/sp llama al helper)
+--   relev_sc_sp_vista_cortes_stock          (v_rc_cortes_stock)
 --
--- PENDIENTE (Fase 2): StockSC.js / StockSP.js deben filtrar cada tabla de movimiento
--- por  created_at > stock_inicial_updated_at  del sector. Hasta que se haga, NO correr
--- un relev SC/SP real en produccion (el Online contaria doble los movimientos previos
--- al corte, ya incluidos en el nuevo Stock Inicial).
+-- FASE 2 (hecha): StockSC.js / StockSP.js cargan v_rc_cortes_stock (cargarCortesStock),
+-- arman corteBySector y descartan cada movimiento con created_at <= corte del sector
+-- (helpers armarCorteBySector / anteriorAlCorte). Fuentes filtradas:
+--   SC: Envios a PS, Envios a Talleristas, db_n8n_espejo (fabricacion), Entregas_Tall (transf).
+--   SP: Entregas PS, Envios a Talleristas, Envios a PS, db_n8n_espejo, Entregas_Tall (log+GRJ).
+-- Como snapshots_stock arranca vacia, el Online NO cambia hasta que se releva un sector.
 -- ============================================================
