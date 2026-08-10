@@ -116,3 +116,45 @@ end $$;
 --   rc_generar / rc_set_conteo / rc_completar_plantas / rc_borrar / rc_plantas_tipo
 -- Definicion completa: ver migracion 'relevamiento_cervantes_api_publica' en Supabase.
 -- ============================================================
+
+-- ============================================================
+-- SC / SP — Stock Inicial con PUNTO DE CORTE + SNAPSHOT  (2026-08-07)
+-- ------------------------------------------------------------
+-- Al guardar un relev SC/SP (rc_set_conteo rama sc/sp), se llama a
+-- aplicar_stock_inicial_sc_sp(det_id) que, POR SECTOR:
+--   1. Snapshot de la fila madre ANTES (SC Kg / SP Kg) -> snapshots_stock.datos_antes
+--   2. Nuevo Stock Inicial:  SC = round(cajones * "KG x Cajon" / "Kg X Uni")  [uni]
+--                            SP = round(cajones * "KG x Cajon")               [kg]
+--   3. UPDATE madre: "Stock Inicial" = nuevo, stock_inicial_updated_at = now()  (= CORTE)
+--   4. Snapshot de la fila madre DESPUES -> snapshots_stock.datos_despues
+-- El CORTE (stock_inicial_updated_at) es POR SECTOR: el Online (StockSC.js/StockSP.js)
+-- debe contar cada movimiento solo si created_at > stock_inicial_updated_at del sector.
+-- Los movimientos NO se borran; el corte hace que el Online ignore los previos
+-- (ya reflejados en el nuevo Stock Inicial). "Se olvidaron una carga y la cargaron
+-- despues" => created_at (DB default now()) marca la hora REAL de carga, no la fecha
+-- de negocio ("Dia-mes"), asi el corte funciona igual.
+--
+-- Columnas agregadas:
+--   public.db_n8n_espejo.created_at    timestamptz default now()  (corte de fabricacion)
+--   public."SC Kg".stock_inicial_updated_at  timestamptz          (SP Kg ya la tenia)
+--
+-- Tabla NORMALIZADA (una sola para todos los tipos, ampliable):
+create table if not exists relevamiento_cervantes.snapshots_stock (
+  id              bigint generated always as identity primary key,
+  relevamiento_id bigint references relevamiento_cervantes.relevamientos(id) on delete set null,
+  tipo            text not null,          -- 'sc','sp',...
+  sector          text,
+  datos_antes     jsonb,                  -- fila madre completa ANTES del reset
+  datos_despues   jsonb,                  -- fila madre completa DESPUES del reset
+  creado_en       timestamptz not null default now(),
+  creado_por      text);
+-- Migraciones Supabase:
+--   relev_sc_sp_snapshot_columnas_y_tabla
+--   relev_sc_sp_aplicar_stock_inicial_rpc   (aplicar_stock_inicial_sc_sp)
+--   relev_sc_sp_hook_en_rc_set_conteo       (rama sc/sp llama al helper)
+--
+-- PENDIENTE (Fase 2): StockSC.js / StockSP.js deben filtrar cada tabla de movimiento
+-- por  created_at > stock_inicial_updated_at  del sector. Hasta que se haga, NO correr
+-- un relev SC/SP real en produccion (el Online contaria doble los movimientos previos
+-- al corte, ya incluidos en el nuevo Stock Inicial).
+-- ============================================================
