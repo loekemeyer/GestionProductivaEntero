@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "command": "echo '🪨 CAVEMAN: respuestas CORTAS, directas, sin relleno. NUNCA más de 3 líneas salvo que el usuario pida detalle.'"
+      }
+    ]
+  }
+}
