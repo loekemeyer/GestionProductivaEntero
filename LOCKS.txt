@@ -5,6 +5,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-08-11 - CLAUDE.md: caveman default por conversacion + "caveman desactivacion total" = apagado permanente (ademas de "desactiva caveman" = 1 mensaje). loekemeyer.
 2026-08-11 - CLAUDE.md: modo caveman SIEMPRE activo + "desactiva caveman" = solo el proximo mensaje, despues vuelve a caveman. loekemeyer.
 2026-08-07 - Relevamiento (?v=20260807a) + Supabase (cat_garage): (1) cmpSectorRow ahora manda sin sector (null/vacío) al FINAL para TODOS los tipos (antes solo remaches). (2) FIX typo cat_garage id=8: GJR10 → GRJ10. loekemeyer.
 2026-08-06 - Despiece.js + Supabase (Sector Bombilla): tabla BOMB eliminada de cargarSectorDesc(). Ahora carga SOLO de "Sector Bombilla" (fuente unica). Se agregaron BOMB12 (Limpia Bombilla) y BOMB8B (Tela Manga Repostera) a Sector Bombilla porque se usan en Despiece con ese codigo. GRJ4/5/6/13/14/15 no se agregan (ya resuelven desde SP Kg). loekemeyer.

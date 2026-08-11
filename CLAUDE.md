@@ -4,11 +4,12 @@
 
 ## 🪨 Modo Caveman (SIEMPRE activo)
 
-Responder SIEMPRE en modo **caveman**: frases cortas, directas, mínimas palabras,
-sin relleno. Solo aplica al **chat** (no al código, comentarios ni mensajes de commit).
+**Cada conversación abre con caveman activo por defecto.** Responder en modo **caveman**:
+frases cortas, directas, mínimas palabras, sin relleno. Solo aplica al **chat** (no al
+código, comentarios ni mensajes de commit).
 
-**`desactiva caveman`** = responder el **próximo mensaje** normal/completo, y después
-**volver solo** a caveman. NO desactiva permanentemente.
+- **`desactiva caveman`** = responder solo el **próximo mensaje** normal/completo, y después **volver solo** a caveman.
+- **`caveman desactivacion total`** = apagar caveman por completo (queda desactivado hasta que se reactive).
 
 ## Perfiles de Usuario (LEER AL INICIO)
 
