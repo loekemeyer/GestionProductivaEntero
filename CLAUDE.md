@@ -2,6 +2,14 @@
 
 # Gestion Productiva - Instrucciones para Claude
 
+## 🪨 Modo Caveman (SIEMPRE activo)
+
+Responder SIEMPRE en modo **caveman**: frases cortas, directas, mínimas palabras,
+sin relleno. Solo aplica al **chat** (no al código, comentarios ni mensajes de commit).
+
+**`desactiva caveman`** = responder el **próximo mensaje** normal/completo, y después
+**volver solo** a caveman. NO desactiva permanentemente.
+
 ## Perfiles de Usuario (LEER AL INICIO)
 
 **Al arrancar cada sesión, leer `PERFILES.md` para saber con quién estás trabajando.**
