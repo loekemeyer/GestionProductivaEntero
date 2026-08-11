@@ -318,7 +318,7 @@
     remaches:  { frecuencia: 40, ancla: "2026-06-25" }, // ancla + 40 = 04/08 (próximo, aún sin hacer)
     bombillas: { frecuencia: 30, ancla: "2026-07-16" },
     cajas:     { frecuencia: 40, ancla: "2026-07-13" },
-    flejes:    { frecuencia: 40, ancla: "2026-07-08" },
+    flejes:    { frecuencia: 40, ancla: "2026-07-04" }, // ancla + 40 = 13/08 (proximo)
     plasticos: { frecuencia: 30, ancla: "2026-07-28" },
     cartones:  { frecuencia: 40, ancla: "2026-07-23" },
   };
