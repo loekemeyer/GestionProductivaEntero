@@ -97,6 +97,36 @@
   .rg-estip{margin-top:12px;text-align:center;font-size:21px;font-weight:800}
   .rg-estip.rg-est-ok{color:#0a7a2f}
   .rg-estip.rg-est-bad{color:#b91c1c}
+
+  /* Seccion OC insumos (home) */
+  .oc-block{margin-top:18px;padding:12px 14px;background:#eef4fb;border:1px solid #c8dcef;border-radius:10px}
+  .oc-block-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .oc-block-hdr h3{font-size:20px;font-weight:800;color:#0b3b73}
+  .oc-block-hdr .btn-upload-oc{background:#0b5cad;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:800;font-size:17px;cursor:pointer}
+  .oc-list{display:flex;flex-direction:column;gap:6px}
+  .oc-item{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#fff;border:1.5px solid #c8dcef;border-radius:8px;cursor:pointer;font-size:19px;transition:all .15s}
+  .oc-item:hover{background:#f0f7ff;border-color:#0b5cad}
+  .oc-item .oc-prov{font-weight:800;color:#0b3b73}
+  .oc-item .oc-fecha{color:#555;font-size:17px}
+  .oc-empty{padding:10px;color:#777;text-align:center;font-style:italic;font-size:17px}
+  /* OC/Rec dentro de cada boton de articulo */
+  .item-btn .oc{display:block;margin-top:6px;font-size:14px;font-weight:800;color:#0b5cad;background:#eef4fb;padding:2px 6px;border-radius:4px}
+  .item-btn .rec{display:block;margin-top:3px;font-size:14px;font-weight:800;color:#0a7a2f;background:#f3fbf6;padding:2px 6px;border-radius:4px}
+  .item-btn .falta{display:block;margin-top:3px;font-size:12px;color:#b91c1c;font-weight:700}
+  .item-btn.tiene-oc{border-color:#0b5cad;background:#fbfdff}
+  /* Modal subir OC PDF */
+  .oc-upload-zone{border:3px dashed #c8dcef;border-radius:10px;padding:30px;text-align:center;background:#fbfdff;margin-bottom:12px;cursor:pointer}
+  .oc-upload-zone:hover{border-color:#0b5cad;background:#eef4fb}
+  .oc-upload-zone.has-file{border-color:#0a7a2f;background:#f3fbf6}
+  .oc-thumb{max-width:100%;max-height:240px;margin:8px auto;display:block;border-radius:6px}
+  /* Modal revision de OC extraida */
+  #ocReviewModal .rev-hdr{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;background:#f6f8fa;border-radius:8px;margin-bottom:10px;font-size:16px}
+  #ocReviewModal .rev-hdr .lbl{font-weight:800;color:#333;margin-right:4px}
+  #ocReviewModal table.rev-lines{width:100%;border-collapse:collapse;margin:10px 0;font-size:15px}
+  #ocReviewModal table.rev-lines th,#ocReviewModal table.rev-lines td{border:1px solid #d0d7de;padding:6px;text-align:left}
+  #ocReviewModal table.rev-lines th{background:#eef4fb;font-weight:800;color:#0b3b73}
+  #ocReviewModal table.rev-lines input{width:100%;border:1px solid #d0d7de;border-radius:4px;padding:4px;font-size:15px}
+  #ocReviewModal .warn{background:#fff4e0;border:1px solid #f0b400;color:#8a5a00;padding:8px 10px;border-radius:6px;margin:8px 0;font-weight:700;font-size:15px}
 </style>
 </head>
 <body>
@@ -126,6 +156,17 @@
         <button class="prov-btn" data-rubro="Cartones">Cartones</button>
         <button class="prov-btn" data-rubro="Remaches">Remaches</button>
         <button class="prov-btn" data-rubro="Bombillas">Bombillas</button>
+      </div>
+
+      <!-- Seccion OC insumos: listado de OCs pendientes + boton para subir un PDF nuevo -->
+      <div class="oc-block" id="ocBlock">
+        <div class="oc-block-hdr">
+          <h3>OC insumos</h3>
+          <button class="btn-upload-oc" id="btnAbrirSubirOC" type="button">📄 Subir OC PDF</button>
+        </div>
+        <div class="oc-list" id="ocList">
+          <div class="oc-empty">Cargando OCs pendientes…</div>
+        </div>
       </div>
 
       <!-- Paso 2: Proveedor -->
@@ -231,6 +272,50 @@
   </div>
 </div>
 
+<!-- Modal: Subir OC PDF -->
+<div id="ocUploadOverlay" class="overlay">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <div class="modal-title">Subir Orden de Compra (PDF)</div>
+      <button class="btn btn-secondary" id="ocUploadClose">✕</button>
+    </div>
+    <div class="oc-upload-zone" id="ocUploadZone">
+      <div style="font-size:18px;color:#555">Tocá acá para seleccionar el PDF de la OC</div>
+      <div style="font-size:14px;color:#888;margin-top:6px">PDF, JPG o PNG · hasta 10 MB</div>
+      <input type="file" id="ocFileInput" accept="application/pdf,image/*" style="display:none">
+      <div id="ocPreview" style="display:none;margin-top:10px">
+        <div id="ocFileName" style="font-weight:800;color:#0a7a2f;margin-bottom:6px"></div>
+        <img id="ocThumb" class="oc-thumb" style="display:none">
+      </div>
+    </div>
+    <div id="ocUploadMsg" class="status"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="ocUploadCancel">Cancelar</button>
+      <button class="btn btn-primary" id="ocUploadAnalyze" disabled>Analizar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Revisar OC extraida -->
+<div id="ocReviewOverlay" class="overlay">
+  <div class="modal" id="ocReviewModal" style="max-width:900px">
+    <div class="modal-header">
+      <div class="modal-title">Revisar OC extraída</div>
+      <button class="btn btn-secondary" id="ocReviewClose">✕</button>
+    </div>
+    <div class="rev-hdr" id="ocReviewHdr"></div>
+    <div id="ocReviewWarn"></div>
+    <div style="overflow-x:auto">
+      <table class="rev-lines" id="ocReviewTable"></table>
+    </div>
+    <div id="ocReviewMsg" class="status"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="ocReviewCancel">Cancelar</button>
+      <button class="btn btn-primary" id="ocReviewConfirm">Confirmar e importar</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 "use strict";
@@ -285,6 +370,34 @@ let provSel = "";
 let items = [];
 let filteredItems = [];
 let selectedItem = null;
+
+// ===== OCs pendientes =====
+// ocByCodigo: Map<codigo_normalizado, { id, cantidad, cantidad_recibida, fecha, fecha_estimada }>
+// Se llena al abrir la botonera con las OCs pendientes del (rubro, proveedor) actual.
+let ocByCodigo = new Map();
+// ocPendientesAll: todas las OCs pendientes (todos los rubros/proveedores) — para la lista de la home.
+let ocPendientesAll = [];
+// Estados posibles: 'pendiente' | 'anulada' | 'cerrada'. Text libre en la tabla (sin CHECK).
+const OC_ESTADO_ACTIVO = "pendiente";
+// Padding: los codigos del PDF vienen "66" pero en Despiece x Articulo estan "066".
+function padCodigo(c) {
+  const s = String(c ?? "").trim();
+  return /^\d{1,3}$/.test(s) ? s.padStart(3, "0") : s;
+}
+function normCodigo(c) { return padCodigo(c).toUpperCase(); }
+// Inverso proveedor -> rubro (para saber a que rubro pertenece una OC dado su proveedor).
+const PROV_TO_RUBRO = (() => {
+  const m = new Map();
+  for (const [rubro, provs] of Object.entries({
+    Flejes: ["Basconia","Aperam","Hermac","Brawin","Altrak","Szapiro","EstaMetal","JL Metales","Alami"],
+    Cajas: ["Corrugadora"],
+    Plasticos: ["Pat Bet Plast","Rodar","Telleria","Maspoli","Pintos","Martin Faccolo","JL Matriceria","Capuchon Mariposa","Base Afila","M. Pelador","Terrero","Mangos Abrelata","Regatones","Bujes Abrelatas","Mango Ergon.","Mangos NM","Packaging y Serv","Sesega","Barbeja"],
+    Cartones: ["Grafica Pol"],
+    Remaches: ["Bella Vista","Dilmax","Electronica Mandelli","Imel"],
+    Bombillas: ["Por definir"]
+  })) provs.forEach(p => m.set(p.toLowerCase(), rubro));
+  return m;
+})();
 
 const rubroGrid = document.getElementById("rubroGrid");
 const provSection = document.getElementById("provSection");
@@ -416,6 +529,9 @@ btnContinuar.addEventListener("click", async () => {
       return;
     }
 
+    // Precargar OCs pendientes del (rubro, proveedor) actual -> map por codigo
+    await refrescarOCsDelProveedor(rubroSel, provSel);
+
     statusMsg.textContent = "";
     modalTitle.textContent = `${provSel} — ${items.length} artículos`;
     buildModal();
@@ -430,14 +546,47 @@ btnContinuar.addEventListener("click", async () => {
 });
 
 // ===== Modal =====
+// Ordena los items para dejar arriba los que tienen OC pendiente (primero parcialmente
+// recibidos, despues sin recibir), y al final los sin OC. Preserva orden original dentro
+// de cada grupo.
+function sortItemsByOC(arr) {
+  const prio = (it) => {
+    const oc = ocByCodigo.get(normCodigo(it.codigo));
+    if (!oc) return 3;
+    const rec = Number(oc.cantidad_recibida || 0);
+    if (rec > 0 && rec < Number(oc.cantidad || 0)) return 0; // parcial
+    return 1; // pendiente sin recibir aun
+  };
+  return arr
+    .map((it, i) => ({ it, i, p: prio(it) }))
+    .sort((a, b) => (a.p - b.p) || (a.i - b.i))
+    .map(x => x.it);
+}
+
 function renderItems() {
   linesWrap.innerHTML = "";
-  filteredItems.forEach((item, i) => {
+  const ordered = sortItemsByOC(filteredItems);
+  ordered.forEach((item) => {
     const btn = document.createElement("button");
-    btn.className = "item-btn" + (item._cant ? " active" : "");
+    const oc = ocByCodigo.get(normCodigo(item.codigo));
+    const clases = ["item-btn"];
+    if (item._cant) clases.push("active");
+    if (oc) clases.push("tiene-oc");
+    btn.className = clases.join(" ");
     btn.innerHTML = `<div class="code">${esc(item.codigo)}</div>`;
     if (item.isis) btn.innerHTML += `<div class="isis">ISIS: ${esc(item.isis)}</div>`;
     if (item.medida) btn.innerHTML += `<div class="medida">${esc(item.medida)}</div>`;
+    // OC / Rec bajo el codigo (si hay OC pendiente para este codigo+proveedor)
+    if (oc) {
+      const cant = Number(oc.cantidad || 0);
+      const rec  = Number(oc.cantidad_recibida || 0);
+      btn.innerHTML += `<div class="oc">OC: ${cant.toLocaleString("es-AR")}</div>`;
+      if (rec > 0) {
+        btn.innerHTML += `<div class="rec">Rec: ${rec.toLocaleString("es-AR")}</div>`;
+        const falta = cant - rec;
+        if (falta > 0) btn.innerHTML += `<div class="falta">Falta: ${falta.toLocaleString("es-AR")}</div>`;
+      }
+    }
     if (item._cant) {
       btn.innerHTML += `<div class="medida" style="margin-top:8px;color:#0a7a2f;font-weight:700">${esc(item._cant)} kg`;
       if (item._rollos) btn.innerHTML += ` · ${item._rollos} rollos`;
@@ -870,6 +1019,10 @@ document.getElementById("sendModal").addEventListener("click", async () => {
     // Aviso Telegram (grupo de alertas) si algún fleje difiere > 5% del remito.
     if (rubroSel === "Flejes") { try { await avisarDiferenciasFlejesTelegram(toSend, remito); } catch (e) { console.error(e); } }
 
+    // Actualiza cantidad_recibida en las OCs pendientes que matchean (proveedor, codigo).
+    // Cierra la OC (estado='cerrada' + fecha_entrega_real=hoy) si Rec >= cantidad.
+    try { await actualizarOCsRecibido(toSend); } catch (e) { console.error("actualizar OCs:", e); }
+
     overlay.classList.remove("open");
     successDetail.textContent = `${data.length} artículo(s) de ${provSel} · Remito: ${remito || "—"}`;
     successBox.style.display = "block";
@@ -882,6 +1035,410 @@ document.getElementById("sendModal").addEventListener("click", async () => {
     sendBtn.disabled = false;
   }
 });
+
+
+/* ============================================================
+   SECCION OC INSUMOS
+   ============================================================
+   Vive en la home (debajo del selector de rubro):
+   - Lista las OCs pendientes de todos los rubros/proveedores.
+   - Boton "Subir OC PDF" -> upload -> edge function leer-oc ->
+     modal revision -> INSERT batch en Ordenes_Compra + anular
+     previas del mismo proveedor.
+   - Click en una linea -> setea rubro+proveedor y dispara
+     btnContinuar para saltar directo a la botonera con OC/Rec.
+   ============================================================ */
+
+const ocBlock          = document.getElementById("ocBlock");
+const ocListEl         = document.getElementById("ocList");
+const btnAbrirSubirOC  = document.getElementById("btnAbrirSubirOC");
+const ocUploadOverlay  = document.getElementById("ocUploadOverlay");
+const ocReviewOverlay  = document.getElementById("ocReviewOverlay");
+const ocFileInput      = document.getElementById("ocFileInput");
+const ocUploadZone     = document.getElementById("ocUploadZone");
+const ocFileName       = document.getElementById("ocFileName");
+const ocThumb          = document.getElementById("ocThumb");
+const ocPreview        = document.getElementById("ocPreview");
+const ocUploadAnalyze  = document.getElementById("ocUploadAnalyze");
+const ocUploadMsg      = document.getElementById("ocUploadMsg");
+
+const EDGE_LEER_OC = SUPABASE_URL + "/functions/v1/leer-oc";
+
+let ocFileBuf = null;   // { name, mime, dataUrl }
+let ocDraft   = null;   // JSON extraido: { cabecera, lineas }
+
+/* ---------- Home: listado de OCs pendientes ---------- */
+
+// Formatea la fecha (viene YYYY-MM-DD desde Postgres) en formato corto DD-M.
+function fmtFechaCorta(iso) {
+  if (!iso) return "—";
+  const s = String(iso);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  return `${Number(m[3])}-${Number(m[2])}`;
+}
+
+// Carga todas las OCs pendientes (todos los rubros/proveedores). Se llama al init y
+// despues de cada operacion que crea/anula/cierra OCs.
+async function cargarOCsPendientesHome() {
+  try {
+    const { data, error } = await sb.from("Ordenes_Compra")
+      .select('id, rubro, proveedor, codigo, cantidad, cantidad_recibida, fecha, fecha_estimada_proveedor')
+      .eq("estado", OC_ESTADO_ACTIVO)
+      .in("rubro", ["Flejes","Cajas","Plasticos","Cartones","Remaches","Bombillas"])
+      .order("proveedor", { ascending: true })
+      .order("fecha", { ascending: true });
+    if (error) throw error;
+    ocPendientesAll = data || [];
+    renderOCsHome();
+  } catch (err) {
+    console.error("cargarOCsPendientesHome:", err);
+    ocListEl.innerHTML = '<div class="oc-empty" style="color:#b91c1c">Error cargando OCs: ' + esc(err.message) + '</div>';
+  }
+}
+
+// Agrupa las OCs por (proveedor, rubro) y muestra 1 linea por grupo (el proveedor puede
+// tener multiples lineas de una misma OC importada — para el usuario es "una OC").
+// La fecha mostrada por ahora es fecha_estimada_proveedor (o fecha de la OC como fallback).
+// TODO: cuando exista el modulo que define "fecha entrego", enchufarlo aca.
+function renderOCsHome() {
+  if (!ocPendientesAll.length) {
+    ocListEl.innerHTML = '<div class="oc-empty">No hay OCs pendientes.</div>';
+    return;
+  }
+  // Agrupar por (proveedor|rubro|fecha_pedido)
+  const grupos = new Map();
+  for (const oc of ocPendientesAll) {
+    const key = `${oc.proveedor||"—"}||${oc.rubro||"—"}||${oc.fecha||""}`;
+    if (!grupos.has(key)) grupos.set(key, { proveedor: oc.proveedor||"—", rubro: oc.rubro, fecha: oc.fecha, fechaEnt: oc.fecha_estimada_proveedor, cant: 0, rec: 0 });
+    const g = grupos.get(key);
+    g.cant += Number(oc.cantidad || 0);
+    g.rec  += Number(oc.cantidad_recibida || 0);
+    if (oc.fecha_estimada_proveedor && (!g.fechaEnt || oc.fecha_estimada_proveedor < g.fechaEnt)) g.fechaEnt = oc.fecha_estimada_proveedor;
+  }
+  const filas = [...grupos.values()];
+  filas.sort((a,b) => (a.fechaEnt||"9999") < (b.fechaEnt||"9999") ? -1 : 1);
+  ocListEl.innerHTML = "";
+  filas.forEach(g => {
+    const row = document.createElement("div");
+    row.className = "oc-item";
+    row.dataset.rubro = g.rubro;
+    row.dataset.proveedor = g.proveedor;
+    const fechaTxt = fmtFechaCorta(g.fechaEnt || g.fecha);
+    const restante = g.cant - g.rec;
+    const badge = restante > 0 && restante < g.cant ? ` <span style="color:#0a7a2f">(Rec: ${g.rec.toLocaleString("es-AR")}/${g.cant.toLocaleString("es-AR")})</span>` : "";
+    row.innerHTML =
+      `<span class="oc-prov">${esc(g.proveedor)}${badge}</span>` +
+      `<span class="oc-fecha">${esc(g.rubro)} · ${esc(fechaTxt)}</span>`;
+    row.addEventListener("click", () => saltarAOC(g.rubro, g.proveedor));
+    ocListEl.appendChild(row);
+  });
+}
+
+// Click en una linea de OC insumos -> setear rubro+proveedor y disparar continuar.
+async function saltarAOC(rubro, proveedor) {
+  const btnRubro = rubroGrid.querySelector(`.prov-btn[data-rubro="${rubro}"]`);
+  if (btnRubro) btnRubro.click();
+  // esperar a que renderProveedores termine y despues elegir prov
+  setTimeout(() => {
+    // Si el rubro tiene un solo proveedor (ej. Cartones/Grafica Pol), ya quedo asignado.
+    if (!provSel) {
+      const btns = [...provGrid.querySelectorAll(".prov-btn")];
+      const btnProv = btns.find(b => (b.textContent||"").trim().toLowerCase() === String(proveedor||"").trim().toLowerCase());
+      if (btnProv) btnProv.click();
+    }
+    setTimeout(() => { if (!btnContinuar.disabled) btnContinuar.click(); }, 100);
+  }, 100);
+}
+
+/* ---------- Fetch OCs del proveedor actual (para botonera) ---------- */
+
+async function refrescarOCsDelProveedor(rubro, proveedor) {
+  ocByCodigo = new Map();
+  try {
+    const { data, error } = await sb.from("Ordenes_Compra")
+      .select('id, codigo, cantidad, cantidad_recibida, fecha, fecha_estimada_proveedor')
+      .eq("rubro", rubro)
+      .eq("proveedor", proveedor)
+      .eq("estado", OC_ESTADO_ACTIVO);
+    if (error) throw error;
+    // Si hay varias filas pendientes para el mismo (rubro, proveedor, codigo) — no deberia
+    // pasar tras la anulacion, pero por las dudas — nos quedamos con la mas reciente.
+    for (const r of (data || [])) {
+      const key = normCodigo(r.codigo);
+      const prev = ocByCodigo.get(key);
+      if (!prev || String(r.fecha) > String(prev.fecha)) ocByCodigo.set(key, r);
+    }
+  } catch (e) { console.error("refrescarOCsDelProveedor:", e); }
+}
+
+/* ---------- Actualizar cantidad_recibida despues de recibir ---------- */
+
+// Para cada item recibido, chequea si tiene OC pendiente en ocByCodigo. Si si:
+//   - Suma la nueva cantidad a cantidad_recibida.
+//   - Si supera cantidad, marca estado='cerrada' + fecha_entrega_real=hoy.
+async function actualizarOCsRecibido(toSend) {
+  const hoy = arDateISO();
+  for (const it of toSend) {
+    const oc = ocByCodigo.get(normCodigo(it.codigo));
+    if (!oc) continue;
+    const cant = Number(oc.cantidad || 0);
+    const recPrev = Number(oc.cantidad_recibida || 0);
+    const recNueva = Number(String(it._cant).replace(",", ".")) || 0;
+    const recTotal = Math.round(recPrev + recNueva); // cantidad_recibida es integer
+    const patch = { cantidad_recibida: recTotal };
+    if (recTotal >= cant) {
+      patch.estado = "cerrada";
+      patch.fecha_entrega_real = hoy;
+    }
+    try {
+      await sb.from("Ordenes_Compra").update(patch).eq("id", oc.id);
+    } catch (e) { console.error("update OC id="+oc.id, e); }
+  }
+  // Refresca la lista de la home para reflejar los cambios (aunque hoy no se vea la home).
+  await cargarOCsPendientesHome();
+}
+
+/* ---------- Subir OC PDF -> edge function leer-oc -> modal revision ---------- */
+
+btnAbrirSubirOC.addEventListener("click", () => {
+  ocFileBuf = null;
+  ocDraft = null;
+  ocFileInput.value = "";
+  ocPreview.style.display = "none";
+  ocThumb.style.display = "none";
+  ocFileName.textContent = "";
+  ocUploadZone.classList.remove("has-file");
+  ocUploadAnalyze.disabled = true;
+  ocUploadMsg.textContent = "";
+  ocUploadMsg.className = "status";
+  ocUploadOverlay.classList.add("open");
+});
+
+document.getElementById("ocUploadClose").addEventListener("click", () => ocUploadOverlay.classList.remove("open"));
+document.getElementById("ocUploadCancel").addEventListener("click", () => ocUploadOverlay.classList.remove("open"));
+ocUploadOverlay.addEventListener("click", (e) => { if (e.target === ocUploadOverlay) ocUploadOverlay.classList.remove("open"); });
+
+ocUploadZone.addEventListener("click", () => ocFileInput.click());
+
+ocFileInput.addEventListener("change", async () => {
+  const f = ocFileInput.files && ocFileInput.files[0];
+  if (!f) return;
+  if (f.size > 10 * 1024 * 1024) { ocUploadMsg.textContent = "El archivo es mayor a 10 MB."; ocUploadMsg.className = "status bad"; return; }
+  const buf = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(f);
+  });
+  ocFileBuf = { name: f.name, mime: f.type || "application/pdf", dataUrl: buf };
+  ocFileName.textContent = f.name;
+  ocPreview.style.display = "block";
+  ocUploadZone.classList.add("has-file");
+  ocUploadAnalyze.disabled = false;
+  if ((f.type || "").startsWith("image/")) {
+    ocThumb.src = buf;
+    ocThumb.style.display = "block";
+  } else {
+    ocThumb.style.display = "none";
+  }
+});
+
+ocUploadAnalyze.addEventListener("click", async () => {
+  if (!ocFileBuf) return;
+  ocUploadAnalyze.disabled = true;
+  ocUploadMsg.textContent = "Analizando OC...";
+  ocUploadMsg.className = "status";
+  try {
+    const resp = await fetch(EDGE_LEER_OC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SUPABASE_KEY, "apikey": SUPABASE_KEY },
+      body: JSON.stringify({ archivo: ocFileBuf.dataUrl, mime: ocFileBuf.mime })
+    });
+    if (!resp.ok) { const t = await resp.text(); throw new Error("Edge function fallo ("+resp.status+"): "+t); }
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    ocDraft = data;
+    ocUploadOverlay.classList.remove("open");
+    abrirRevisionOC(data);
+  } catch (err) {
+    console.error(err);
+    ocUploadMsg.textContent = "Error: " + err.message;
+    ocUploadMsg.className = "status bad";
+    ocUploadAnalyze.disabled = false;
+  }
+});
+
+/* ---------- Modal revision de OC extraida ---------- */
+
+function abrirRevisionOC(data) {
+  const cab = data.cabecera || {};
+  const lineas = Array.isArray(data.lineas) ? data.lineas : [];
+  // Fuzzy match: buscar el proveedor short-name (Grafica Pol) desde la razon social larga
+  // (TALLERES GRAFICOS POL) usando substring case-insensitive.
+  const razon = String(cab.razon_social_proveedor || "").toLowerCase();
+  let provMatch = "";
+  for (const [_, provs] of Object.entries({
+    Flejes: ["Basconia","Aperam","Hermac","Brawin","Altrak","Szapiro","EstaMetal","JL Metales","Alami"],
+    Cajas: ["Corrugadora"],
+    Plasticos: ["Pat Bet Plast","Rodar","Telleria","Maspoli","Pintos","Martin Faccolo","JL Matriceria","Capuchon Mariposa","Base Afila","M. Pelador","Terrero","Mangos Abrelata","Regatones","Bujes Abrelatas","Mango Ergon.","Mangos NM","Packaging y Serv","Sesega","Barbeja"],
+    Cartones: ["Grafica Pol"],
+    Remaches: ["Bella Vista","Dilmax","Electronica Mandelli","Imel"],
+    Bombillas: ["Por definir"]
+  })) {
+    for (const p of provs) {
+      const pl = p.toLowerCase();
+      // match si la razon social contiene el proveedor o el proveedor la razon social
+      const tokProv = pl.split(/\s+/).filter(t => t.length >= 3);
+      if (tokProv.every(t => razon.includes(t))) { provMatch = p; break; }
+    }
+    if (provMatch) break;
+  }
+  const rubroMatch = provMatch ? PROV_TO_RUBRO.get(provMatch.toLowerCase()) : "";
+
+  const hdr = document.getElementById("ocReviewHdr");
+  hdr.innerHTML =
+    `<div><span class="lbl">Proveedor (PDF):</span><br>${esc(cab.razon_social_proveedor || "—")}</div>` +
+    `<div><span class="lbl">Match sistema:</span>
+       <select id="ocRevProv" style="font-size:16px;padding:4px 6px;width:100%">
+         ${["", ...(PROVEEDORES[rubroMatch] || Object.values(PROVEEDORES).flat())].map(p => `<option value="${esc(p)}" ${p===provMatch?"selected":""}>${p || "(elegir…)"}</option>`).join("")}
+       </select>
+    </div>` +
+    `<div><span class="lbl">Rubro:</span>
+       <select id="ocRevRubro" style="font-size:16px;padding:4px 6px;width:100%">
+         ${["", "Flejes","Cajas","Plasticos","Cartones","Remaches","Bombillas"].map(r => `<option value="${esc(r)}" ${r===rubroMatch?"selected":""}>${r || "(elegir…)"}</option>`).join("")}
+       </select>
+    </div>` +
+    `<div><span class="lbl">Fecha pedido:</span> <input id="ocRevFecha" type="date" value="${esc(cab.fecha_pedido || arDateISO())}" style="font-size:16px;padding:4px 6px"></div>` +
+    `<div><span class="lbl">Facturación:</span> ${esc(cab.facturacion || "—")}</div>` +
+    `<div><span class="lbl">Entrega en:</span> ${esc(cab.entrega_en || "—")}</div>`;
+
+  const tabla = document.getElementById("ocReviewTable");
+  tabla.innerHTML =
+    `<thead><tr>
+      <th style="width:80px">Cod ISIS</th>
+      <th>Descripción</th>
+      <th style="width:80px">LK</th>
+      <th style="width:80px">CH</th>
+      <th style="width:110px">Total</th>
+      <th style="width:100px">Fecha estim.</th>
+    </tr></thead><tbody>` +
+    lineas.map((l, i) => {
+      const lk = Number(l.pedido_uni_lk || 0);
+      const ch = Number(l.pedido_uni_ch || 0);
+      return `<tr>
+        <td><input data-l="${i}" data-f="codigo" value="${esc(l.cod_isis || "")}"></td>
+        <td><input data-l="${i}" data-f="descripcion" value="${esc(l.descripcion || "")}"></td>
+        <td><input data-l="${i}" data-f="pedido_uni_lk" inputmode="numeric" value="${lk}"></td>
+        <td><input data-l="${i}" data-f="pedido_uni_ch" inputmode="numeric" value="${ch}"></td>
+        <td class="tot-cell" data-i="${i}"><strong>${(lk+ch).toLocaleString("es-AR")}</strong></td>
+        <td><input data-l="${i}" data-f="fecha_pos_ent" type="date" value="${esc(l.fecha_pos_ent || "")}"></td>
+      </tr>`;
+    }).join("") +
+    `</tbody>`;
+
+  // Recalcular total al editar LK o CH
+  tabla.querySelectorAll('input[data-f="pedido_uni_lk"],input[data-f="pedido_uni_ch"]').forEach(el => {
+    el.addEventListener("input", (e) => {
+      const i = Number(e.target.dataset.l);
+      const lk = Number(tabla.querySelector(`input[data-l="${i}"][data-f="pedido_uni_lk"]`).value || 0);
+      const ch = Number(tabla.querySelector(`input[data-l="${i}"][data-f="pedido_uni_ch"]`).value || 0);
+      tabla.querySelector(`.tot-cell[data-i="${i}"] strong`).textContent = (lk+ch).toLocaleString("es-AR");
+    });
+  });
+
+  document.getElementById("ocReviewWarn").innerHTML = provMatch
+    ? ""
+    : `<div class="warn">⚠ No pudimos matchear la razón social. Elegí el proveedor a mano antes de confirmar.</div>`;
+  document.getElementById("ocReviewMsg").textContent = "";
+
+  ocReviewOverlay.classList.add("open");
+}
+
+document.getElementById("ocReviewClose").addEventListener("click", () => ocReviewOverlay.classList.remove("open"));
+document.getElementById("ocReviewCancel").addEventListener("click", () => ocReviewOverlay.classList.remove("open"));
+ocReviewOverlay.addEventListener("click", (e) => { if (e.target === ocReviewOverlay) ocReviewOverlay.classList.remove("open"); });
+
+document.getElementById("ocReviewConfirm").addEventListener("click", async () => {
+  const btn = document.getElementById("ocReviewConfirm");
+  const msg = document.getElementById("ocReviewMsg");
+  const proveedor = document.getElementById("ocRevProv").value.trim();
+  const rubro     = document.getElementById("ocRevRubro").value.trim();
+  const fecha     = document.getElementById("ocRevFecha").value.trim();
+  if (!proveedor || !rubro || !fecha) { msg.textContent = "Faltan proveedor, rubro o fecha."; msg.className = "status bad"; return; }
+
+  // Reconstruir lineas desde los inputs del modal
+  const tabla = document.getElementById("ocReviewTable");
+  const filas = [...tabla.querySelectorAll("tbody tr")].map((tr, i) => {
+    const g = (f) => tr.querySelector(`input[data-f="${f}"]`).value.trim();
+    const lk = Number(g("pedido_uni_lk")) || 0;
+    const ch = Number(g("pedido_uni_ch")) || 0;
+    const total = lk + ch;
+    return {
+      codigo: padCodigo(g("codigo")),
+      descripcion: g("descripcion"),
+      cantidad: total,
+      fecha_pos_ent: g("fecha_pos_ent") || null
+    };
+  }).filter(l => l.codigo && l.cantidad > 0);
+
+  if (!filas.length) { msg.textContent = "No hay lineas para importar."; msg.className = "status bad"; return; }
+
+  btn.disabled = true;
+  msg.textContent = "Buscando OCs previas...";
+  msg.className = "status";
+
+  try {
+    // Regla "ESTE PEDIDO ANULA CUALQUIER PEDIDO ANTERIOR": anula todas las OCs pendientes
+    // del mismo (proveedor, rubro).
+    const { data: previas } = await sb.from("Ordenes_Compra")
+      .select("id")
+      .eq("proveedor", proveedor)
+      .eq("rubro", rubro)
+      .eq("estado", OC_ESTADO_ACTIVO);
+    if (previas && previas.length) {
+      if (!confirm(`Se van a ANULAR ${previas.length} línea(s) de OCs anteriores de ${proveedor} (${rubro}) antes de importar la nueva.\n\n¿Continuar?`)) {
+        btn.disabled = false; msg.textContent = ""; return;
+      }
+      const ids = previas.map(p => p.id);
+      const { error: errUpd } = await sb.from("Ordenes_Compra").update({ estado: "anulada" }).in("id", ids);
+      if (errUpd) throw errUpd;
+    }
+
+    // Determinar unidad segun rubro/proveedor (mismo mapeo que en Recepcion)
+    const unidad = getUnidad(rubro, proveedor);
+    const registros = filas.map(l => ({
+      fecha: fecha,
+      rubro: rubro,
+      proveedor: proveedor,
+      codigo: l.codigo,
+      descripcion: l.descripcion || null,
+      cantidad: l.cantidad,
+      cantidad_recibida: 0,
+      unidad: unidad,
+      estado: OC_ESTADO_ACTIVO,
+      fecha_estimada_proveedor: l.fecha_pos_ent || null,
+      notas: "Importado desde PDF"
+    }));
+
+    msg.textContent = "Insertando " + registros.length + " lineas...";
+    const { data: ins, error: errIns } = await sb.from("Ordenes_Compra").insert(registros).select();
+    if (errIns) throw errIns;
+
+    ocReviewOverlay.classList.remove("open");
+    alert(`OC importada: ${ins.length} lineas de ${proveedor} (${rubro}).`);
+    await cargarOCsPendientesHome();
+  } catch (err) {
+    console.error(err);
+    msg.textContent = "Error: " + err.message;
+    msg.className = "status bad";
+    btn.disabled = false;
+  }
+});
+
+/* ---------- Init ---------- */
+cargarOCsPendientesHome();
+
 </script>
 </body>
 </html>
