@@ -317,6 +317,13 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- pdf.js para parser LOCAL de OCs (sin edge function ni IA). Mismo CDN que usa Facturas/index.html -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  // Worker de pdf.js (misma version)
+  if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+</script>
 <script>
 "use strict";
 
@@ -1062,7 +1069,11 @@ const ocPreview        = document.getElementById("ocPreview");
 const ocUploadAnalyze  = document.getElementById("ocUploadAnalyze");
 const ocUploadMsg      = document.getElementById("ocUploadMsg");
 
-const EDGE_LEER_OC = SUPABASE_URL + "/functions/v1/leer-oc";
+// NOTA: eliminada dependencia de edge function `leer-oc` (Anthropic Vision).
+// El parseo ahora es LOCAL con pdf.js — cero costo, cero API key, offline-friendly.
+// Ventaja: cero latencia y no falla si Anthropic esta caido. Desventaja: parser
+// hardcodeado a este layout de OC (proveedores Loekemeyer / Chef). Si mañana el
+// formato del PDF cambia, hay que re-tocar `parsearPDFLocalmente`.
 
 let ocFileBuf = null;   // { name, mime, dataUrl }
 let ocDraft   = null;   // JSON extraido: { cabecera, lineas }
@@ -1247,17 +1258,19 @@ ocFileInput.addEventListener("change", async () => {
 ocUploadAnalyze.addEventListener("click", async () => {
   if (!ocFileBuf) return;
   ocUploadAnalyze.disabled = true;
-  ocUploadMsg.textContent = "Analizando OC...";
+  ocUploadMsg.textContent = "Leyendo PDF...";
   ocUploadMsg.className = "status";
   try {
-    const resp = await fetch(EDGE_LEER_OC, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SUPABASE_KEY, "apikey": SUPABASE_KEY },
-      body: JSON.stringify({ archivo: ocFileBuf.dataUrl, mime: ocFileBuf.mime })
-    });
-    if (!resp.ok) { const t = await resp.text(); throw new Error("Edge function fallo ("+resp.status+"): "+t); }
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error);
+    if (!ocFileBuf.mime.includes("pdf")) {
+      throw new Error("El parser local solo acepta PDF (no imagen). Si necesitas subir foto, avisame para reactivar la edge function con IA.");
+    }
+    if (!window.pdfjsLib) throw new Error("pdf.js no cargo (verifica conexion a cdnjs).");
+
+    // 1) Parseo local del PDF: extrae cabecera + lineas crudas (cod_isis, lk, ch)
+    const parsed = await parsearPDFLocalmente(ocFileBuf.dataUrl);
+    // 2) Enriquecer con catalogo Supabase para traer codigo-tablet y descripcion
+    ocUploadMsg.textContent = "Buscando en catálogo...";
+    const data = await enriquecerConCatalogo(parsed);
     ocDraft = data;
     ocUploadOverlay.classList.remove("open");
     abrirRevisionOC(data);
@@ -1269,36 +1282,283 @@ ocUploadAnalyze.addEventListener("click", async () => {
   }
 });
 
+/* ---------- Parser PDF LOCAL (sin IA) ---------- */
+// Convierte un data URL de PDF en:
+//   { cabecera: { fecha_pedido YYYY-MM-DD, cod_prov, razon_social_raw },
+//     variante: 'flejes' | 'cajas' | 'cartones',
+//     lineas:   [{ cod_isis, lk, ch, cantidad }] }
+// Se apoya en pdf.js. Usa las posiciones (x, y) de cada text item para reconstruir
+// la tabla, agrupando por Y con tolerancia y ordenando por X dentro de cada fila.
+async function parsearPDFLocalmente(dataUrl) {
+  // dataUrl -> ArrayBuffer
+  const bin = atob(dataUrl.split(",")[1] || "");
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const items = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent();
+    // Los items traen transform=[a,b,c,d,e,f]; e=x, f=y (Y crece hacia arriba en PDF).
+    // Negamos Y para trabajar top-down.
+    const vh = page.view[3]; // altura del viewport para normalizar
+    tc.items.forEach(it => {
+      if (!it.str || !it.str.trim()) return;
+      const x = it.transform[4];
+      const y = vh - it.transform[5]; // top-down
+      items.push({ text: it.str.trim(), x, y, page: p });
+    });
+  }
+  // Agrupar por Y con tolerancia (mismo Y ≡ dif ≤ 3pt), respetando pagina
+  items.sort((a, b) => (a.page - b.page) || (a.y - b.y) || (a.x - b.x));
+  const rows = [];
+  let cur = [];
+  let lastY = null, lastPage = null;
+  for (const it of items) {
+    const newPage = it.page !== lastPage;
+    if (cur.length === 0 || (!newPage && Math.abs(it.y - lastY) <= 3)) {
+      cur.push(it);
+    } else {
+      rows.push(cur);
+      cur = [it];
+    }
+    lastY = it.y; lastPage = it.page;
+  }
+  if (cur.length) rows.push(cur);
+  const lines = rows.map(r => {
+    const sorted = r.slice().sort((a, b) => a.x - b.x);
+    return {
+      y: r[0].y,
+      page: r[0].page,
+      text: sorted.map(i => i.text).join(" "),
+      items: sorted,
+    };
+  });
+
+  const fullText = lines.map(l => l.text).join("\n");
+
+  // Cabecera. Fecha por regex normal.
+  const mFecha = fullText.match(/FECHA\s+PEDIDO:?\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+  const fecha_pedido = mFecha ? `${mFecha[3]}-${mFecha[2]}-${mFecha[1]}` : null;
+
+  // Cod prov por LOOKUP POSICIONAL: buscar el item "COD" y luego un numero 3-8
+  // digitos en la misma banda vertical (Y ± 30) y a la derecha (X > COD.x + 20).
+  // La regex fallaria porque entre "COD" y "PROV:" hay lineas de texto (razon social
+  // partida) y el numero suele estar arriba a la derecha del label.
+  let cod_prov = "";
+  const codItem = items.find(i => i.text === "COD" || i.text === "COD:");
+  if (codItem) {
+    const near = items.filter(it =>
+      it.page === codItem.page &&
+      Math.abs(it.y - codItem.y) < 30 &&
+      it.x > codItem.x + 20 && it.x < codItem.x + 130 &&
+      /^\d{3,8}$/.test(it.text)
+    );
+    if (near.length) cod_prov = near[0].text;
+  }
+
+  // Razon social: heuristica — palabras alfabeticas (no todo dígitos) que caigan en la banda
+  // vertical entre "ORDEN DE COMPRA" y "FACTURAR", excluyendo columna derecha (Chef/Cervantes/Villa/etc)
+  // y las etiquetas fijas.
+  const idxOrden    = lines.findIndex(l => /ORDEN\s+DE\s+COMPRA/i.test(l.text));
+  const idxFacturar = lines.findIndex(l => /FACTURAR/i.test(l.text));
+  const IGNORE = /^(RAZON|SOCIAL|COD|PROV|CUIT|DIRECCION|LOCALIDAD|ENTREGA|EN|ORDEN|DE|COMPRA|FECHA|PEDIDO|LOEKEMEYER|Hnos\.?|S\.R\.L|Chef|SRL|Cervantes|Villa|Devoto|Real|CABA|Virgilio|\d{4}|30-\d+-\d+|30-\d+)$/i;
+  let razonPieces = [];
+  if (idxOrden > -1 && idxFacturar > -1) {
+    for (let i = idxOrden; i < idxFacturar; i++) {
+      const line = lines[i];
+      for (const it of line.items) {
+        // La banda de razon social esta en x aprox 90-200 (columna izquierda),
+        // y estos textos son letras (no fechas ni CUIT ni 4 digitos).
+        if (it.x < 90 || it.x > 250) continue;
+        if (IGNORE.test(it.text)) continue;
+        if (/^\d+$/.test(it.text)) continue;
+        if (it.text.includes(":")) continue; // "SOCIAL:", "PROV:", "COD:", "EN:", etc
+        razonPieces.push(it.text);
+      }
+    }
+  }
+  const razon_social_raw = razonPieces.join(" ").replace(/\s+/g, " ").trim();
+
+  // Detectar variante mirando el header de la tabla (que ocupa 2-3 filas por
+  // envolver los nombres largos). "Medida" a veces cae 1-2 filas ARRIBA del "Cód ISIS"
+  // (caso Aperam/Brawin), por eso miramos [idxHeader-2, idxHeader+4].
+  const idxHeader = lines.findIndex(l => /C[oó]d\s*ISIS/i.test(l.text));
+  let variante = "cartones";
+  if (idxHeader > -1) {
+    const headerText = lines.slice(Math.max(0, idxHeader - 2), idxHeader + 4).map(l => l.text).join(" ");
+    if (/\bMedida\b/i.test(headerText))      variante = "flejes";
+    else if (/N°?\s*Caja/i.test(headerText)) variante = "cajas";
+    else                                      variante = "cartones";
+  }
+
+  // Parsear items: entre el header y el fin del PDF. Cada item se compone de varias
+  // filas cercanas — el "ancla" es la fila cuyo PRIMER token es un numero de 3-8
+  // digitos (el Cod ISIS). No fijamos X porque varia entre proveedores (Corrugadora
+  // Cod ISIS empieza en X~11, Aperam en X~77).
+  // OJO: LK y CH pueden aparecer en filas ADYACENTES al Cod ISIS — incluso en la
+  // fila DE ARRIBA (caso Aperam). Por eso buscamos con VENTANA CENTRADA en el ancla,
+  // limitada por los anclas vecinos para no cruzar items.
+  const bodyLines = idxHeader > -1 ? lines.slice(idxHeader + 1) : lines;
+  const anclas = [];
+  bodyLines.forEach((line, idx) => {
+    const first = line.items[0];
+    if (first && /^\d{3,8}$/.test(first.text)) {
+      // Ultimo numerico de la fila = Pedido total (fallback)
+      const nums = line.items.slice(1).map(i => i.text).filter(t => /^\d+$/.test(t)).map(Number);
+      anclas.push({ idx, cod_isis: first.text, pedido_raw: nums.length ? nums[nums.length - 1] : null });
+    }
+  });
+  const lineas = [];
+  for (let a = 0; a < anclas.length; a++) {
+    const anc = anclas[a];
+    const prevIdx = a > 0 ? anclas[a - 1].idx : -1;
+    const nextIdx = a + 1 < anclas.length ? anclas[a + 1].idx : bodyLines.length;
+    // Ventana bounded: ±3 filas del ancla, sin cruzar anclas vecinos.
+    const lo = Math.max(anc.idx - 3, prevIdx + 1);
+    const hi = Math.min(anc.idx + 3, nextIdx - 1);
+    const item = { cod_isis: anc.cod_isis, lk: 0, ch: 0, pedido_raw: anc.pedido_raw };
+    for (let j = lo; j <= hi; j++) {
+      // Solo tomar la fila si esta ESTRICTAMENTE mas cerca del ancla actual que
+      // del ancla anterior/posterior. Esto evita que la fila LK/CH del item vecino
+      // (que en el layout esta pegada al ancla actual) contamine mi item.
+      const dActual = Math.abs(j - anc.idx);
+      const dPrev   = prevIdx > -1                    ? Math.abs(j - prevIdx) : Infinity;
+      const dNext   = nextIdx < bodyLines.length      ? Math.abs(j - nextIdx) : Infinity;
+      if (dActual >= dPrev || dActual >= dNext) continue;
+      const t = bodyLines[j].text;
+      const mLK = t.match(/\bLK\b\s*(\d+)/);
+      const mCH = t.match(/\bCH\b\s*(\d+)/);
+      if (mLK) item.lk = Number(mLK[1]);
+      if (mCH) item.ch = Number(mCH[1]);
+    }
+    lineas.push(item);
+  }
+
+  // Cantidad final = LK + CH (o `pedido_raw` como fallback si LK/CH no aparecen)
+  lineas.forEach(l => { l.cantidad = (l.lk || 0) + (l.ch || 0) || (l.pedido_raw || 0); });
+
+  return {
+    cabecera: { fecha_pedido, cod_prov, razon_social_raw, entrega_en: "Cervantes 2868", facturacion: "Loekemeyer 85% Chef 15%" },
+    variante,
+    lineas: lineas.filter(l => l.cantidad > 0),
+  };
+}
+
+/* ---------- Enriquecer con catalogo Supabase ---------- */
+// Traduce `cod_isis` -> `codigo_tablet` + trae `descripcion` de la tabla del rubro
+// (Flejes / Cajas / Despiece x Articulo / Partes_Plasticas / etc.).
+// Devuelve el shape que espera el modal de revision: { cabecera, lineas: [{ cod_isis,
+// descripcion, pedido_uni_lk, pedido_uni_ch, fecha_pos_ent }] } + inyecta `codigo_tablet`
+// y `provFromCat` como best-effort.
+async function enriquecerConCatalogo(parsed) {
+  const { cabecera, variante, lineas } = parsed;
+  // Match proveedor por substring de razon social contra el listado hardcoded PROVEEDORES.
+  let proveedor = "";
+  const razonLC = (cabecera.razon_social_raw || "").toLowerCase();
+  outer: for (const [rubro, provs] of Object.entries(PROVEEDORES)) {
+    for (const p of provs) {
+      const toks = p.toLowerCase().split(/\s+/).filter(t => t.length >= 3);
+      if (toks.length && toks.every(t => razonLC.includes(t))) { proveedor = p; break outer; }
+    }
+  }
+
+  // Determinar rubro-tablet: preferir el que sale del proveedor matcheado; si no, deducir
+  // desde `variante`.
+  let rubro = proveedor ? PROV_TO_RUBRO.get(proveedor.toLowerCase()) : "";
+  if (!rubro) {
+    rubro = { flejes: "Flejes", cajas: "Cajas", cartones: "Cartones" }[variante] || "";
+  }
+
+  // Traer catalogo del rubro para mapear cod_isis -> codigo_tablet + descripcion.
+  // Los rubros que tienen columna Cod_ISIS: Flejes, Cajas (Cod_ISIS_LK / Cod_ISIS_CH),
+  // Plasticos (Cod_ISIS), Bombillas (Sector Bombilla?), Cartones (COD directo, no ISIS).
+  const cods = lineas.map(l => String(l.cod_isis));
+  let mapaCod = new Map();  // cod_isis (PDF) -> { codigo, descripcion }
+  if (rubro === "Flejes") {
+    const { data } = await sb.from("Flejes").select('"N Fleje","Cod_ISIS","Descripción","Medida mm"').in("Cod_ISIS", cods);
+    (data || []).forEach(r => mapaCod.set(String(r["Cod_ISIS"]), {
+      codigo: String(r["N Fleje"] || ""),
+      descripcion: String(r["Descripción"] || "") + (r["Medida mm"] ? " (" + r["Medida mm"] + ")" : ""),
+    }));
+  } else if (rubro === "Cajas") {
+    // Buscar en Cod_ISIS_LK o Cod_ISIS_CH
+    const { data } = await sb.from("Cajas").select('"N_Caja","Cod_ISIS_LK","Cod_ISIS_CH","Sector","Medidas"');
+    (data || []).forEach(r => {
+      const lk = String(r["Cod_ISIS_LK"] || "");
+      const ch = String(r["Cod_ISIS_CH"] || "");
+      const val = { codigo: String(r["N_Caja"] || ""), descripcion: [r["Sector"], r["Medidas"]].filter(Boolean).join(" · ") };
+      if (lk && cods.includes(lk)) mapaCod.set(lk, val);
+      if (ch && cods.includes(ch)) mapaCod.set(ch, val);
+    });
+  } else if (rubro === "Plasticos") {
+    const { data } = await sb.from("Partes_Plasticas").select('"Cod_ISIS","Descripcion","Proveedor"').in("Cod_ISIS", cods);
+    (data || []).forEach(r => mapaCod.set(String(r["Cod_ISIS"]), {
+      codigo: String(r["Cod_ISIS"] || ""),
+      descripcion: String(r["Descripcion"] || ""),
+    }));
+  } else if (rubro === "Cartones") {
+    // En Cartones el "Cod ISIS" del PDF ES el COD de Despiece x Articulo (padded a 3).
+    const cods_padded = cods.map(padCodigo);
+    const { data } = await sb.from("Despiece x Articulo").select('"COD","Descripcion de partes"').in("COD", cods_padded).eq("Rubro", "Cartones");
+    (data || []).forEach(r => {
+      // reverse: mapCod usa cod_isis original (no padded)
+      const orig = cods.find(c => padCodigo(c) === String(r["COD"]));
+      if (orig) mapaCod.set(orig, {
+        codigo: String(r["COD"] || ""),
+        descripcion: String(r["Descripcion de partes"] || ""),
+      });
+    });
+  } else if (rubro === "Remaches") {
+    // Buscar en Remaches SC y Remaches SP por Cod_ISIS (si tienen esa col; si no, no matchea)
+    const [{ data: sc }, { data: sp }] = await Promise.all([
+      sb.from("Remaches SC").select('"SC","Cod_ISIS","Descripción"').in("Cod_ISIS", cods),
+      sb.from("Remaches SP").select('"SP","Cod_ISIS","Descripción"').in("Cod_ISIS", cods),
+    ]);
+    (sc || []).forEach(r => mapaCod.set(String(r["Cod_ISIS"]), { codigo: String(r["SC"] || ""), descripcion: String(r["Descripción"] || "") }));
+    (sp || []).forEach(r => { if (!mapaCod.has(String(r["Cod_ISIS"]))) mapaCod.set(String(r["Cod_ISIS"]), { codigo: String(r["SP"] || ""), descripcion: String(r["Descripción"] || "") }); });
+  }
+
+  // Reconstruir lineas al shape que espera abrirRevisionOC
+  const lineasEnriquecidas = lineas.map(l => {
+    const m = mapaCod.get(String(l.cod_isis));
+    return {
+      cod_isis: l.cod_isis,
+      codigo_tablet: m ? m.codigo : "",  // vacio si no matcheo en el catalogo (el operario tendra que revisar)
+      descripcion: m ? m.descripcion : "",
+      pedido_uni_lk: l.lk || 0,
+      pedido_uni_ch: l.ch || 0,
+      cantidad: l.cantidad,
+      fecha_pos_ent: null,               // el parser local no extrae la fecha estimada por linea
+    };
+  });
+
+  return {
+    cabecera: {
+      ...cabecera,
+      razon_social_proveedor: cabecera.razon_social_raw,
+      proveedor_match: proveedor,
+      rubro_deducido: rubro,
+    },
+    variante,
+    lineas: lineasEnriquecidas,
+  };
+}
+
 /* ---------- Modal revision de OC extraida ---------- */
 
 function abrirRevisionOC(data) {
   const cab = data.cabecera || {};
   const lineas = Array.isArray(data.lineas) ? data.lineas : [];
-  // Fuzzy match: buscar el proveedor short-name (Grafica Pol) desde la razon social larga
-  // (TALLERES GRAFICOS POL) usando substring case-insensitive.
-  const razon = String(cab.razon_social_proveedor || "").toLowerCase();
-  let provMatch = "";
-  for (const [_, provs] of Object.entries({
-    Flejes: ["Basconia","Aperam","Hermac","Brawin","Altrak","Szapiro","EstaMetal","JL Metales","Alami"],
-    Cajas: ["Corrugadora"],
-    Plasticos: ["Pat Bet Plast","Rodar","Telleria","Maspoli","Pintos","Martin Faccolo","JL Matriceria","Capuchon Mariposa","Base Afila","M. Pelador","Terrero","Mangos Abrelata","Regatones","Bujes Abrelatas","Mango Ergon.","Mangos NM","Packaging y Serv","Sesega","Barbeja"],
-    Cartones: ["Grafica Pol"],
-    Remaches: ["Bella Vista","Dilmax","Electronica Mandelli","Imel"],
-    Bombillas: ["Por definir"]
-  })) {
-    for (const p of provs) {
-      const pl = p.toLowerCase();
-      // match si la razon social contiene el proveedor o el proveedor la razon social
-      const tokProv = pl.split(/\s+/).filter(t => t.length >= 3);
-      if (tokProv.every(t => razon.includes(t))) { provMatch = p; break; }
-    }
-    if (provMatch) break;
-  }
-  const rubroMatch = provMatch ? PROV_TO_RUBRO.get(provMatch.toLowerCase()) : "";
+  // El enriquecimiento ya matcheo proveedor y rubro. Si por alguna razon no matcheo,
+  // el operario elige a mano.
+  const provMatch  = cab.proveedor_match || "";
+  const rubroMatch = cab.rubro_deducido  || "";
 
   const hdr = document.getElementById("ocReviewHdr");
   hdr.innerHTML =
-    `<div><span class="lbl">Proveedor (PDF):</span><br>${esc(cab.razon_social_proveedor || "—")}</div>` +
+    `<div><span class="lbl">Proveedor (PDF):</span><br>${esc(cab.razon_social_proveedor || "—")}${cab.cod_prov ? " · COD " + esc(cab.cod_prov) : ""}</div>` +
     `<div><span class="lbl">Match sistema:</span>
        <select id="ocRevProv" style="font-size:16px;padding:4px 6px;width:100%">
          ${["", ...(PROVEEDORES[rubroMatch] || Object.values(PROVEEDORES).flat())].map(p => `<option value="${esc(p)}" ${p===provMatch?"selected":""}>${p || "(elegir…)"}</option>`).join("")}
@@ -1313,26 +1573,30 @@ function abrirRevisionOC(data) {
     `<div><span class="lbl">Facturación:</span> ${esc(cab.facturacion || "—")}</div>` +
     `<div><span class="lbl">Entrega en:</span> ${esc(cab.entrega_en || "—")}</div>`;
 
+  // Contar cuantas lineas no matchearon con el catalogo (codigo_tablet vacio).
+  const sinMatch = lineas.filter(l => !l.codigo_tablet).length;
+
   const tabla = document.getElementById("ocReviewTable");
   tabla.innerHTML =
     `<thead><tr>
       <th style="width:80px">Cod ISIS</th>
+      <th style="width:80px">Cód tablet</th>
       <th>Descripción</th>
       <th style="width:80px">LK</th>
       <th style="width:80px">CH</th>
       <th style="width:110px">Total</th>
-      <th style="width:100px">Fecha estim.</th>
     </tr></thead><tbody>` +
     lineas.map((l, i) => {
       const lk = Number(l.pedido_uni_lk || 0);
       const ch = Number(l.pedido_uni_ch || 0);
-      return `<tr>
-        <td><input data-l="${i}" data-f="codigo" value="${esc(l.cod_isis || "")}"></td>
+      const bad = !l.codigo_tablet;
+      return `<tr${bad ? ' style="background:#fff4e0"' : ''}>
+        <td><input data-l="${i}" data-f="cod_isis" value="${esc(l.cod_isis || "")}"${bad ? ' style="border-color:#b91c1c"' : ''}></td>
+        <td><input data-l="${i}" data-f="codigo_tablet" value="${esc(l.codigo_tablet || "")}"${bad ? ' style="border-color:#b91c1c;background:#ffe4e4"' : ''} placeholder="obligatorio"></td>
         <td><input data-l="${i}" data-f="descripcion" value="${esc(l.descripcion || "")}"></td>
         <td><input data-l="${i}" data-f="pedido_uni_lk" inputmode="numeric" value="${lk}"></td>
         <td><input data-l="${i}" data-f="pedido_uni_ch" inputmode="numeric" value="${ch}"></td>
         <td class="tot-cell" data-i="${i}"><strong>${(lk+ch).toLocaleString("es-AR")}</strong></td>
-        <td><input data-l="${i}" data-f="fecha_pos_ent" type="date" value="${esc(l.fecha_pos_ent || "")}"></td>
       </tr>`;
     }).join("") +
     `</tbody>`;
@@ -1347,9 +1611,12 @@ function abrirRevisionOC(data) {
     });
   });
 
-  document.getElementById("ocReviewWarn").innerHTML = provMatch
-    ? ""
-    : `<div class="warn">⚠ No pudimos matchear la razón social. Elegí el proveedor a mano antes de confirmar.</div>`;
+  const warns = [];
+  if (!provMatch) warns.push("No pudimos matchear la razón social. Elegí el proveedor a mano antes de confirmar.");
+  if (sinMatch)   warns.push(`${sinMatch} línea(s) no matchearon con el catálogo del rubro (celdas rojas). Escribí el "Cód tablet" a mano o corregí el Cod ISIS.`);
+  document.getElementById("ocReviewWarn").innerHTML = warns.length
+    ? warns.map(w => `<div class="warn">⚠ ${esc(w)}</div>`).join("")
+    : "";
   document.getElementById("ocReviewMsg").textContent = "";
 
   ocReviewOverlay.classList.add("open");
@@ -1367,7 +1634,10 @@ document.getElementById("ocReviewConfirm").addEventListener("click", async () =>
   const fecha     = document.getElementById("ocRevFecha").value.trim();
   if (!proveedor || !rubro || !fecha) { msg.textContent = "Faltan proveedor, rubro o fecha."; msg.className = "status bad"; return; }
 
-  // Reconstruir lineas desde los inputs del modal
+  // Reconstruir lineas desde los inputs del modal.
+  // `codigo_tablet` es lo que va a Ordenes_Compra.codigo (el N Fleje / N_Caja / COD que
+  // matchea con la botonera de recepcion). El cod_isis del PDF solo se guarda en notas
+  // por referencia.
   const tabla = document.getElementById("ocReviewTable");
   const filas = [...tabla.querySelectorAll("tbody tr")].map((tr, i) => {
     const g = (f) => tr.querySelector(`input[data-f="${f}"]`).value.trim();
@@ -1375,14 +1645,14 @@ document.getElementById("ocReviewConfirm").addEventListener("click", async () =>
     const ch = Number(g("pedido_uni_ch")) || 0;
     const total = lk + ch;
     return {
-      codigo: padCodigo(g("codigo")),
+      cod_isis: g("cod_isis"),
+      codigo_tablet: g("codigo_tablet"),
       descripcion: g("descripcion"),
       cantidad: total,
-      fecha_pos_ent: g("fecha_pos_ent") || null
     };
-  }).filter(l => l.codigo && l.cantidad > 0);
+  }).filter(l => l.codigo_tablet && l.cantidad > 0);
 
-  if (!filas.length) { msg.textContent = "No hay lineas para importar."; msg.className = "status bad"; return; }
+  if (!filas.length) { msg.textContent = "No hay lineas con Cód tablet completo y cantidad > 0."; msg.className = "status bad"; return; }
 
   btn.disabled = true;
   msg.textContent = "Buscando OCs previas...";
@@ -1411,14 +1681,14 @@ document.getElementById("ocReviewConfirm").addEventListener("click", async () =>
       fecha: fecha,
       rubro: rubro,
       proveedor: proveedor,
-      codigo: l.codigo,
+      codigo: l.codigo_tablet,
       descripcion: l.descripcion || null,
       cantidad: l.cantidad,
       cantidad_recibida: 0,
       unidad: unidad,
       estado: OC_ESTADO_ACTIVO,
-      fecha_estimada_proveedor: l.fecha_pos_ent || null,
-      notas: "Importado desde PDF"
+      fecha_estimada_proveedor: null,
+      notas: "Importado desde PDF · Cod ISIS: " + (l.cod_isis || "?")
     }));
 
     msg.textContent = "Insertando " + registros.length + " lineas...";
