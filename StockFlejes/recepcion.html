@@ -138,14 +138,16 @@
   #ocReviewModal table.rev-lines th{background:#eef4fb;font-weight:800;color:#0b3b73}
   #ocReviewModal table.rev-lines input{width:100%;border:1px solid #d0d7de;border-radius:4px;padding:4px;font-size:15px}
   #ocReviewModal .warn{background:#fff4e0;border:1px solid #f0b400;color:#8a5a00;padding:8px 10px;border-radius:6px;margin:8px 0;font-weight:700;font-size:15px}
-  #ocDetalleTable th,#ocDetalleTable td{border:1px solid #d0d7de;padding:6px 8px;text-align:left}
+  /* Detalle OC — mismo layout que el PDF de la OC: todo centrado, solo la descripcion a la izquierda. */
+  #ocDetalleTable th,#ocDetalleTable td{border:1px solid #d0d7de;padding:8px 8px;text-align:center;vertical-align:middle}
   #ocDetalleTable th{background:#eef4fb;font-weight:800;color:#0b3b73}
+  #ocDetalleTable td:nth-child(2){text-align:left}
   #ocDetalleTable tr.rec-parcial{background:#f3fbf6}
   #ocDetalleTable tr.rec-total{background:#eef4fb;color:#666}
-  #ocDetalleTable td.num{text-align:right;font-variant-numeric:tabular-nums}
+  #ocDetalleTable td.num{text-align:center;font-variant-numeric:tabular-nums}
   #ocDetalleHdr .lbl{font-weight:800;color:#333;margin-right:4px}
-  #ocDetalleTable tr.rec-sub td{background:#fbfdff;color:#0b5cad;font-size:13px;padding:3px 8px;border-top:none}
-  #ocDetalleTable tr.rec-sub td:first-child{padding-left:28px;font-style:italic;color:#666}
+  #ocDetalleTable tr.rec-sub td{background:#fbfdff;color:#0b5cad;font-size:13px;padding:3px 8px;border-top:none;text-align:center}
+  #ocDetalleTable tr.rec-sub td:first-child{padding-left:28px;font-style:italic;color:#666;text-align:left}
 </style>
 </head>
 <body>
