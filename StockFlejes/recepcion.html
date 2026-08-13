@@ -59,28 +59,27 @@
   .search-box input{width:100%;padding:10px;font-size:18px;border:2px solid #d0d7de;border-radius:6px}
   /* Buscador de medida (flejes): 2 secciones (Flejes + Varillas) en UNA linea real (nowrap) */
   #flejesSearch{display:none}
-  #flejesSearch .dual-search{display:flex;gap:10px;align-items:flex-start;flex-wrap:nowrap}
+  #flejesSearch .dual-search{display:flex;gap:14px;align-items:flex-start;flex-wrap:nowrap}
   #flejesSearch .dual-col{flex:1 1 0;min-width:0}
-  #flejesSearch .dual-title{font-weight:900;font-size:15px;color:#0b3b73;margin:0 0 4px;white-space:nowrap}
-  #flejesSearch .sec-search-row{gap:5px}
-  #flejesSearch .sec-search-row .fm{padding:6px 6px;font-size:15px;min-width:0}
-  #flejesSearch .sec-search-row .x-sep{font-size:16px}
-  #flejesSearch .sec-search-row .clear{padding:6px 8px;font-size:13px}
+  #flejesSearch .dual-title{font-weight:900;font-size:22px;color:#0b3b73;margin:0 0 8px;text-align:center;white-space:nowrap}
+  #flejesSearch .sec-search-row{gap:6px}
+  #flejesSearch .sec-search-row .fm{padding:8px 6px;font-size:17px;min-width:0}
+  #flejesSearch .sec-search-row .x-sep{font-size:18px}
 
-  .items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin:12px 0}
+  .items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:12px 0}
   .sec-title{font-size:19px;font-weight:900;color:#0b3b73;margin:14px 0 6px;padding:6px 10px;background:#eef4fb;border-left:4px solid #0b5cad;border-radius:4px}
   .sec-search-row{display:flex;align-items:center;gap:8px;margin:8px 0}
   .sec-search-row .fm{flex:1;min-width:0;padding:8px 12px;text-align:center;border:2px solid #d0d7de;border-radius:6px;font-size:18px;font-weight:800}
   .sec-search-row .fm.on{border-color:#0a7a2f;background:#f3fbf6}
   .sec-search-row .x-sep{font-size:20px;font-weight:900;color:#333}
   .sec-search-row .clear{background:#fff;border:2px solid #d0d7de;border-radius:6px;padding:8px 12px;font-weight:800;cursor:pointer;font-size:15px}
-  .item-btn{padding:12px;background:#fff;border:2px solid #d0d7de;border-radius:8px;cursor:pointer;text-align:center;font-weight:600;font-size:16px;transition:all .2s}
+  .item-btn{padding:14px 10px;background:#fff;border:2px solid #d0d7de;border-radius:8px;cursor:pointer;text-align:center;font-weight:600;font-size:18px;transition:all .2s}
   .item-btn:hover{border-color:#111;background:#f6f8fa}
   .item-btn.active{background:#111;color:#fff;border-color:#111}
-  .item-btn .code{display:block;font-size:18px;font-weight:800;color:#0066cc}
-  .item-btn .isis{display:block;font-size:14px;color:#666;margin-top:4px}
-  .item-btn .medida{display:block;font-size:16px;font-weight:800;color:#333;margin-top:2px}
-  .item-btn .sector{display:block;font-size:14px;color:#555;margin-top:3px;font-weight:700}
+  .item-btn .code{display:block;font-size:20px;font-weight:800;color:#0066cc}
+  .item-btn .isis{display:block;font-size:15px;color:#666;margin-top:4px}
+  .item-btn .medida{display:block;font-size:21px;font-weight:900;color:#111;margin-top:2px}
+  .item-btn .sector{display:block;font-size:17px;color:#333;margin-top:6px;font-weight:800}
 
   .input-kg-popup{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:200}
   .input-kg-popup.open{display:flex}
@@ -121,10 +120,10 @@
   .oc-item .oc-fecha{color:#555;font-size:17px}
   .oc-empty{padding:10px;color:#777;text-align:center;font-style:italic;font-size:17px}
   /* OC/Rec dentro de cada boton de articulo */
-  .item-btn .oc{display:block;margin-top:6px;font-size:15px;font-weight:800;color:#0b5cad;background:#eef4fb;padding:3px 6px;border-radius:4px}
-  .item-btn .rec{display:block;margin-top:3px;font-size:15px;font-weight:800;color:#0a7a2f;background:#f3fbf6;padding:3px 6px;border-radius:4px}
-  .item-btn .falta{display:block;margin-top:3px;font-size:14px;color:#b91c1c;font-weight:700}
-  .item-btn .sinoc{display:block;margin-top:6px;font-size:14px;color:#999;font-style:italic}
+  .item-btn .oc{display:block;margin-top:8px;font-size:17px;font-weight:900;color:#0b5cad;background:#eef4fb;padding:5px 8px;border-radius:5px}
+  .item-btn .rec{display:block;margin-top:4px;font-size:16px;font-weight:800;color:#0a7a2f;background:#f3fbf6;padding:4px 6px;border-radius:5px}
+  .item-btn .falta{display:block;margin-top:3px;font-size:15px;color:#b91c1c;font-weight:800}
+  .item-btn .sinoc{display:block;margin-top:8px;font-size:16px;color:#888;font-style:italic;font-weight:700}
   .item-btn.tiene-oc{border-color:#0b5cad;background:#fbfdff}
   /* Modal subir OC PDF */
   .oc-upload-zone{border:3px dashed #c8dcef;border-radius:10px;padding:30px;text-align:center;background:#fbfdff;margin-bottom:12px;cursor:pointer}
@@ -233,7 +232,6 @@
               <input class="fm" id="fl_a" type="text" inputmode="decimal" placeholder="a mm">
               <span class="x-sep">X</span>
               <input class="fm" id="fl_b" type="text" inputmode="decimal" placeholder="b mm">
-              <button class="clear" id="flClear" type="button">✕</button>
             </div>
           </div>
           <div class="dual-col">
@@ -242,7 +240,6 @@
               <input class="fm" id="va_a" type="text" inputmode="decimal" placeholder="a mm">
               <span class="x-sep">X</span>
               <input class="fm" id="va_b" type="text" inputmode="decimal" placeholder="b mm">
-              <button class="clear" id="vaClear" type="button">✕</button>
             </div>
           </div>
         </div>
@@ -754,14 +751,6 @@ function buildModal() {
   ["fl_a","fl_b","va_a","va_b"].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener("input", () => { sanit(el); filterItems(); });
-  });
-  document.getElementById("flClear").addEventListener("click", () => {
-    ["fl_a","fl_b"].forEach(id => { const el = document.getElementById(id); el.value = ""; el.classList.remove("on"); });
-    filterItems();
-  });
-  document.getElementById("vaClear").addEventListener("click", () => {
-    ["va_a","va_b"].forEach(id => { const el = document.getElementById(id); el.value = ""; el.classList.remove("on"); });
-    filterItems();
   });
 })();
 
