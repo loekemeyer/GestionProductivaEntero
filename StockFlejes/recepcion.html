@@ -170,17 +170,6 @@
         <button class="prov-btn" data-rubro="Bombillas">Bombillas</button>
       </div>
 
-      <!-- Seccion OC insumos: listado de OCs pendientes + boton para subir un PDF nuevo -->
-      <div class="oc-block" id="ocBlock">
-        <div class="oc-block-hdr">
-          <h3>OC insumos</h3>
-          <button class="btn-upload-oc" id="btnAbrirSubirOC" type="button">📄 Subir OC PDF</button>
-        </div>
-        <div class="oc-list" id="ocList">
-          <div class="oc-empty">Cargando OCs pendientes…</div>
-        </div>
-      </div>
-
       <!-- Paso 2: Proveedor -->
       <div id="provSection" class="hidden">
         <div class="row">
@@ -199,6 +188,17 @@
 
       <div class="row" id="btnContinuarRow" class="hidden" style="display:none">
         <button id="btnContinuar" class="btn btn-primary" disabled>Cargar artículos</button>
+      </div>
+
+      <!-- Seccion OC insumos: al final del flujo, no corta Rubro -> Proveedor -> Cargar. -->
+      <div class="oc-block" id="ocBlock" style="margin-top:24px">
+        <div class="oc-block-hdr">
+          <h3>OC insumos</h3>
+          <button class="btn-upload-oc" id="btnAbrirSubirOC" type="button">📄 Subir OC PDF</button>
+        </div>
+        <div class="oc-list" id="ocList">
+          <div class="oc-empty">Cargando OCs pendientes…</div>
+        </div>
       </div>
     </div>
 
