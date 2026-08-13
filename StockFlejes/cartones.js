@@ -39,13 +39,23 @@ function normalizeText(s) {
    Antes era CONTEO_STOCK hardcoded ~155 codes; ahora vive en BD. Fallback {} si la BD falla. */
 let CONTEO_STOCK = {};
 
+// Fecha del conteo por COD -> se usa para filtrar Recepcion_Insumos (solo cuentan las
+// posteriores al conteo, sino se doble contabiliza).
+let CONTEO_STOCK_FECHA = {};
+
 async function cargarConteoStock(){
   try {
-    const { data, error } = await sb.from("Stock_Inicial_Cartones").select("cod, stock_inicial");
+    const { data, error } = await sb.from("Stock_Inicial_Cartones").select("cod, stock_inicial, fecha_conteo");
     if (error) { console.warn("[Cartones] No se pudo cargar Stock_Inicial_Cartones:", error.message); return; }
     const m = {};
-    (data || []).forEach(r => { m[String(r.cod).trim()] = Number(r.stock_inicial) || 0; });
+    const mf = {};
+    (data || []).forEach(r => {
+      const k = String(r.cod).trim();
+      m[k] = Number(r.stock_inicial) || 0;
+      if (r.fecha_conteo) mf[k] = r.fecha_conteo;
+    });
     CONTEO_STOCK = m;
+    CONTEO_STOCK_FECHA = mf;
   } catch (e) { console.warn("[Cartones] cargarConteoStock fallo:", e); }
 }
 
@@ -213,7 +223,11 @@ async function cargarEnvios() {
 }
 
 /* ================= CARGAR ENTREGAS LOG/FABRICA ================= */
-// Compras reales: Recepcion_Insumos rubro=Cartones, key=COD
+// Compras reales: Recepcion_Insumos rubro=Cartones, key=COD.
+// FILTRO CLAVE: solo cuenta recepciones POSTERIORES al conteo del cod
+// (Stock_Inicial_Cartones.fecha_conteo). Sin este filtro, cualquier recepcion cargada
+// antes del conteo se contaba 2 veces (stock_inicial + sumada aca). Requiere que
+// cargarConteoStock() haya poblado CONTEO_STOCK_FECHA.
 async function cargarComprasCartones() {
   comprasCartonesMap.clear();
   comprasCartonesDetalleMap.clear();
@@ -222,6 +236,9 @@ async function cargarComprasCartones() {
   (data || []).forEach(r => {
     const cod = String(r.codigo || "").trim().toUpperCase();
     if (!cod) return;
+    // Filtrar por fecha del conteo. Comparo str YYYY-MM-DD (r.fecha ya es DATE).
+    const fConteo = CONTEO_STOCK_FECHA[cod] || CONTEO_STOCK_FECHA[cod.replace(/^0+/, "")] || null;
+    if (fConteo && String(r.fecha) < String(fConteo)) return;
     const cant = Number(r.cantidad) || 0;
     comprasCartonesMap.set(cod, (comprasCartonesMap.get(cod) || 0) + cant);
     if (!comprasCartonesDetalleMap.has(cod)) comprasCartonesDetalleMap.set(cod, []);
@@ -262,7 +279,10 @@ async function init() {
   statusEl.textContent = "Cargando cartones...";
 
   try {
-    // Cargar marcas, envíos, sectores y pliegos en paralelo
+    // Cargar marcas, envíos, sectores y pliegos en paralelo.
+    // OJO: cargarConteoStock DEBE terminar antes de cargarComprasCartones porque
+    // este ultimo filtra las recepciones por CONTEO_STOCK_FECHA[cod].
+    await cargarConteoStock();
     const resCartones = await Promise.all([
       cargarMarcas(),
       cargarEnvios(),
@@ -270,11 +290,10 @@ async function init() {
       cargarPliegos(),
       cargarSectorCarton(),
       cargarComprasCartones(),
-      cargarConteoStock(),
       sb.from("Despiece x Articulo").select("*").eq("Rubro", "Cartones")
     ]);
 
-    const res = resCartones[7];
+    const res = resCartones[6];
     if (res.error) throw res.error;
     cartonesData = res.data || [];
 

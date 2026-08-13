@@ -376,14 +376,26 @@ async function bloqueoMeOlvide() {
 }
 
 // Compras reales: lee Recepcion_Insumos rubro=Cajas, suma cantidad por codigo (N_Caja).
+// FILTRO CLAVE: solo cuenta recepciones POSTERIORES al ultimo relevamiento del N_Caja
+// (Cajas.stock_inicial_updated_at). Sin este filtro, cualquier recepcion cargada antes
+// del relevamiento se contaba 2 veces (Stock_Inicial + sumada aca).
 async function cargarCompras() {
   comprasCajasMap.clear();
   comprasDetalleMap.clear();
-  const { data, error } = await sb.from("Recepcion_Insumos").select("*").eq("rubro", "Cajas");
-  if (error) { console.error("Error compras Cajas:", error); return; }
-  (data || []).forEach(r => {
+  const [resCompras, resCajasTs] = await Promise.all([
+    sb.from("Recepcion_Insumos").select("*").eq("rubro", "Cajas"),
+    sb.from("Cajas").select('N_Caja, stock_inicial_updated_at'),
+  ]);
+  if (resCompras.error) { console.error("Error compras Cajas:", resCompras.error); return; }
+  const stockIniTsByCaja = new Map();
+  (resCajasTs.data || []).forEach(c => {
+    if (c.N_Caja != null && c.stock_inicial_updated_at) stockIniTsByCaja.set(Number(c.N_Caja), c.stock_inicial_updated_at);
+  });
+  (resCompras.data || []).forEach(r => {
     const nCaja = Number(String(r.codigo || "").trim());
     if (!nCaja) return;
+    const ts = stockIniTsByCaja.get(nCaja);
+    if (ts && String(r.fecha) < String(ts).slice(0,10)) return;
     const cant = Number(r.cantidad) || 0;
     comprasCajasMap.set(nCaja, (comprasCajasMap.get(nCaja) || 0) + cant);
     if (!comprasDetalleMap.has(nCaja)) comprasDetalleMap.set(nCaja, []);

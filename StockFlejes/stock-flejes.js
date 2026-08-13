@@ -67,12 +67,25 @@ async function init() {
       from += PAGE;
     }
 
-    // Procesar compras Flejes (rubro=Flejes, codigo=N Fleje)
+    // Procesar compras Flejes (rubro=Flejes, codigo=N Fleje).
+    // FILTRO CLAVE: solo se cuentan las recepciones POSTERIORES al ultimo relevamiento
+    // de ese N Fleje (Flejes.stock_inicial_updated_at). Sin este filtro, cualquier
+    // recepcion cargada antes del relevamiento se contaba 2 veces (una en Stock_Inicial,
+    // otra sumada aca).
+    const stockIniTsByFleje = new Map();
+    (resFlejes.data || []).forEach(f => {
+      const nfl = String(f["N Fleje"] ?? "").trim();
+      const ts = f.stock_inicial_updated_at;
+      if (nfl && ts) stockIniTsByFleje.set(nfl, ts);
+    });
     comprasFlejesMap.clear();
     comprasFlejesDetalleMap.clear();
     (resCompras.data || []).forEach(r => {
       const cod = String(r.codigo || "").trim();
       if (!cod) return;
+      const ts = stockIniTsByFleje.get(cod);
+      // r.fecha es DATE (YYYY-MM-DD); ts es timestamptz -> comparo por YYYY-MM-DD
+      if (ts && String(r.fecha) < String(ts).slice(0,10)) return;
       const cant = Number(r.cantidad) || 0;
       comprasFlejesMap.set(cod, (comprasFlejesMap.get(cod) || 0) + cant);
       if (!comprasFlejesDetalleMap.has(cod)) comprasFlejesDetalleMap.set(cod, []);
