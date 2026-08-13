@@ -1527,34 +1527,46 @@ async function parsearPDFLocalmente(dataUrl) {
     const nums = line.items.slice(1).map(i => i.text).filter(t => /^\d+$/.test(t)).map(Number);
     anclas.push({ idx, cod_isis: first.text, pedido_raw: nums.length ? nums[nums.length - 1] : null });
   });
-  const lineas = [];
-  for (let a = 0; a < anclas.length; a++) {
-    const anc = anclas[a];
-    const prevIdx = a > 0 ? anclas[a - 1].idx : -1;
-    const nextIdx = a + 1 < anclas.length ? anclas[a + 1].idx : bodyLines.length;
-    // Ventana bounded: ±5 filas del ancla (antes ±3, muy corto para items con
-    // descripcion larga tipo "Engranaje Chico Pizzero Pza Gde"), sin cruzar anclas
-    // vecinas.
-    const lo = Math.max(anc.idx - 5, prevIdx + 1);
-    const hi = Math.min(anc.idx + 5, nextIdx - 1);
-    const item = { cod_isis: anc.cod_isis, lk: 0, ch: 0, pedido_raw: anc.pedido_raw };
-    for (let j = lo; j <= hi; j++) {
-      // Ownership por proximidad de idx. Tie-break: EL ANCLA POSTERIOR gana los
-      // empates (los items suelen "empezar" en su ancla y extenderse abajo/arriba).
-      // Regla: skip si el ancla siguiente esta ≤ o el ancla anterior esta ESTRICTAMENTE
-      // mas cerca. Esto arregla el caso Basconia donde la fila LK/CH cae equidistante
-      // entre dos anclas y antes se perdia.
-      const dActual = Math.abs(j - anc.idx);
-      const dPrev   = prevIdx > -1                    ? Math.abs(j - prevIdx) : Infinity;
-      const dNext   = nextIdx < bodyLines.length      ? Math.abs(j - nextIdx) : Infinity;
-      if (dActual > dPrev || dActual >= dNext) continue;
-      const t = bodyLines[j].text;
-      const mLK = t.match(/\bLK\b\s*(\d+)/);
-      const mCH = t.match(/\bCH\b\s*(\d+)/);
-      if (mLK) item.lk = Number(mLK[1]);
-      if (mCH) item.ch = Number(mCH[1]);
+  // Cada ancla arranca vacia; asignamos LK/CH por TOKEN (no por fila entera).
+  const lineas = anclas.map(a => ({ cod_isis: a.cod_isis, lk: 0, ch: 0, pedido_raw: a.pedido_raw }));
+
+  // Y del ancla (Y del PRIMER item de la fila que la contiene). Y es coordenada real
+  // del PDF (top-down), mucho mas estable que el idx de fila.
+  const ancYs = anclas.map(a => ({
+    y: bodyLines[a.idx].y || bodyLines[a.idx].items[0].y,
+    page: bodyLines[a.idx].page || bodyLines[a.idx].items[0].page,
+  }));
+
+  // Recolectar TODOS los tokens LK/CH del cuerpo con su valor adyacente (el siguiente
+  // token numerico en la MISMA fila, ordenado por X asc). Guardamos (y, page) para
+  // luego asignar cada uno al ancla mas cercana por Y (dentro de la misma pagina).
+  //
+  // Esto es mas robusto que asignar por fila-idx porque:
+  // - Un item "denso" con descripcion multi-linea puede tener LK/CH exactamente entre
+  //   2 anclas por row-idx, y ambas anclas se lo peleaban -> se perdia.
+  // - La Y real refleja distancia visual: la CH del item N esta claramente mas cerca
+  //   del ancla N que del ancla N+1, aunque el idx sugiera empate.
+  const empEvents = [];
+  for (const line of bodyLines) {
+    for (let k = 0; k < line.items.length; k++) {
+      const it = line.items[k];
+      if (it.text !== "LK" && it.text !== "CH") continue;
+      // Buscar el siguiente token numerico en la misma fila (X asc).
+      const nxt = line.items.slice(k + 1).find(t => /^\d+$/.test(t.text));
+      if (nxt) empEvents.push({ label: it.text, value: Number(nxt.text), y: it.y, page: it.page });
     }
-    lineas.push(item);
+  }
+
+  for (const ev of empEvents) {
+    let bestA = -1, bestDy = Infinity;
+    for (let a = 0; a < ancYs.length; a++) {
+      if (ancYs[a].page !== ev.page) continue;
+      const dy = Math.abs(ancYs[a].y - ev.y);
+      if (dy < bestDy) { bestDy = dy; bestA = a; }
+    }
+    if (bestA < 0) continue;
+    if (ev.label === "LK") lineas[bestA].lk = ev.value;
+    else if (ev.label === "CH") lineas[bestA].ch = ev.value;
   }
 
   // Cantidad final = LK + CH (o `pedido_raw` como fallback si LK/CH no aparecen)
