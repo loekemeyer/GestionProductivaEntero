@@ -72,7 +72,8 @@ async function init() {
       kgxBolsa: n(r["Kg x Bolsa"]),
       maxCajBolsa: n(r["Max Caj/Bolsa"]),
       piezaMadre: r["Pieza Madre"] || "",
-      codVerif: String(r["cod_verificacion"] || "").trim()
+      codVerif: String(r["cod_verificacion"] || "").trim(),
+      stockIniTs: r["stock_inicial_updated_at"] || null,
     }));
     const spRows = (remSPRes.data || []).map(r => ({
       sector: String(r["SP"] || "").trim(),
@@ -83,7 +84,8 @@ async function init() {
       kgxBolsa: n(r["Kg x Bolsa"]),
       maxCajBolsa: n(r["Max Caj/Bolsa"]),
       piezaMadre: r["Pieza Madre"] || "",
-      codVerif: String(r["cod_verificacion"] || "").trim()
+      codVerif: String(r["cod_verificacion"] || "").trim(),
+      stockIniTs: r["stock_inicial_updated_at"] || null,
     }));
 
     const sectoresRem = new Set([...scRows.map(r => r.sector), ...spRows.map(r => r.sector)].filter(Boolean));
@@ -121,11 +123,25 @@ async function init() {
       m.detalle.push({ tall: e["Tallerista"], fecha: e["Dia-mes"], kg: n(e["KG"]), uni: n(e["Unidades"]) });
     }
 
+    // Mapa cod_verificacion -> fecha del ultimo relev. Priorizamos SC (crudo) porque
+    // las recepciones ingresan primero al SC. Si el mismo cod aparece en SP, usamos el
+    // mayor (mas restrictivo).
+    const stockIniTsByCod = new Map();
+    for (const row of [...scRows, ...spRows]) {
+      if (!row.codVerif || !row.stockIniTs) continue;
+      const prev = stockIniTsByCod.get(row.codVerif);
+      if (!prev || String(row.stockIniTs) > String(prev)) stockIniTsByCod.set(row.codVerif, row.stockIniTs);
+    }
     comprasPorCodVerif = new Map();
     for (const r of recepcionInsumos) {
       if (String(r.rubro || "").trim() !== "Remaches") continue;
       const cod = String(r.codigo || "").trim();
       if (!cod) continue;
+      const ts = stockIniTsByCod.get(cod);
+      // FILTRO: solo recepciones POSTERIORES al ultimo relev del cod. Sin esto el
+      // stock inicial (que en remaches se auto-sobreescribe con cada relevamiento
+      // via aplicar_stock_inicial_remache) y la recepcion se contaban 2 veces.
+      if (ts && String(r.fecha) < String(ts).slice(0,10)) continue;
       if (!comprasPorCodVerif.has(cod)) comprasPorCodVerif.set(cod, { cantidad: 0, detalle: [] });
       const m = comprasPorCodVerif.get(cod);
       m.cantidad += n(r.cantidad);

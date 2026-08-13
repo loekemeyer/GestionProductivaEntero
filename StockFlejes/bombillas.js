@@ -39,8 +39,9 @@ async function fetchAll(tabla) {
 async function init() {
   statusEl.textContent = "Cargando datos...";
   try {
+    // Tabla real es "Sector Bombilla" (no "Bombillas"). Antes daba error 404.
     const [bombRes, entregasVirg, enviosTall, recepcionInsumos] = await Promise.all([
-      sb.from("Bombillas").select("*").order("Sector", { ascending: true }),
+      sb.from("Sector Bombilla").select("*").order("Sector", { ascending: true }),
       fetchAll("Entregas_Tall_Todas"),
       fetchAll("Envios a Talleristas"),
       fetchAll("Recepcion_Insumos")
@@ -74,12 +75,22 @@ async function init() {
       m.detalle.push({ tall: e["Tallerista"], fecha: e["Dia-mes"], uni: n(e["Unidades"]), kg: n(e["KG"]) });
     }
 
-    // Compras Recepcion_Insumos rubro=Bombillas (cuando se cargue), key=Cod_ISIS
+    // Compras Recepcion_Insumos rubro=Bombillas (cuando se cargue), key=Cod_ISIS.
+    // FILTRO CLAVE: solo cuenta recepciones POSTERIORES al ultimo relev del Cod_ISIS
+    // (Sector Bombilla.stock_inicial_updated_at). Sino se doble contabiliza.
+    const stockIniTsByCod = new Map();
+    for (const b of bombillasData) {
+      const c = String(b["Cod_ISIS"] || "").trim();
+      const ts = b.stock_inicial_updated_at;
+      if (c && ts) stockIniTsByCod.set(c, ts);
+    }
     comprasPorCodISIS = new Map();
     for (const r of recepcionInsumos) {
       if (String(r.rubro || "").trim() !== "Bombillas") continue;
       const cod = String(r.codigo || "").trim();
       if (!cod) continue;
+      const ts = stockIniTsByCod.get(cod);
+      if (ts && String(r.fecha) < String(ts).slice(0,10)) continue;
       if (!comprasPorCodISIS.has(cod)) comprasPorCodISIS.set(cod, { cantidad: 0, detalle: [] });
       const m = comprasPorCodISIS.get(cod);
       m.cantidad += n(r.cantidad);

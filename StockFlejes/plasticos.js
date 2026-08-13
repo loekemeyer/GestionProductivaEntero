@@ -100,12 +100,22 @@ async function init() {
       m.detalle.push({ tall: e["Tallerista"], fecha: e["Dia-mes"], kg: n(e["KG"]), cajones: n(e["Cajones"]), uni: n(e["Unidades"]) });
     }
 
-    // Compras: Recepcion_Insumos rubro=Plasticos, key=Cod_ISIS, suma cantidad
+    // Compras: Recepcion_Insumos rubro=Plasticos, key=Cod_ISIS, suma cantidad.
+    // FILTRO CLAVE: solo cuenta recepciones POSTERIORES al ultimo relev del Cod_ISIS
+    // (Partes_Plasticas.stock_inicial_updated_at). Sino se doble contabiliza.
+    const stockIniTsByCod = new Map();
+    for (const p of plasticosData) {
+      const c = String(p["Cod_ISIS"] || "").trim();
+      const ts = p.stock_inicial_updated_at;
+      if (c && ts) stockIniTsByCod.set(c, ts);
+    }
     comprasPorCodISIS = new Map();
     for (const r of recepcionInsumos) {
       if (String(r.rubro || "").trim() !== "Plasticos") continue;
       const cod = String(r.codigo || "").trim();
       if (!cod) continue;
+      const ts = stockIniTsByCod.get(cod);
+      if (ts && String(r.fecha) < String(ts).slice(0,10)) continue;
       if (!comprasPorCodISIS.has(cod)) comprasPorCodISIS.set(cod, { cantidad: 0, detalle: [] });
       const m = comprasPorCodISIS.get(cod);
       m.cantidad += n(r.cantidad);
