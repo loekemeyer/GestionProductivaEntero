@@ -144,6 +144,8 @@
   #ocDetalleTable tr.rec-total{background:#eef4fb;color:#666}
   #ocDetalleTable td.num{text-align:right;font-variant-numeric:tabular-nums}
   #ocDetalleHdr .lbl{font-weight:800;color:#333;margin-right:4px}
+  #ocDetalleTable tr.rec-sub td{background:#fbfdff;color:#0b5cad;font-size:13px;padding:3px 8px;border-top:none}
+  #ocDetalleTable tr.rec-sub td:first-child{padding-left:28px;font-style:italic;color:#666}
 </style>
 </head>
 <body>
@@ -1328,7 +1330,8 @@ async function abrirDetalleOC(rubro, proveedor, fecha) {
   btnRec.dataset.proveedor = proveedor;
   ov.classList.add("open");
   try {
-    const { data, error } = await sb.from("Ordenes_Compra")
+    // 1) Lineas de la OC
+    const { data: ocData, error } = await sb.from("Ordenes_Compra")
       .select('id, codigo, descripcion, cantidad, cantidad_recibida, unidad')
       .eq("estado", OC_ESTADO_ACTIVO)
       .eq("proveedor", proveedor)
@@ -1336,27 +1339,63 @@ async function abrirDetalleOC(rubro, proveedor, fecha) {
       .eq("fecha", fecha)
       .order("codigo", { ascending: true });
     if (error) throw error;
-    const lineas = data || [];
+    const lineas = ocData || [];
     if (!lineas.length) {
       tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:14px">Sin lineas pendientes.</td></tr>';
       return;
     }
+
+    // 2) Recepciones aplicadas: match por (proveedor, rubro, codigo IN) con fecha de
+    //    recepcion >= fecha del pedido (para descartar recepciones anteriores no ligadas).
+    const codigos = [...new Set(lineas.map(l => l.codigo).filter(Boolean))];
+    let recByCod = new Map();
+    if (codigos.length) {
+      const { data: recData } = await sb.from("Recepcion_Insumos")
+        .select('fecha, codigo, cantidad, unidad, remito, rollos')
+        .eq("proveedor", proveedor)
+        .eq("rubro", rubro)
+        .in("codigo", codigos)
+        .gte("fecha", fecha)
+        .order("fecha", { ascending: true });
+      for (const r of (recData || [])) {
+        const k = String(r.codigo || "");
+        if (!recByCod.has(k)) recByCod.set(k, []);
+        recByCod.get(k).push(r);
+      }
+    }
+
     let sumCant = 0, sumRec = 0;
-    tbody.innerHTML = lineas.map(l => {
+    const rowsHtml = lineas.map(l => {
       const cant = Number(l.cantidad || 0);
       const rec  = Number(l.cantidad_recibida || 0);
       const pend = Math.max(0, cant - rec);
       sumCant += cant; sumRec += rec;
       const cls = rec >= cant && cant > 0 ? "rec-total" : (rec > 0 ? "rec-parcial" : "");
       const u = l.unidad ? " " + esc(l.unidad) : "";
+      const recs = recByCod.get(String(l.codigo || "")) || [];
+      // Sub-filas por cada recepcion aplicada
+      const subs = recs.map(r => {
+        const rq = Number(r.cantidad || 0);
+        const ru = r.unidad ? " " + esc(r.unidad) : "";
+        const remito = r.remito ? ` · Rem ${esc(r.remito)}` : "";
+        const rollos = r.rollos ? ` · ${r.rollos} rollo(s)` : "";
+        return `<tr class="rec-sub">
+          <td colspan="2">↳ ${esc(fmtFechaCorta(r.fecha))}${remito}${rollos}</td>
+          <td class="num"></td>
+          <td class="num">${rq.toLocaleString("es-AR")}${ru}</td>
+          <td class="num"></td>
+        </tr>`;
+      }).join("");
       return `<tr class="${cls}">
         <td><strong>${esc(l.codigo || "—")}</strong></td>
         <td>${esc(l.descripcion || "—")}</td>
         <td class="num">${cant.toLocaleString("es-AR")}${u}</td>
         <td class="num">${rec.toLocaleString("es-AR")}</td>
         <td class="num"><strong>${pend.toLocaleString("es-AR")}</strong></td>
-      </tr>`;
-    }).join("") +
+      </tr>${subs}`;
+    }).join("");
+
+    tbody.innerHTML = rowsHtml +
       `<tr style="font-weight:900;background:#f6f8fa">
         <td colspan="2" style="text-align:right">Total</td>
         <td class="num">${sumCant.toLocaleString("es-AR")}</td>
