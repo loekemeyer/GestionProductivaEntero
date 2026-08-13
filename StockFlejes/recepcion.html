@@ -1368,12 +1368,10 @@ async function abrirDetalleOC(rubro, proveedor, fecha) {
       }
     }
 
-    let sumCant = 0, sumRec = 0;
     const rowsHtml = lineas.map(l => {
       const cant = Number(l.cantidad || 0);
       const rec  = Number(l.cantidad_recibida || 0);
       const pend = Math.max(0, cant - rec);
-      sumCant += cant; sumRec += rec;
       const cls = rec >= cant && cant > 0 ? "rec-total" : (rec > 0 ? "rec-parcial" : "");
       const u = l.unidad ? " " + esc(l.unidad) : "";
       const recs = recByCod.get(String(l.codigo || "")) || [];
@@ -1409,14 +1407,7 @@ async function abrirDetalleOC(rubro, proveedor, fecha) {
       </tr>${subs}`;
     }).join("");
 
-    tbody.innerHTML = rowsHtml +
-      `<tr style="font-weight:900;background:#f6f8fa">
-        <td colspan="2" style="text-align:right">Total</td>
-        <td class="num">${sumCant.toLocaleString("es-AR")}</td>
-        <td class="num">${sumRec.toLocaleString("es-AR")}</td>
-        <td class="num">${Math.max(0, sumCant - sumRec).toLocaleString("es-AR")}</td>
-        <td colspan="2"></td>
-      </tr>`;
+    tbody.innerHTML = rowsHtml;
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="7" style="color:#b91c1c;padding:14px">Error: ${esc(err.message)}</td></tr>`;
   }
