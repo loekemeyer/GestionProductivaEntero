@@ -602,9 +602,16 @@ function sortItemsByOC(arr) {
     .map(x => x.it);
 }
 
-// Regla Fleje vs Varilla: Medida mm contiene "x" -> Fleje (planchuela); si no -> Varilla
-// (formatos Ø, mm., N°, redondos).
-function esFleje(item) { return /x/i.test(String(item.medida || "")); }
+// Regla Fleje vs Varilla:
+// - Si la medida trae Ø / ⌀ / "diam" -> es una VARILLA (redondo) aunque tenga "x"
+//   (formato tipico "Ø2 x 600" = varilla de 2mm diametro por 600mm largo).
+// - Si no tiene diametro y tiene "x" -> Fleje (planchuela, formato "77 x 1,25").
+// - En cualquier otro caso (mm sueltos, N°, etc) -> Varilla.
+function esFleje(item) {
+  const m = String(item.medida || "");
+  if (/Ø|⌀|\bdiam\b/i.test(m)) return false;
+  return /x/i.test(m);
+}
 
 // Arma un boton para un item. Formato nuevo:
 //   [Medida arriba, grande y en negrita]
