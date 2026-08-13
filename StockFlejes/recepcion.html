@@ -662,6 +662,11 @@ function renderItems() {
   if (rubroSel === "Flejes") {
     const flActivo = !!(document.getElementById("fl_a").value.trim() || document.getElementById("fl_b").value.trim());
     const vaActivo = !!(document.getElementById("va_a").value.trim() || document.getElementById("va_b").value.trim());
+    // Nada de botones hasta que se busque en algun input. Evita la avalancha inicial.
+    if (!flActivo && !vaActivo) {
+      linesWrap.innerHTML = '<div style="text-align:center;color:#888;padding:20px;font-style:italic;font-size:17px">Escribí una medida arriba para ver los items.</div>';
+      return;
+    }
     const soloUno  = flActivo !== vaActivo; // exactamente uno activo
     const mostrarFlejes   = !soloUno || flActivo;
     const mostrarVarillas = !soloUno || vaActivo;
@@ -747,9 +752,28 @@ function buildModal() {
   });
   filteredItems = [...items];
 
+  // Ocultar el buscador de la seccion (Flejes o Varillas) que este vacia para este proveedor.
+  if (esFlejes) {
+    const hayFl = items.some(esFleje);
+    const hayVa = items.some(it => !esFleje(it));
+    const cols = document.querySelectorAll("#flejesSearch .dual-col");
+    if (cols[0]) cols[0].style.display = hayFl ? "" : "none";
+    if (cols[1]) cols[1].style.display = hayVa ? "" : "none";
+  }
+
   searchInput.addEventListener("input", filterItems);
   renderItems();
-  setTimeout(() => (esFlejes ? document.getElementById("fl_a") : searchInput).focus(), 100);
+  setTimeout(() => {
+    if (esFlejes) {
+      // Focus al buscador de la seccion que tenga items (si solo hay una)
+      const fl = document.getElementById("fl_a");
+      const va = document.getElementById("va_a");
+      const hayFl = items.some(esFleje);
+      (hayFl ? fl : va).focus();
+    } else {
+      searchInput.focus();
+    }
+  }, 100);
 }
 
 // Listeners del buscador Flejes (2 secciones × 2 inputs) — registrados 1 sola vez.
