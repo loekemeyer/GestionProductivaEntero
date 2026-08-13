@@ -4,7 +4,7 @@
 [WAIT QUEUE]
 (vacío)
 
-[HISTORIAL]
+2026-08-13 - StockFlejes/recepcion.html: openEstipPopup — la cantidad OC ahora se muestra ARRIBA como info (dentro de estipItemInfo, con "OC: X unidad · Recibido Y · Pendiente Z" en azul) en vez de prellenar el input. El input queda vacio (o con lo estipulado previo) para que el operario tipee lo que dice el remito y compare visualmente contra la OC. loekemeyer (claude-remote).
 2026-08-13 - StockFlejes/recepcion.html: openEstipPopup ahora PRELLENA el input "KG estipulados (segun remito)" con la cantidad pendiente de la OC del item (cantidad - cantidad_recibida, via getOCForItem). Solo si el item no tiene ya un _estipulado guardado (para no pisar lo que el operario tipeó y volvió atrás). Ademas focus + select() para que se pueda tipear encima sin borrar. loekemeyer (claude-remote).
 2026-08-13 - StockFlejes/recepcion.html: .item-btn .sector 22px -> 37px. loekemeyer (claude-remote).
 2026-08-13 - StockFlejes/recepcion.html: contenido de los botones al maximo — .medida 21->28 (nowrap para no cortar en 2 lineas), .sector 17->22 (con letter-spacing .5), .oc 17->22 (padding 5/8 -> 8/6), .rec 16->20, .sinoc 16->20, .code 20->24, .isis 15->16. Padding del boton 14/10 -> 16/6 (mas espacio vertical, menos horizontal para dar aire al texto). Grid columnas min 160 -> 190 gap 10 -> 12. Titulos Flejes/Varillas de 22px a 30px (bold 900, centrado). Overflow hidden en item-btn. loekemeyer (claude-remote).

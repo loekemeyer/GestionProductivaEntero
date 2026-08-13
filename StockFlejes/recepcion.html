@@ -860,28 +860,25 @@ function onItemClick(item) {
 
 function openEstipPopup(item) {
   selectedItem = item;
+  // Info del item + linea "OC: xxx" (cantidad + pendiente) si hay una OC vigente.
+  const oc = getOCForItem(item);
+  let ocLine = "";
+  if (oc) {
+    const cant = Number(oc.cantidad || 0);
+    const rec  = Number(oc.cantidad_recibida || 0);
+    const pend = Math.max(0, cant - rec);
+    const unidad = getUnidad(rubroSel, provSel);
+    ocLine = `<br><span style="color:#0b5cad;font-weight:800">OC: ${cant.toLocaleString("es-AR")} ${esc(unidad)}` +
+             (rec > 0 ? ` · Recibido ${rec.toLocaleString("es-AR")} · <b>Pendiente ${pend.toLocaleString("es-AR")}</b>` : "") +
+             `</span>`;
+  }
   document.getElementById("estipItemInfo").innerHTML =
     `<strong>${esc(item.codigo)}</strong> - ${esc(item.descripcion)}` +
-    (item.medida ? `<br>Medida: <strong>${esc(item.medida)}</strong>` : "");
-  // Prellenar con lo pendiente de la OC (cantidad - recibida) si existe una OC pendiente
-  // para este item. El usuario lo puede editar antes de continuar.
-  let defVal = item._estipulado || "";
-  if (!defVal) {
-    const oc = getOCForItem(item);
-    if (oc) {
-      const cant = Number(oc.cantidad || 0);
-      const rec  = Number(oc.cantidad_recibida || 0);
-      const pend = Math.max(0, cant - rec);
-      if (pend > 0) defVal = String(pend);
-    }
-  }
-  document.getElementById("inputEstip").value = defVal;
+    (item.medida ? `<br>Medida: <strong>${esc(item.medida)}</strong>` : "") +
+    ocLine;
+  document.getElementById("inputEstip").value = item._estipulado || "";
   document.getElementById("estipPopup").classList.add("open");
-  setTimeout(() => {
-    const el = document.getElementById("inputEstip");
-    el.focus();
-    el.select();
-  }, 100);
+  setTimeout(() => document.getElementById("inputEstip").focus(), 100);
 }
 
 function closeEstipPopup() {
