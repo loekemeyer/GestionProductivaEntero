@@ -343,11 +343,13 @@
     <div style="overflow-x:auto">
       <table class="rev-lines" id="ocDetalleTable" style="width:100%;border-collapse:collapse;font-size:15px">
         <thead><tr>
-          <th style="width:100px">Código</th>
+          <th style="width:90px">Código</th>
           <th>Descripción</th>
-          <th style="width:90px">Cant OC</th>
-          <th style="width:90px">Recibido</th>
-          <th style="width:90px">Pendiente</th>
+          <th style="width:80px">Cant OC</th>
+          <th style="width:80px">Recibido</th>
+          <th style="width:80px">Pendiente</th>
+          <th style="width:100px">Fecha orig.</th>
+          <th style="width:100px">Próx. estim.</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -1325,14 +1327,14 @@ async function abrirDetalleOC(rubro, proveedor, fecha) {
   const btnRec  = document.getElementById("ocDetalleRecep");
   title.textContent = `OC · ${proveedor} · ${rubro}`;
   hdr.innerHTML = `<span class="lbl">Proveedor:</span>${esc(proveedor)} &nbsp; <span class="lbl">Rubro:</span>${esc(rubro)} &nbsp; <span class="lbl">Fecha pedido:</span>${esc(fmtFechaCorta(fecha))}`;
-  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:14px">Cargando…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:14px">Cargando…</td></tr>';
   btnRec.dataset.rubro = rubro;
   btnRec.dataset.proveedor = proveedor;
   ov.classList.add("open");
   try {
-    // 1) Lineas de la OC
+    // 1) Lineas de la OC (incluye fecha estimada original y ultima)
     const { data: ocData, error } = await sb.from("Ordenes_Compra")
-      .select('id, codigo, descripcion, cantidad, cantidad_recibida, unidad')
+      .select('id, codigo, descripcion, cantidad, cantidad_recibida, unidad, fecha_estimada_original, fecha_estimada_proveedor')
       .eq("estado", OC_ESTADO_ACTIVO)
       .eq("proveedor", proveedor)
       .eq("rubro", rubro)
@@ -1341,7 +1343,7 @@ async function abrirDetalleOC(rubro, proveedor, fecha) {
     if (error) throw error;
     const lineas = ocData || [];
     if (!lineas.length) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:14px">Sin lineas pendientes.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:14px">Sin lineas pendientes.</td></tr>';
       return;
     }
 
@@ -1384,14 +1386,24 @@ async function abrirDetalleOC(rubro, proveedor, fecha) {
           <td class="num"></td>
           <td class="num">${rq.toLocaleString("es-AR")}${ru}</td>
           <td class="num"></td>
+          <td colspan="2"></td>
         </tr>`;
       }).join("");
+      // Fechas: original (nunca se toca) + proxima estimada (se pisa con cada nueva promesa).
+      // Si son iguales, mostramos solo una; si difieren, la proxima se pinta en naranja.
+      const fOri = l.fecha_estimada_original ? fmtFechaCorta(l.fecha_estimada_original) : "—";
+      const fProx = l.fecha_estimada_proveedor ? fmtFechaCorta(l.fecha_estimada_proveedor) : "—";
+      const proxHtml = (l.fecha_estimada_proveedor && l.fecha_estimada_original && l.fecha_estimada_proveedor !== l.fecha_estimada_original)
+        ? `<span style="color:#c9640a;font-weight:800">${esc(fProx)}</span>`
+        : esc(fProx);
       return `<tr class="${cls}">
         <td><strong>${esc(l.codigo || "—")}</strong></td>
         <td>${esc(l.descripcion || "—")}</td>
         <td class="num">${cant.toLocaleString("es-AR")}${u}</td>
         <td class="num">${rec.toLocaleString("es-AR")}</td>
         <td class="num"><strong>${pend.toLocaleString("es-AR")}</strong></td>
+        <td>${esc(fOri)}</td>
+        <td>${proxHtml}</td>
       </tr>${subs}`;
     }).join("");
 
@@ -1401,9 +1413,10 @@ async function abrirDetalleOC(rubro, proveedor, fecha) {
         <td class="num">${sumCant.toLocaleString("es-AR")}</td>
         <td class="num">${sumRec.toLocaleString("es-AR")}</td>
         <td class="num">${Math.max(0, sumCant - sumRec).toLocaleString("es-AR")}</td>
+        <td colspan="2"></td>
       </tr>`;
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" style="color:#b91c1c;padding:14px">Error: ${esc(err.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="color:#b91c1c;padding:14px">Error: ${esc(err.message)}</td></tr>`;
   }
 }
 
@@ -1468,6 +1481,9 @@ function getOCForItem(item) {
 //   - Si supera cantidad, marca estado='cerrada' + fecha_entrega_real=hoy.
 async function actualizarOCsRecibido(toSend) {
   const hoy = arDateISO();
+  // Acumulador de items con recepcion parcial > 15% pendiente — al final aviso al
+  // operario todos juntos y le ofrezco cargar la nueva fecha estimada por item.
+  const pendientesGrandes = [];
   for (const it of toSend) {
     const oc = getOCForItem(it);
     if (!oc) continue;
@@ -1483,9 +1499,41 @@ async function actualizarOCsRecibido(toSend) {
     try {
       await sb.from("Ordenes_Compra").update(patch).eq("id", oc.id);
     } catch (e) { console.error("update OC id="+oc.id, e); }
+    // Regla: si sigue pendiente > 15% del total, pedirle al operario nueva fecha.
+    if (cant > 0 && recTotal < cant) {
+      const pend = cant - recTotal;
+      if (pend / cant > 0.15) {
+        pendientesGrandes.push({ oc_id: oc.id, codigo: oc.codigo, cant, recTotal, pend });
+      }
+    }
   }
-  // Refresca la lista de la home para reflejar los cambios (aunque hoy no se vea la home).
+  // Refresca la lista de la home antes de mostrar el aviso (por si el usuario cierra).
   await cargarOCsPendientesHome();
+
+  // Aviso post-recepcion. No bloqueante — es un "recordatorio" para pedirle al prov
+  // una nueva fecha de entrega y cargarla en la OC.
+  if (pendientesGrandes.length) {
+    const lista = pendientesGrandes.map(p =>
+      `• ${p.codigo}: falta ${p.pend.toLocaleString("es-AR")} de ${p.cant.toLocaleString("es-AR")} (>15%)`
+    ).join("\n");
+    // 1) Aviso simple
+    const querePreguntar = confirm(
+      "Estas OCs quedaron con más del 15% pendiente:\n\n" + lista +
+      "\n\nPedile al proveedor una NUEVA fecha estimada de entrega.\n\n¿Querés cargar las nuevas fechas ahora?"
+    );
+    if (querePreguntar) {
+      // Prompt por item (opcional dejar vacio para saltar)
+      for (const p of pendientesGrandes) {
+        const nueva = prompt(`Nueva fecha estimada para ${p.codigo} (YYYY-MM-DD, vacío = omitir):`, "");
+        if (nueva && /^\d{4}-\d{2}-\d{2}$/.test(nueva.trim())) {
+          try {
+            await sb.from("Ordenes_Compra").update({ fecha_estimada_proveedor: nueva.trim() }).eq("id", p.oc_id);
+          } catch (e) { console.error("update fecha_estimada oc="+p.oc_id, e); }
+        }
+      }
+      await cargarOCsPendientesHome();
+    }
+  }
 }
 
 /* ---------- Subir OC PDF -> edge function leer-oc -> modal revision ---------- */
@@ -1927,6 +1975,7 @@ function abrirRevisionOC(data) {
        </select>
     </div>` +
     `<div><span class="lbl">Fecha pedido:</span> <input id="ocRevFecha" type="date" value="${esc(cab.fecha_pedido || arDateISO())}" style="font-size:16px;padding:4px 6px"></div>` +
+    `<div><span class="lbl">Fecha estimada de entrega:</span> <input id="ocRevFechaEst" type="date" style="font-size:16px;padding:4px 6px"> <small style="color:#888">(la que dio el prov)</small></div>` +
     `<div><span class="lbl">Facturación:</span> ${esc(cab.facturacion || "—")}</div>` +
     `<div><span class="lbl">Entrega en:</span> ${esc(cab.entrega_en || "—")}</div>`;
 
@@ -2001,6 +2050,7 @@ document.getElementById("ocReviewConfirm").addEventListener("click", async () =>
   const proveedor = document.getElementById("ocRevProv").value.trim();
   const rubro     = document.getElementById("ocRevRubro").value.trim();
   const fecha     = document.getElementById("ocRevFecha").value.trim();
+  const fechaEst  = document.getElementById("ocRevFechaEst").value.trim() || null;
   if (!proveedor || !rubro || !fecha) { msg.textContent = "Faltan proveedor, rubro o fecha."; msg.className = "status bad"; return; }
 
   // Reconstruir lineas desde los inputs del modal.
@@ -2056,7 +2106,11 @@ document.getElementById("ocReviewConfirm").addEventListener("click", async () =>
       cantidad_recibida: 0,
       unidad: unidad,
       estado: OC_ESTADO_ACTIVO,
-      fecha_estimada_proveedor: null,
+      // Fecha "posible de entrega" original (la que dio el proveedor). Se preserva
+      // en fecha_estimada_original y ademas se refleja en fecha_estimada_proveedor
+      // como valor inicial (esta se pisa cuando hay una nueva promesa).
+      fecha_estimada_proveedor: fechaEst,
+      fecha_estimada_original: fechaEst,
       notas: "Importado desde PDF · Cod ISIS: " + (l.cod_isis || "?")
     }));
 
