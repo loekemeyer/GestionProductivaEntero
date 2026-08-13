@@ -57,11 +57,15 @@
 
   .search-box{margin:12px 0;padding:12px;background:#f6f8fa;border-radius:8px}
   .search-box input{width:100%;padding:10px;font-size:18px;border:2px solid #d0d7de;border-radius:6px}
-  /* Buscador de medida (flejes): 2 secciones (Flejes + Varillas) en UNA linea */
+  /* Buscador de medida (flejes): 2 secciones (Flejes + Varillas) en UNA linea real (nowrap) */
   #flejesSearch{display:none}
-  #flejesSearch .dual-search{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
-  #flejesSearch .dual-col{flex:1 1 320px;min-width:280px}
-  #flejesSearch .dual-title{font-weight:900;font-size:17px;color:#0b3b73;margin:0 0 4px}
+  #flejesSearch .dual-search{display:flex;gap:10px;align-items:flex-start;flex-wrap:nowrap}
+  #flejesSearch .dual-col{flex:1 1 0;min-width:0}
+  #flejesSearch .dual-title{font-weight:900;font-size:15px;color:#0b3b73;margin:0 0 4px;white-space:nowrap}
+  #flejesSearch .sec-search-row{gap:5px}
+  #flejesSearch .sec-search-row .fm{padding:6px 6px;font-size:15px;min-width:0}
+  #flejesSearch .sec-search-row .x-sep{font-size:16px}
+  #flejesSearch .sec-search-row .clear{padding:6px 8px;font-size:13px}
 
   .items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin:12px 0}
   .sec-title{font-size:19px;font-weight:900;color:#0b3b73;margin:14px 0 6px;padding:6px 10px;background:#eef4fb;border-left:4px solid #0b5cad;border-radius:4px}
