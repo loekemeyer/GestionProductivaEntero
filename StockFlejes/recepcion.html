@@ -57,8 +57,11 @@
 
   .search-box{margin:12px 0;padding:12px;background:#f6f8fa;border-radius:8px}
   .search-box input{width:100%;padding:10px;font-size:18px;border:2px solid #d0d7de;border-radius:6px}
-  /* Buscador de medida (flejes): 2 secciones (Flejes + Varillas), cada una a X b */
+  /* Buscador de medida (flejes): 2 secciones (Flejes + Varillas) en UNA linea */
   #flejesSearch{display:none}
+  #flejesSearch .dual-search{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+  #flejesSearch .dual-col{flex:1 1 320px;min-width:280px}
+  #flejesSearch .dual-title{font-weight:900;font-size:17px;color:#0b3b73;margin:0 0 4px}
 
   .items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin:12px 0}
   .sec-title{font-size:19px;font-weight:900;color:#0b3b73;margin:14px 0 6px;padding:6px 10px;background:#eef4fb;border-left:4px solid #0b5cad;border-radius:4px}
@@ -216,21 +219,28 @@
 
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="Buscar por código, medida o ISIS..." />
-      <!-- Buscador Flejes: 2 secciones (Flejes + Varillas), cada una con 2 inputs de medida (a X b) -->
+      <!-- Buscador Flejes: 2 secciones (Flejes + Varillas) en UNA sola linea.
+           Al escribir en uno, la otra seccion se oculta (solo se muestran los items del que se busca). -->
       <div id="flejesSearch" style="display:none">
-        <div style="font-weight:900;font-size:17px;color:#0b3b73;margin:6px 0 2px">Flejes (planchuelas)</div>
-        <div class="sec-search-row">
-          <input class="fm" id="fl_a" type="text" inputmode="decimal" placeholder="a mm">
-          <span class="x-sep">X</span>
-          <input class="fm" id="fl_b" type="text" inputmode="decimal" placeholder="b mm">
-          <button class="clear" id="flClear" type="button">✕</button>
-        </div>
-        <div style="font-weight:900;font-size:17px;color:#0b3b73;margin:10px 0 2px">Varillas / Redondos</div>
-        <div class="sec-search-row">
-          <input class="fm" id="va_a" type="text" inputmode="decimal" placeholder="a mm">
-          <span class="x-sep">X</span>
-          <input class="fm" id="va_b" type="text" inputmode="decimal" placeholder="b mm">
-          <button class="clear" id="vaClear" type="button">✕</button>
+        <div class="dual-search">
+          <div class="dual-col">
+            <div class="dual-title">Flejes</div>
+            <div class="sec-search-row">
+              <input class="fm" id="fl_a" type="text" inputmode="decimal" placeholder="a mm">
+              <span class="x-sep">X</span>
+              <input class="fm" id="fl_b" type="text" inputmode="decimal" placeholder="b mm">
+              <button class="clear" id="flClear" type="button">✕</button>
+            </div>
+          </div>
+          <div class="dual-col">
+            <div class="dual-title">Varillas / Redondos</div>
+            <div class="sec-search-row">
+              <input class="fm" id="va_a" type="text" inputmode="decimal" placeholder="a mm">
+              <span class="x-sep">X</span>
+              <input class="fm" id="va_b" type="text" inputmode="decimal" placeholder="b mm">
+              <button class="clear" id="vaClear" type="button">✕</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -638,10 +648,17 @@ function buildItemBtn(item) {
 
 function renderItems() {
   linesWrap.innerHTML = "";
-  // Flejes: se divide en 2 secciones (planchuelas + varillas)
+  // Flejes: se divide en 2 secciones (Flejes + Varillas). Si el usuario esta buscando
+  // en uno de los 2 (algun input con contenido), SOLO se muestra esa seccion; el otro
+  // grupo se oculta entero.
   if (rubroSel === "Flejes") {
-    const flejes   = sortItemsByOC(filteredItems.filter(esFleje));
-    const varillas = sortItemsByOC(filteredItems.filter(it => !esFleje(it)));
+    const flActivo = !!(document.getElementById("fl_a").value.trim() || document.getElementById("fl_b").value.trim());
+    const vaActivo = !!(document.getElementById("va_a").value.trim() || document.getElementById("va_b").value.trim());
+    const soloUno  = flActivo !== vaActivo; // exactamente uno activo
+    const mostrarFlejes   = !soloUno || flActivo;
+    const mostrarVarillas = !soloUno || vaActivo;
+    const flejes   = mostrarFlejes   ? sortItemsByOC(filteredItems.filter(esFleje))            : [];
+    const varillas = mostrarVarillas ? sortItemsByOC(filteredItems.filter(it => !esFleje(it))) : [];
     if (flejes.length) {
       const h = document.createElement("div");
       h.className = "sec-title";
