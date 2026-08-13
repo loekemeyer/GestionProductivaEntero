@@ -863,9 +863,25 @@ function openEstipPopup(item) {
   document.getElementById("estipItemInfo").innerHTML =
     `<strong>${esc(item.codigo)}</strong> - ${esc(item.descripcion)}` +
     (item.medida ? `<br>Medida: <strong>${esc(item.medida)}</strong>` : "");
-  document.getElementById("inputEstip").value = item._estipulado || "";
+  // Prellenar con lo pendiente de la OC (cantidad - recibida) si existe una OC pendiente
+  // para este item. El usuario lo puede editar antes de continuar.
+  let defVal = item._estipulado || "";
+  if (!defVal) {
+    const oc = getOCForItem(item);
+    if (oc) {
+      const cant = Number(oc.cantidad || 0);
+      const rec  = Number(oc.cantidad_recibida || 0);
+      const pend = Math.max(0, cant - rec);
+      if (pend > 0) defVal = String(pend);
+    }
+  }
+  document.getElementById("inputEstip").value = defVal;
   document.getElementById("estipPopup").classList.add("open");
-  setTimeout(() => document.getElementById("inputEstip").focus(), 100);
+  setTimeout(() => {
+    const el = document.getElementById("inputEstip");
+    el.focus();
+    el.select();
+  }, 100);
 }
 
 function closeEstipPopup() {
