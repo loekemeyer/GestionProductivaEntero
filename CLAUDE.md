@@ -220,6 +220,16 @@ componentes/CE/asignacion (ver AUDITORIA_RUTAS_2026-04-18.md punto 7).
   trate como nodo intermedio. Si aparece "Matriz N" como nodo, son inconsistencias (ver
   AUDITORIA_RUTAS_2026-04-18.md punto 5).
 
+## OC Insumos (Ordenes_Compra) - direccion futura
+
+- **HOY**: las OC se cargan importando el PDF del proveedor desde `StockFlejes/recepcion.html`
+  (parser local con pdf.js, sin IA).
+- **FUTURO**: las OC van a **generarse directamente desde el sistema** (no se van a importar
+  mas desde PDFs de proveedores). O sea, la app va a decidir que comprar en base a stocks
+  y consumo, generar la OC internamente, y despues (opcional) mandarsela al proveedor
+  ya armada. Al planificar cambios en `Ordenes_Compra` o en el modulo de OC, priorizar
+  que el flujo sea limpio para escritura interna (no solo importacion externa).
+
 ## Reglas para trabajar en este proyecto
 
 - ANTES de tocar tablas madre, leer LOCKS.txt, registrar LockX.
