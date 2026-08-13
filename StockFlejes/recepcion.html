@@ -1500,38 +1500,54 @@ async function parsearPDFLocalmente(dataUrl) {
 
   // Parsear items: entre el header y el fin del PDF. Cada item se compone de varias
   // filas cercanas — el "ancla" es la fila cuyo PRIMER token es un numero de 3-8
-  // digitos (el Cod ISIS). No fijamos X porque varia entre proveedores (Corrugadora
-  // Cod ISIS empieza en X~11, Aperam en X~77).
-  // OJO: LK y CH pueden aparecer en filas ADYACENTES al Cod ISIS — incluso en la
-  // fila DE ARRIBA (caso Aperam). Por eso buscamos con VENTANA CENTRADA en el ancla,
-  // limitada por los anclas vecinos para no cruzar items.
+  // digitos (el Cod ISIS) Y esta en la COLUMNA de Cod ISIS (leftmost). Filtramos
+  // por X para no confundir con valores de "Pedido KG" que tambien pueden ser 3
+  // digitos y caer como primer token de una fila (falso ancla).
   const bodyLines = idxHeader > -1 ? lines.slice(idxHeader + 1) : lines;
+  // 1) Detectar la X de la columna Cod ISIS desde el header. Si no se puede,
+  //    fallback al minimo X entre las anclas candidatas (que es donde estan los
+  //    codigos reales, no los valores de Pedido).
+  let codIsisX = null;
+  if (idxHeader > -1) {
+    const hdrItem = lines[idxHeader].items.find(it => /^C[oó]d/i.test(it.text) || /ISIS/i.test(it.text));
+    if (hdrItem) codIsisX = hdrItem.x;
+  }
+  if (codIsisX == null) {
+    const cands = bodyLines.map(l => l.items[0]).filter(it => it && /^\d{3,8}$/.test(it.text));
+    if (cands.length) codIsisX = Math.min(...cands.map(c => c.x));
+  }
+  const inCodIsisCol = (x) => codIsisX == null || Math.abs(x - codIsisX) <= 50;
+
   const anclas = [];
   bodyLines.forEach((line, idx) => {
     const first = line.items[0];
-    if (first && /^\d{3,8}$/.test(first.text)) {
-      // Ultimo numerico de la fila = Pedido total (fallback)
-      const nums = line.items.slice(1).map(i => i.text).filter(t => /^\d+$/.test(t)).map(Number);
-      anclas.push({ idx, cod_isis: first.text, pedido_raw: nums.length ? nums[nums.length - 1] : null });
-    }
+    if (!first || !/^\d{3,8}$/.test(first.text)) return;
+    if (!inCodIsisCol(first.x)) return; // descarta falsos anclas (Pedido KG, N° Ord, etc)
+    // Ultimo numerico de la fila = Pedido total (fallback)
+    const nums = line.items.slice(1).map(i => i.text).filter(t => /^\d+$/.test(t)).map(Number);
+    anclas.push({ idx, cod_isis: first.text, pedido_raw: nums.length ? nums[nums.length - 1] : null });
   });
   const lineas = [];
   for (let a = 0; a < anclas.length; a++) {
     const anc = anclas[a];
     const prevIdx = a > 0 ? anclas[a - 1].idx : -1;
     const nextIdx = a + 1 < anclas.length ? anclas[a + 1].idx : bodyLines.length;
-    // Ventana bounded: ±3 filas del ancla, sin cruzar anclas vecinos.
-    const lo = Math.max(anc.idx - 3, prevIdx + 1);
-    const hi = Math.min(anc.idx + 3, nextIdx - 1);
+    // Ventana bounded: ±5 filas del ancla (antes ±3, muy corto para items con
+    // descripcion larga tipo "Engranaje Chico Pizzero Pza Gde"), sin cruzar anclas
+    // vecinas.
+    const lo = Math.max(anc.idx - 5, prevIdx + 1);
+    const hi = Math.min(anc.idx + 5, nextIdx - 1);
     const item = { cod_isis: anc.cod_isis, lk: 0, ch: 0, pedido_raw: anc.pedido_raw };
     for (let j = lo; j <= hi; j++) {
-      // Solo tomar la fila si esta ESTRICTAMENTE mas cerca del ancla actual que
-      // del ancla anterior/posterior. Esto evita que la fila LK/CH del item vecino
-      // (que en el layout esta pegada al ancla actual) contamine mi item.
+      // Ownership por proximidad de idx. Tie-break: EL ANCLA POSTERIOR gana los
+      // empates (los items suelen "empezar" en su ancla y extenderse abajo/arriba).
+      // Regla: skip si el ancla siguiente esta ≤ o el ancla anterior esta ESTRICTAMENTE
+      // mas cerca. Esto arregla el caso Basconia donde la fila LK/CH cae equidistante
+      // entre dos anclas y antes se perdia.
       const dActual = Math.abs(j - anc.idx);
       const dPrev   = prevIdx > -1                    ? Math.abs(j - prevIdx) : Infinity;
       const dNext   = nextIdx < bodyLines.length      ? Math.abs(j - nextIdx) : Infinity;
-      if (dActual >= dPrev || dActual >= dNext) continue;
+      if (dActual > dPrev || dActual >= dNext) continue;
       const t = bodyLines[j].text;
       const mLK = t.match(/\bLK\b\s*(\d+)/);
       const mCH = t.match(/\bCH\b\s*(\d+)/);
@@ -1732,11 +1748,16 @@ function abrirRevisionOC(data) {
   // Contar cuantas lineas no matchearon con el catalogo (codigo_tablet vacio).
   const sinMatch = lineas.filter(l => !l.codigo_tablet).length;
 
+  // Detectar si HAY alguna linea donde el PDF trajo el codigo VIEJO (o sea, viejo !== nuevo).
+  // Si NINGUNA tiene viejo distinto, colapsamos las 2 columnas a UNA sola "Cod ISIS".
+  const hayViejo = lineas.some(l => l.cod_isis && l.codigo_tablet && String(l.cod_isis) !== String(l.codigo_tablet));
+
   const tabla = document.getElementById("ocReviewTable");
+  const thViejo  = hayViejo ? `<th style="width:90px">Cod ISIS viejo</th>` : "";
+  const thNuevo  = hayViejo ? `<th style="width:90px">Cod ISIS nuevo</th>` : `<th style="width:100px">Cod ISIS</th>`;
   tabla.innerHTML =
     `<thead><tr>
-      <th style="width:80px">Cod ISIS</th>
-      <th style="width:80px">Cód tablet</th>
+      ${thViejo}${thNuevo}
       <th>Descripción</th>
       <th style="width:80px">LK</th>
       <th style="width:80px">CH</th>
@@ -1746,9 +1767,16 @@ function abrirRevisionOC(data) {
       const lk = Number(l.pedido_uni_lk || 0);
       const ch = Number(l.pedido_uni_ch || 0);
       const bad = !l.codigo_tablet;
+      // El "viejo" solo se muestra si esta linea realmente tuvo traduccion (viejo !== nuevo).
+      // Si el PDF trajo directo el nuevo, el "viejo" queda vacio (o la celda entera se oculta
+      // cuando el modo global es de "una sola columna").
+      const tuvoTrad = l.cod_isis && l.codigo_tablet && String(l.cod_isis) !== String(l.codigo_tablet);
+      const tdViejo = hayViejo
+        ? `<td><input data-l="${i}" data-f="cod_isis" value="${esc(tuvoTrad ? l.cod_isis : "")}" placeholder="—" style="color:#888"></td>`
+        : "";
       return `<tr${bad ? ' style="background:#fff4e0"' : ''}>
-        <td><input data-l="${i}" data-f="cod_isis" value="${esc(l.cod_isis || "")}"${bad ? ' style="border-color:#b91c1c"' : ''}></td>
-        <td><input data-l="${i}" data-f="codigo_tablet" value="${esc(l.codigo_tablet || "")}"${bad ? ' style="border-color:#b91c1c;background:#ffe4e4"' : ''} placeholder="obligatorio"></td>
+        ${tdViejo}
+        <td><input data-l="${i}" data-f="codigo_tablet" value="${esc(l.codigo_tablet || l.cod_isis || "")}"${bad ? ' style="border-color:#b91c1c;background:#ffe4e4"' : ''} placeholder="obligatorio"></td>
         <td><input data-l="${i}" data-f="descripcion" value="${esc(l.descripcion || "")}"></td>
         <td><input data-l="${i}" data-f="pedido_uni_lk" inputmode="numeric" value="${lk}"></td>
         <td><input data-l="${i}" data-f="pedido_uni_ch" inputmode="numeric" value="${ch}"></td>
