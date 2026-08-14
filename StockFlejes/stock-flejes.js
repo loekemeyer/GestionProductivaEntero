@@ -19,6 +19,7 @@ let partesXPSData = [];
 let despieceData = [];
 let eMadreLKData = [];
 let eMadreCHData = [];
+let matricesData = [];
 let comprasFlejesMap = new Map(); // N Fleje → total cantidad
 let comprasFlejesDetalleMap = new Map(); // N Fleje → [{proveedor, fecha, cantidad, remito}]
 
@@ -39,7 +40,7 @@ async function init() {
   statusEl.textContent = "Cargando datos...";
 
   try {
-    const [resFlejes, resCausa, resSC, resPS, resDesp, resLK, resCH, resCompras] = await Promise.all([
+    const [resFlejes, resCausa, resSC, resPS, resDesp, resLK, resCH, resCompras, resMatrices] = await Promise.all([
       sb.from("Flejes").select("*"),
       sb.from("Causa-Efecto").select("*"),
       sb.from("SC Kg").select("*"),
@@ -47,7 +48,8 @@ async function init() {
       sb.from("Despiece x Articulo").select("*"),
       sb.from("E. Madre LK").select("*"),
       sb.from("E. Madre CH").select("*"),
-      sb.from("Recepcion_Insumos").select("*").eq("rubro","Flejes")
+      sb.from("Recepcion_Insumos").select("*").eq("rubro","Flejes"),
+      sb.from("Matrices").select("*")
     ]);
 
     // Cargar db_n8n_espejo con paginacion (Supabase cap 1000 rows/request)
@@ -88,6 +90,7 @@ async function init() {
     if (resDesp.error) throw resDesp.error;
     if (resLK.error) throw resLK.error;
     if (resCH.error) throw resCH.error;
+    if (resMatrices.error) throw resMatrices.error;
 
     flejesData = resFlejes.data || [];
     causaEfectoData = resCausa.data || [];
@@ -97,6 +100,7 @@ async function init() {
     despieceData = resDesp.data || [];
     eMadreLKData = resLK.data || [];
     eMadreCHData = resCH.data || [];
+    matricesData = resMatrices.data || [];
 
     buildLookups();
 
@@ -123,6 +127,7 @@ let scPorFleje = {};      // nFleje → [{sc, kgMatParte}]
 let scToSP = {};          // sc → [sp]
 let despiecePorSector = {}; // sectorProce → [{cod, partesXuni, kgXuni}]
 let eMadrePorCod = {};    // cod → eMadre (LK + CH)
+let matrizIdToNombre = {}; // Matriz (numero) → Matriz (nombre texto)
 
 function buildLookups() {
   // SC Kg: agrupar por N Fleje
@@ -169,6 +174,14 @@ function buildLookups() {
   eMadreCHData.forEach(r => {
     const cod = String(r["Cod"] || "").trim();
     if (cod) eMadrePorCod[cod] = (eMadrePorCod[cod] || 0) + n(r["E. Madre"]);
+  });
+
+  // Matrices: mapear ID numérico a nombre texto (para comparar con Causa-Efecto)
+  matrizIdToNombre = {};
+  matricesData.forEach(r => {
+    const nMatriz = String(r["N_Matriz"] || "").trim();
+    const nombre = String(r["Matriz"] || "").trim();
+    if (nMatriz && nombre) matrizIdToNombre[nMatriz] = nombre;
   });
 }
 
@@ -233,11 +246,13 @@ function calcularFabricacion(nFleje) {
 
   let totalKg = 0;
   produccionData.forEach(reg => {
-    const matriz = String(reg.Matriz || "").trim();
-    if (!matrizAumentaMap.has(matriz)) return;
+    // db_n8n_espejo almacena Matriz como numero; convertir a nombre texto
+    const matrizNumerico = String(reg.Matriz || "").trim();
+    const matrizNombre = matrizIdToNombre[matrizNumerico] || matrizNumerico;
+    if (!matrizAumentaMap.has(matrizNombre)) return;
     const uni = n(reg.Uni);
     if (!uni) return;
-    const sectores = matrizAumentaMap.get(matriz);
+    const sectores = matrizAumentaMap.get(matrizNombre);
     for (const sectorAumenta of sectores) {
       const kgPorUni = kgXUniBySC.get(sectorAumenta) || 0;
       totalKg += uni * kgPorUni;
