@@ -27,6 +27,8 @@ let relevStockMap = new Map();         // N Fleje (string) → total_kg del ulti
 let relevStockMapVirgilio = new Map(); // N Fleje (string) → stock_kg del ultimo relev Virgilio
 let relevStockMapSanRoque = new Map(); // N Fleje (string) → stock_kg del ultimo relev San Roque
 let lastRelevTs = null;                // creado_en del ultimo relevamiento flejes/Cervantes
+let lastRelevTsVirgilio = null;        // creado_en del ultimo relevamiento flejes/Virgilio
+let lastRelevTsSanRoque = null;        // creado_en del ultimo relevamiento flejes/San Roque
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function n(v) { return isNaN(v) ? 0 : Number(v); }
@@ -90,7 +92,9 @@ async function init() {
     }
     const lastRelev = latestByPlanta["Cervantes"] || null;
     lastRelevTs = lastRelev ? lastRelev.creado_en : null;
-    console.log("[relev] latestByPlanta:", latestByPlanta);
+    lastRelevTsVirgilio = latestByPlanta["Virgilio"] ? latestByPlanta["Virgilio"].creado_en : null;
+    lastRelevTsSanRoque = latestByPlanta["San Roque"] ? latestByPlanta["San Roque"].creado_en : null;
+    console.log("[relev] latestByPlanta:", latestByPlanta, "Virgilio:", lastRelevTsVirgilio, "San Roque:", lastRelevTsSanRoque);
 
     // Cargar v_rc_detalle para cada planta en paralelo
     relevStockMap.clear();
@@ -112,6 +116,7 @@ async function init() {
       (det || []).forEach(row => {
         const nf = String((row.info || {}).n_fleje || "").trim();
         const kg = parseFloat((row.conteo || {})[kgField]);
+        if (planta !== "Cervantes") console.log(`[relev] ${planta} row info:`, row.info, `conteo[${kgField}]:`, (row.conteo || {})[kgField], `-> nf="${nf}" kg=${kg}`);
         if (nf && !isNaN(kg)) map.set(nf, kg);
       });
     }));
@@ -166,7 +171,21 @@ async function init() {
 
     procesarRows();
     aplicarFiltros();
-    statusEl.textContent = `${rowsProcessed.length} flejes cargados`;
+
+    // Actualizar headers dinámicamente con la fecha del último relevamiento por planta
+    function fmtRelevFecha(ts) {
+      if (!ts) return "sin relev";
+      const d = new Date(ts);
+      return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+    }
+    const thVirg = document.getElementById("thVirg");
+    const thSR   = document.getElementById("thSanRoque");
+    if (thVirg) thVirg.innerHTML = `Virg.<br><span style="font-size:10px;font-weight:400">${fmtRelevFecha(lastRelevTsVirgilio)}</span>`;
+    if (thSR)   thSR.innerHTML   = `S.Roque<br><span style="font-size:10px;font-weight:400">${fmtRelevFecha(lastRelevTsSanRoque)}</span>`;
+
+    const diagVirg = lastRelevTsVirgilio ? `Virg: ${relevStockMapVirgilio.size} flejes` : "Virg: sin relevamiento";
+    const diagSR   = lastRelevTsSanRoque ? `S.Roque: ${relevStockMapSanRoque.size} flejes` : "S.Roque: sin relevamiento";
+    statusEl.textContent = `${rowsProcessed.length} flejes | ${diagVirg} | ${diagSR}`;
   } catch (err) {
     statusEl.textContent = "Error: " + err.message;
     console.error("Init error:", err);
@@ -342,8 +361,9 @@ function procesarRows() {
     const stockOnline = stockInicial + compras - fabricacion;
     const { total: consumoMes, detalle: consumoDetalle } = calcularConsumoMensual(nFleje);
 
-    const stockVirgilio = relevStockMapVirgilio.size > 0 ? (relevStockMapVirgilio.get(nFlejeStr) ?? null) : null;
-    const stockSanRoque = relevStockMapSanRoque.size > 0 ? (relevStockMapSanRoque.get(nFlejeStr) ?? null) : null;
+    // null = sin relevamiento de esa planta; 0 = relevamiento existe pero fleje no contado; número = kg
+    const stockVirgilio = lastRelevTsVirgilio !== null ? (relevStockMapVirgilio.get(nFlejeStr) ?? 0) : null;
+    const stockSanRoque = lastRelevTsSanRoque !== null ? (relevStockMapSanRoque.get(nFlejeStr) ?? 0) : null;
     return { nFleje, desc, medida, prov, stockOnline, compras, comprasDetalle, fabricacion, stockInicial, consumoMes, consumoDetalle, stockVirgilio, stockSanRoque };
   });
 
