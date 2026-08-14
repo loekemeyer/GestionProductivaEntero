@@ -19,6 +19,8 @@ let enviosPSPorSector = new Map();
 let enviosTallPorSector = new Map();
 let comprasPorCodISIS = new Map();
 let sectoresPorTallerista = new Map(); // tallerista → Set de sectores plásticos
+let relevamientosData = []; // relevamiento_cervantes.relevamientos para Plasticos
+let plasticoStockPorCodISIS = new Map(); // Cod_ISIS → {plastico_id, relevamiento_id, ...}
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function n(v) { return isNaN(v) ? 0 : Number(v); }
@@ -46,6 +48,19 @@ async function init() {
   statusEl.textContent = "Cargando datos...";
 
   try {
+    // Fetch relevamientos ANTES de procesar consumo para poder filtrar por timestamp
+    const resRelev = await sb.from("relevamiento_cervantes.relevamientos")
+      .select("id, creado_en")
+      .eq("tipo", "plasticos")
+      .eq("planta", "Cervantes");
+    relevamientosData = resRelev.data || [];
+
+    // Obtener el timestamp más reciente de relevamiento para filtrar consumo
+    let relevamientoTimestamp = null;
+    if (relevamientosData.length > 0) {
+      relevamientoTimestamp = relevamientosData[relevamientosData.length - 1].creado_en;
+    }
+
     const [plasRes, entregasPS, enviosPS, enviosTall, recepcionInsumos, partesTall, resStockPlanta] = await Promise.all([
       sb.from("Partes_Plasticas").select("*").order("Proveedor", { ascending: true }),
       fetchAll("Entregas PS"),
@@ -58,6 +73,19 @@ async function init() {
     if (plasRes.error) throw plasRes.error;
     plasticosData = plasRes.data || [];
 
+    // Mapear Cod_ISIS → Partes_Plasticas_Stock_Planta para obtener relevamiento_id y creado_en
+    plasticoStockPorCodISIS.clear();
+    const resCajStockPlanta = await sb.from("Partes_Plasticas_Stock_Planta").select("*").eq("planta", "Cervantes");
+    for (const sp of (resCajStockPlanta.data || [])) {
+      const p = plasticosData.find(x => x.id === sp.plastico_id);
+      if (p) {
+        const codISIS = String(p["Cod_ISIS"] || "").trim();
+        if (codISIS) {
+          plasticoStockPorCodISIS.set(codISIS, sp);
+        }
+      }
+    }
+
     // Obtener sectores plásticos existentes para filtrar
     const sectoresPlastSet = new Set(plasticosData.map(p => (p["Sector"] || "").trim()).filter(Boolean));
 
@@ -67,6 +95,14 @@ async function init() {
     // Entregas PS: lo que devuelve un PS → entra al sector SP
     entregasPorSector = new Map();
     for (const e of entregasPS) {
+      // FILTRO TEMPORAL: Si hay relevamiento, solo contar entregas POSTERIORES a creado_en
+      if (relevamientoTimestamp) {
+        const entTimestamp = e.created_at || e.updated_at || e.fecha;
+        if (entTimestamp && String(entTimestamp).slice(0, 10) < String(relevamientoTimestamp).slice(0, 10)) {
+          continue; // Ignorar entregas antes de la fecha del relevamiento
+        }
+      }
+
       const sp = String(e["Sector SP"] || "").trim();
       if (!sp || !sectoresPlast.has(sp)) continue;
       if (!entregasPorSector.has(sp)) entregasPorSector.set(sp, { kg: 0, uni: 0, detalle: [] });
@@ -79,6 +115,14 @@ async function init() {
     // Envios a PS: sale del sector SC (crudo) hacia un PS para procesar
     enviosPSPorSector = new Map();
     for (const e of enviosPS) {
+      // FILTRO TEMPORAL: Si hay relevamiento, solo contar envíos POSTERIORES a creado_en
+      if (relevamientoTimestamp) {
+        const envTimestamp = e.created_at || e.updated_at || e.fecha;
+        if (envTimestamp && String(envTimestamp).slice(0, 10) < String(relevamientoTimestamp).slice(0, 10)) {
+          continue; // Ignorar envíos antes de la fecha del relevamiento
+        }
+      }
+
       const sc = String(e["Sector SC"] || "").trim();
       if (!sc || !sectoresPlast.has(sc)) continue;
       if (!enviosPSPorSector.has(sc)) enviosPSPorSector.set(sc, { kg: 0, uni: 0, detalle: [] });
@@ -91,6 +135,14 @@ async function init() {
     // Envios a Talleristas: sale del sector hacia un tallerista
     enviosTallPorSector = new Map();
     for (const e of enviosTall) {
+      // FILTRO TEMPORAL: Si hay relevamiento, solo contar envíos POSTERIORES a creado_en
+      if (relevamientoTimestamp) {
+        const envTimestamp = e.created_at || e.updated_at || e.fecha;
+        if (envTimestamp && String(envTimestamp).slice(0, 10) < String(relevamientoTimestamp).slice(0, 10)) {
+          continue; // Ignorar envíos antes de la fecha del relevamiento
+        }
+      }
+
       const sec = String(e["Sector"] || "").trim();
       if (!sec || !sectoresPlast.has(sec)) continue;
       if (!enviosTallPorSector.has(sec)) enviosTallPorSector.set(sec, { kg: 0, uni: 0, detalle: [] });

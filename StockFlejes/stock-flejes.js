@@ -20,6 +20,7 @@ let despieceData = [];
 let eMadreLKData = [];
 let eMadreCHData = [];
 let relevamientosData = []; // relevamiento_cervantes.relevamientos para Flejes
+let matricesData = [];
 let comprasFlejesMap = new Map(); // N Fleje → total cantidad
 let comprasFlejesDetalleMap = new Map(); // N Fleje → [{proveedor, fecha, cantidad, remito}]
 let flejStockPorNFleje = new Map(); // N Fleje → {fleje_id, relevamiento_id, ...}
@@ -41,7 +42,7 @@ async function init() {
   statusEl.textContent = "Cargando datos...";
 
   try {
-    const [resFlejes, resCausa, resSC, resPS, resDesp, resLK, resCH, resCompras, resRelev] = await Promise.all([
+    const [resFlejes, resCausa, resSC, resPS, resDesp, resLK, resCH, resCompras, resRelev, resMatrices] = await Promise.all([
       sb.from("Flejes").select("*"),
       sb.from("Causa-Efecto").select("*"),
       sb.from("SC Kg").select("*"),
@@ -50,7 +51,8 @@ async function init() {
       sb.from("E. Madre LK").select("*"),
       sb.from("E. Madre CH").select("*"),
       sb.from("Recepcion_Insumos").select("*").eq("rubro","Flejes"),
-      sb.from("relevamiento_cervantes.relevamientos").select("id, creado_en").eq("tipo", "flejes").eq("planta", "Cervantes")
+      sb.from("relevamiento_cervantes.relevamientos").select("id, creado_en").eq("tipo", "flejes").eq("planta", "Cervantes"),
+      sb.from("Matrices").select("*")
     ]);
 
     // Cargar db_n8n_espejo con paginacion (Supabase cap 1000 rows/request)
@@ -111,6 +113,7 @@ async function init() {
     if (resDesp.error) throw resDesp.error;
     if (resLK.error) throw resLK.error;
     if (resCH.error) throw resCH.error;
+    if (resMatrices.error) throw resMatrices.error;
 
     flejesData = resFlejes.data || [];
     causaEfectoData = resCausa.data || [];
@@ -121,6 +124,7 @@ async function init() {
     eMadreLKData = resLK.data || [];
     eMadreCHData = resCH.data || [];
     relevamientosData = resRelev.data || [];
+    matricesData = resMatrices.data || [];
 
     // Mapear N Fleje → Flejes_Stock_Planta para obtener relevamiento_id
     flejStockPorNFleje.clear();
@@ -158,6 +162,7 @@ let scPorFleje = {};      // nFleje → [{sc, kgMatParte}]
 let scToSP = {};          // sc → [sp]
 let despiecePorSector = {}; // sectorProce → [{cod, partesXuni, kgXuni}]
 let eMadrePorCod = {};    // cod → eMadre (LK + CH)
+let matrizIdToNombre = {}; // Matriz (numero) → Matriz (nombre texto)
 
 function buildLookups() {
   // SC Kg: agrupar por N Fleje
@@ -204,6 +209,14 @@ function buildLookups() {
   eMadreCHData.forEach(r => {
     const cod = String(r["Cod"] || "").trim();
     if (cod) eMadrePorCod[cod] = (eMadrePorCod[cod] || 0) + n(r["E. Madre"]);
+  });
+
+  // Matrices: mapear ID numérico a nombre texto (para comparar con Causa-Efecto)
+  matrizIdToNombre = {};
+  matricesData.forEach(r => {
+    const nMatriz = String(r["N_Matriz"] || "").trim();
+    const nombre = String(r["Matriz"] || "").trim();
+    if (nMatriz && nombre) matrizIdToNombre[nMatriz] = nombre;
   });
 }
 
@@ -277,11 +290,13 @@ function calcularFabricacion(nFleje, fechaRelev) {
       const regTs = String(reg.Fecha || ""); // db_n8n_espejo.Fecha es timestamp
       if (!regTs || regTs <= tsCompara) return; // <= porque queremos DESPUÉS (>), no incluir el mismo momento
     }
-    const matriz = String(reg.Matriz || "").trim();
-    if (!matrizAumentaMap.has(matriz)) return;
+    // db_n8n_espejo almacena Matriz como numero; convertir a nombre texto
+    const matrizNumerico = String(reg.Matriz || "").trim();
+    const matrizNombre = matrizIdToNombre[matrizNumerico] || matrizNumerico;
+    if (!matrizAumentaMap.has(matrizNombre)) return;
     const uni = n(reg.Uni);
     if (!uni) return;
-    const sectores = matrizAumentaMap.get(matriz);
+    const sectores = matrizAumentaMap.get(matrizNombre);
     for (const sectorAumenta of sectores) {
       const kgPorUni = kgXUniBySC.get(sectorAumenta) || 0;
       totalKg += uni * kgPorUni;
