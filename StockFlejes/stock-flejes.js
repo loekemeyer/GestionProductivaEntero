@@ -77,23 +77,27 @@ async function init() {
     // FILTRO CLAVE: solo se cuentan recepciones y fabricacion POSTERIORES al timestamp
     // exacto del relevamiento (creado_en). Sin este filtro cualquier recepcion anterior
     // al relevamiento se contaria doble (ya esta sumada en el relevamiento).
+    console.log("[relev] resRelev:", resRelev.data, resRelev.error);
     const sortedRelev = (resRelev.data || []).slice().sort((a, b) =>
       new Date(b.creado_en) - new Date(a.creado_en));
     const lastRelev = sortedRelev[0] || null;
     lastRelevTs = lastRelev ? lastRelev.creado_en : null;
+    console.log("[relev] lastRelev:", lastRelev);
 
     // Cargar el desglose del ultimo relevamiento: N Fleje → total_kg
     relevStockMap.clear();
     if (lastRelev) {
-      const { data: detRelev } = await sb
+      const { data: detRelev, error: detErr } = await sb
         .from("v_rc_detalle")
         .select("conteo, info")
         .eq("relevamiento_id", lastRelev.id);
+      console.log("[relev] v_rc_detalle rows:", detRelev?.length, detErr);
       (detRelev || []).forEach(row => {
         const nf = String((row.info || {}).n_fleje || "").trim();
         const kg = parseFloat((row.conteo || {}).total_kg);
         if (nf && !isNaN(kg)) relevStockMap.set(nf, kg);
       });
+      console.log("[relev] relevStockMap size:", relevStockMap.size, "fleje 7:", relevStockMap.get("7"));
     }
 
     // Compras: solo las POSTERIORES al relevamiento (evitar doble contabilidad)

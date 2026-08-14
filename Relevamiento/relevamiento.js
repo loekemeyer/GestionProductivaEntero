@@ -809,6 +809,7 @@
     $("btnGuardar").style.display = readonly ? "none" : "";
     $("guardarBottomWrap").style.display = readonly ? "none" : "";
     $("detUnsaved").style.display = readonly ? "none" : "";
+    $("excelWrap").style.display = (rel.tipo === "flejes" && rel.planta === "Cervantes") ? "" : "none";
     $("detLugares").style.display = "none";
     renderDetalle();
     updateGuardarState();
@@ -1205,7 +1206,7 @@
         : await sb.rpc("rc_generar", { p_tipo: r.tipo, p_planta: r.planta, p_fecha: r.fecha, p_encargado: r.encargado });
       if (cErr || newId == null) { showMsg("No se pudo crear el relevamiento (¿estás logueado?): " + (cErr ? cErr.message : ""), "err"); btn.disabled = false; return; }
       // Mapear cat_id -> det_id real del relevamiento recién creado.
-      const { data: nd, error: ndErr } = await sb.from("v_rc_detalle").select("det_id,cat_id").eq("relevamiento_id", newId);
+      const { data: nd, error: ndErr } = await sb.from("v_rc_detalle").select("det_id,cat_id").eq("relevamiento_id", newId).order("cat_id", { ascending: true });
       if (ndErr) { showMsg("Error preparando el relevamiento: " + ndErr.message, "err"); btn.disabled = false; return; }
       const byCat = {}; (nd || []).forEach(x => byCat[x.cat_id] = x.det_id);
       const nuevoDirty = new Set(), nuevoRollos = {};
@@ -1288,6 +1289,53 @@
 
   $("btnGuardar").addEventListener("click", guardarTodo);
   $("btnGuardarBottom").addEventListener("click", guardarTodo);
+
+  // Descargar Excel flejes (Cervantes): columnas por rollo según el fleje con más variantes
+  function descargarExcelFlejes() {
+    const rows = DET.rows;
+    // Determinar máximo de grupos de rollos (distintos pesos) en cualquier fleje
+    let maxRollos = 0;
+    rows.forEach(row => {
+      const rollos = DET.rollos[row.det_id] || (row.conteo && row.conteo.rollos_json) || [];
+      if (rollos.length > maxRollos) maxRollos = rollos.length;
+    });
+    if (!maxRollos) maxRollos = 1;
+    // Encabezado
+    const header = ["N° Orden", "Sector", "Descripción", "N° Fleje", "Proveedor", "Medida mm"];
+    for (let i = 1; i <= maxRollos; i++) header.push("Cant Rollo " + i, "Kg Rollo " + i);
+    header.push("Kg Total");
+    // Filas ordenadas por sector (mismo orden que la tabla)
+    const sorted = rows.slice().sort(cmpSectorRow);
+    const csvRows = [header];
+    sorted.forEach(row => {
+      const info = row.info || {};
+      const conteo = row.conteo || {};
+      const rollos = DET.rollos[row.det_id] || conteo.rollos_json || [];
+      const kgTotal = parseFloat(conteo.total_kg) || 0;
+      const cells = [
+        info.n_orden || "",
+        row.sector || "",
+        row.descripcion || "",
+        info.n_fleje || "",
+        info.prov || "",
+        (info.medida_mm || "").replace(/,/g, ".")
+      ];
+      for (let i = 0; i < maxRollos; i++) {
+        cells.push(rollos[i] != null ? (rollos[i].caj != null ? rollos[i].caj : "") : "");
+        cells.push(rollos[i] != null ? (rollos[i].kg != null ? String(rollos[i].kg).replace(",", ".") : "") : "");
+      }
+      cells.push(kgTotal);
+      csvRows.push(cells);
+    });
+    const esc = c => { const s = String(c == null ? "" : c); return (s.includes(",") || s.includes('"') || s.includes("\n")) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const csv = "﻿" + csvRows.map(r => r.map(esc).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement("a"), { href: url, download: "flejes_" + (DET.rel.fecha || "").replace(/-/g, "") + "_" + (DET.rel.planta || "") + ".csv" });
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  $("btnExcelFlejes").addEventListener("click", descargarExcelFlejes);
 
   // Calendario: abre el modal con las fechas próximas y siguientes de cada relevamiento.
   $("btnCalendario").addEventListener("click", renderCalendario);
