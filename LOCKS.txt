@@ -1,10 +1,12 @@
 [LOCKS]
-(vacío)
+LockX | Supabase DB (Flejes,cat_flejes,Causa-Efecto,SP Kg,Partes x PS,Despiece) | claude-remote | 2026-08-14 | rename sectores F1..F13+F1A+F3A → FF1..FF13+FF1A+FF3A
 
 [WAIT QUEUE]
 (vacío)
 
 [HISTORIAL]
+2026-08-14 - Supabase REVERT parcial rename F→FF: SP Kg (F2,F7,F9,F10,F11,F13), Partes x PS (F2,F7), Despiece x Articulo (F1,F2,F7,F9,F10,F11,F13) vuelven a prefijo F (eran sectores procesados, no flejes). Causa-Efecto pendiente decision usuario. Pendiente: revert Causa-Efecto Descuenta FF7/FF9/FF10 y Aumenta FF9/FF10/FF11/FF13 segun respuesta. claude-remote.
+2026-08-14 - Supabase migracion rename_flejes_sectores_f_to_ff: sectores F1,F1A,F2,F3,F3A,F4,F5,F6,F7,F8,F9,F10,F11,F12,F13 → FF1..FF13+FF1A+FF3A en Flejes(Sector), cat_flejes(sector), Causa-Efecto(Descuenta+Aumenta), SP Kg(Sp), Partes x PS(SP), Despiece(Sector Proce). N°45 sector vacio → FF5. F14,F4A,F4B,F5A,F5C sin cambio. claude-remote.
 2026-08-14 - StockFlejes/stock-flejes.js: Stock Inicial de flejes ahora viene del ultimo relevamiento de Cervantes automaticamente. Elimina Flejes_Stock_Planta (inexistente). Agrega fetch relevamientos+v_rc_detalle, mapa N Fleje→total_kg, filtro compras y fabricacion posteriores al creado_en del relev. Fleje 7: 504 kg en vez de 116. claude (claude-remote).
 2026-08-14 - Relevamiento/relevamiento.js: FIX off-by-one en guardarTodo (línea 1208). Problema: al crear relevamiento nuevo, filas se sortean por sector (abrirDetalleNuevo), pero v_rc_detalle sin .order() devolvía det_ids en orden insertion (no catalog). Resultado: byCat mapeaba desalineado con DET.rows, asignando det_ids incorrectos. Solución: .order("cat_id") sincroniza orden. Resuelve: Fleje 7 mostraba 504kg (dato de Fleje 15) en relevamiento por desalineación input-label. claude (claude-remote).
 2026-08-14 - StockFlejes/stock-flejes.js: FIX mapeo matriz ID→nombre en calcularFabricacion. (a) Load Matrices table (N_Matriz, Matriz) en init(). (b) Build matrizIdToNombre map en buildLookups() — mismo patrón que verificacion.js (líneas 142-143). (c) Convert db_n8n_espejo Matriz (numeric) a nombre texto ANTES de comparar con Causa-Efecto keys. Resuelve: Fleje 7 fabrication=0 porque db_n8n_espejo usa IDs (1,10,101) y Causa-Efecto usa nombres ("Lucho","Carlos") — nunca matcheaban. Ahora si matriz ID 1="Lucho", convierte y matchea correctamente. Stock Online = Stock_Inicial + Compras - Consumo será preciso. loekemeyer (claude-remote).
