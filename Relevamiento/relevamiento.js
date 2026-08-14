@@ -1205,7 +1205,7 @@
         : await sb.rpc("rc_generar", { p_tipo: r.tipo, p_planta: r.planta, p_fecha: r.fecha, p_encargado: r.encargado });
       if (cErr || newId == null) { showMsg("No se pudo crear el relevamiento (¿estás logueado?): " + (cErr ? cErr.message : ""), "err"); btn.disabled = false; return; }
       // Mapear cat_id -> det_id real del relevamiento recién creado.
-      const { data: nd, error: ndErr } = await sb.from("v_rc_detalle").select("det_id,cat_id").eq("relevamiento_id", newId);
+      const { data: nd, error: ndErr } = await sb.from("v_rc_detalle").select("det_id,cat_id").eq("relevamiento_id", newId).order("cat_id", { ascending: true });
       if (ndErr) { showMsg("Error preparando el relevamiento: " + ndErr.message, "err"); btn.disabled = false; return; }
       const byCat = {}; (nd || []).forEach(x => byCat[x.cat_id] = x.det_id);
       const nuevoDirty = new Set(), nuevoRollos = {};
