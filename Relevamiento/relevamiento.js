@@ -1327,8 +1327,8 @@
       cells.push(kgTotal);
       csvRows.push(cells);
     });
-    const esc = c => { const s = String(c == null ? "" : c); return (s.includes(",") || s.includes('"') || s.includes("\n")) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-    const csv = "﻿" + csvRows.map(r => r.map(esc).join(",")).join("\r\n");
+    const esc = c => { const s = String(c == null ? "" : c); return (s.includes(";") || s.includes('"') || s.includes("\n")) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const csv = "﻿sep=;\r\n" + csvRows.map(r => r.map(esc).join(";")).join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = Object.assign(document.createElement("a"), { href: url, download: "flejes_" + (DET.rel.fecha || "").replace(/-/g, "") + "_" + (DET.rel.planta || "") + ".csv" });
