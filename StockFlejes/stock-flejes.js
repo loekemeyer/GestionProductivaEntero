@@ -528,12 +528,22 @@ function fmtN(v) { return Number(v).toLocaleString("es-AR"); }
 function popupStockOnline(i) {
   const r = window._rowsPedido[i];
   if (!r) return;
+  const virgRow = r.stockVirgilio !== null
+    ? `<tr style="color:#555"><td>📦 Virg. (relev)</td><td>${fmtN(r.stockVirgilio)}</td></tr>`
+    : "";
+  const srRow = r.stockSanRoque !== null
+    ? `<tr style="color:#555"><td>📦 S.Roque (relev)</td><td>${fmtN(r.stockSanRoque)}</td></tr>`
+    : "";
+  const sepRow = (virgRow || srRow)
+    ? `<tr><td colspan="2" style="border-top:1px solid #ddd;padding:0"></td></tr>`
+    : "";
   abrirPopup(`Stock Online — Fleje ${r.nFleje}`,
     `<table>
-      <tr><td>Stock Inicial</td><td>${fmtN(r.stockInicial)}</td></tr>
+      <tr><td>Stock Inicial (Cerv.)</td><td>${fmtN(r.stockInicial)}</td></tr>
       <tr><td>+ Compras</td><td>${fmtN(r.compras)}</td></tr>
       <tr><td>− Fabricación</td><td>${fmtN(r.fabricacion)}</td></tr>
       <tr style="border-top:2px solid #333"><td><b>= Stock Online</b></td><td><b>${fmtN(r.stockOnline)}</b></td></tr>
+      ${sepRow}${virgRow}${srRow}
     </table>`
   );
 }

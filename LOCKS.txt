@@ -3,6 +3,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-08-14 - stock-flejes.js: popup Stock Online +filas 📦 Virg./S.Roque del relevamiento (debajo del = Stock Online, separadas, solo si tienen dato). claude-remote.
 2026-08-14 - stock-flejes.js+flejes.html: diagnóstico columnas Virg/SRoque. (a) globals lastRelevTsVirgilio/SanRoque. (b) logging row a row para non-Cervantes. (c) null->0 cuando planta tiene relev pero fleje no contado. (d) headers dinámicos thVirg/thSanRoque con fecha relev o "sin relev". (e) status bar muestra count flejes por planta. claude-remote.
 2026-08-14 - stock-flejes.js+flejes.html+plasticos.js+plasticos.html: +columnas por planta de relevamiento. Flejes: +Virg.kg y S.Roque kg (relevStockMapVirgilio/SanRoque, kgField stock_kg). Plasticos: +Virg.bol (relevStockMapVirgilioPlast, stock_relev_bolsa). Fix fetch: select planta, sin .eq(planta,Cervantes). Colspans 7->9 flejes, 6->7 plasticos. claude-remote.
 2026-08-14 - StockFlejes/stock-flejes.js + cajas.js + plasticos.js: FIX Stock Online no reflejaba relevamiento. Causa: sb.from("relevamiento_cervantes.relevamientos") falla silenciosamente (esquema no expuesto en PostgREST -> resRelev.data=null -> lastRelev=null -> v_rc_detalle nunca consultada -> relevStockMap vacio -> Stock Online usaba Flejes.Stock_Inicial). Fix: cambiar a sb.from("v_rc_relevamientos") (vista publica equivalente). claude-remote.
