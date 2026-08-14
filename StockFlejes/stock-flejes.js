@@ -528,22 +528,33 @@ function fmtN(v) { return Number(v).toLocaleString("es-AR"); }
 function popupStockOnline(i) {
   const r = window._rowsPedido[i];
   if (!r) return;
-  const virgRow = r.stockVirgilio !== null
-    ? `<tr style="color:#555"><td>📦 Virg. (relev)</td><td>${fmtN(r.stockVirgilio)}</td></tr>`
+
+  // Sección por planta (relevamientos)
+  const plantasRows = [
+    { label: "📦 Cervantes", val: r.stockInicial, ts: lastRelevTs },
+    { label: "📦 Virgilio",  val: r.stockVirgilio, ts: lastRelevTsVirgilio },
+    { label: "📦 S.Roque",   val: r.stockSanRoque, ts: lastRelevTsSanRoque },
+  ];
+  function fmtFecha(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    return ` <span style="font-size:10px;color:#aaa">${d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>`;
+  }
+  const plantasHtml = plantasRows
+    .filter(p => p.val !== null)
+    .map(p => `<tr style="color:#444"><td>${p.label}${fmtFecha(p.ts)}</td><td style="text-align:right">${fmtN(p.val)} kg</td></tr>`)
+    .join("");
+  const sepPlanta = plantasHtml
+    ? `<tr><td colspan="2" style="padding:3px 0"><hr style="border:none;border-top:1px solid #ddd;margin:0"></td></tr>`
     : "";
-  const srRow = r.stockSanRoque !== null
-    ? `<tr style="color:#555"><td>📦 S.Roque (relev)</td><td>${fmtN(r.stockSanRoque)}</td></tr>`
-    : "";
-  const sepRow = (virgRow || srRow)
-    ? `<tr><td colspan="2" style="border-top:1px solid #ddd;padding:0"></td></tr>`
-    : "";
+
   abrirPopup(`Stock Online — Fleje ${r.nFleje}`,
-    `<table>
-      <tr><td>Stock Inicial (Cerv.)</td><td>${fmtN(r.stockInicial)}</td></tr>
-      <tr><td>+ Compras</td><td>${fmtN(r.compras)}</td></tr>
-      <tr><td>− Fabricación</td><td>${fmtN(r.fabricacion)}</td></tr>
-      <tr style="border-top:2px solid #333"><td><b>= Stock Online</b></td><td><b>${fmtN(r.stockOnline)}</b></td></tr>
-      ${sepRow}${virgRow}${srRow}
+    `<table style="width:100%">
+      ${plantasHtml}${sepPlanta}
+      <tr><td>Stock Inicial (Cerv.)</td><td style="text-align:right">${fmtN(r.stockInicial)}</td></tr>
+      <tr><td>+ Compras</td><td style="text-align:right">${fmtN(r.compras)}</td></tr>
+      <tr><td>− Fabricación</td><td style="text-align:right">${fmtN(r.fabricacion)}</td></tr>
+      <tr style="border-top:2px solid #333"><td><b>= Stock Online</b></td><td style="text-align:right"><b>${fmtN(r.stockOnline)}</b></td></tr>
     </table>`
   );
 }

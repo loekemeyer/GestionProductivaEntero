@@ -3,6 +3,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-08-14 - stock-flejes.js: popup Stock Online sección plantas arriba (📦 Cerv./Virg./S.Roque con fecha relev). Debajo la cuenta: Stock Inicial+Compras-Fabricacion=Online. Solo aparecen plantas con dato. claude-remote.
 2026-08-14 - stock-flejes.js: popup Stock Online +filas 📦 Virg./S.Roque del relevamiento (debajo del = Stock Online, separadas, solo si tienen dato). claude-remote.
 2026-08-14 - stock-flejes.js+flejes.html: diagnóstico columnas Virg/SRoque. (a) globals lastRelevTsVirgilio/SanRoque. (b) logging row a row para non-Cervantes. (c) null->0 cuando planta tiene relev pero fleje no contado. (d) headers dinámicos thVirg/thSanRoque con fecha relev o "sin relev". (e) status bar muestra count flejes por planta. claude-remote.
 2026-08-14 - stock-flejes.js+flejes.html+plasticos.js+plasticos.html: +columnas por planta de relevamiento. Flejes: +Virg.kg y S.Roque kg (relevStockMapVirgilio/SanRoque, kgField stock_kg). Plasticos: +Virg.bol (relevStockMapVirgilioPlast, stock_relev_bolsa). Fix fetch: select planta, sin .eq(planta,Cervantes). Colspans 7->9 flejes, 6->7 plasticos. claude-remote.
