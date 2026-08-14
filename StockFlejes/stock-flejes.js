@@ -23,7 +23,8 @@ let relevamientosData = []; // relevamiento_cervantes.relevamientos para Flejes
 let matricesData = [];
 let comprasFlejesMap = new Map(); // N Fleje → total cantidad
 let comprasFlejesDetalleMap = new Map(); // N Fleje → [{proveedor, fecha, cantidad, remito}]
-let flejStockPorNFleje = new Map(); // N Fleje → {fleje_id, relevamiento_id, ...}
+let relevStockMap = new Map(); // N Fleje (string) → total_kg del ultimo relevamiento Cervantes
+let lastRelevTs = null;         // creado_en del ultimo relevamiento flejes/Cervantes
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function n(v) { return isNaN(v) ? 0 : Number(v); }
@@ -72,32 +73,37 @@ async function init() {
       from += PAGE;
     }
 
-    // Procesar compras Flejes (rubro=Flejes, codigo=N Fleje).
-    // FILTRO CLAVE: solo se cuentan las recepciones POSTERIORES al ultimo relevamiento
-    // de esa planta (Flejes_Stock_Planta.stock_inicial_updated_at). Cervantes es la
-    // planta de origen/produccion. Sin este filtro, cualquier recepcion cargada antes
-    // del relevamiento se contaba 2 veces (una en Stock_Inicial, otra sumada aca).
-    const resStockPlanta = await sb
-      .from("Flejes_Stock_Planta")
-      .select("*")
-      .eq("planta", "Cervantes");
-    const stockIniTsByFleje = new Map();
-    (resStockPlanta.data || []).forEach(sp => {
-      const f = (resFlejes.data || []).find(x => x.id === sp.fleje_id);
-      if (f) {
-        const nfl = String(f["N Fleje"] ?? "").trim();
-        const ts = sp.stock_inicial_updated_at;
-        if (nfl && ts) stockIniTsByFleje.set(nfl, ts);
-      }
-    });
+    // Determinar el ultimo relevamiento de flejes/Cervantes y usarlo como Stock Inicial.
+    // FILTRO CLAVE: solo se cuentan recepciones y fabricacion POSTERIORES al timestamp
+    // exacto del relevamiento (creado_en). Sin este filtro cualquier recepcion anterior
+    // al relevamiento se contaria doble (ya esta sumada en el relevamiento).
+    const sortedRelev = (resRelev.data || []).slice().sort((a, b) =>
+      new Date(b.creado_en) - new Date(a.creado_en));
+    const lastRelev = sortedRelev[0] || null;
+    lastRelevTs = lastRelev ? lastRelev.creado_en : null;
+
+    // Cargar el desglose del ultimo relevamiento: N Fleje → total_kg
+    relevStockMap.clear();
+    if (lastRelev) {
+      const { data: detRelev } = await sb
+        .from("v_rc_detalle")
+        .select("conteo, info")
+        .eq("relevamiento_id", lastRelev.id);
+      (detRelev || []).forEach(row => {
+        const nf = String((row.info || {}).n_fleje || "").trim();
+        const kg = parseFloat((row.conteo || {}).total_kg);
+        if (nf && !isNaN(kg)) relevStockMap.set(nf, kg);
+      });
+    }
+
+    // Compras: solo las POSTERIORES al relevamiento (evitar doble contabilidad)
     comprasFlejesMap.clear();
     comprasFlejesDetalleMap.clear();
     (resCompras.data || []).forEach(r => {
       const cod = String(r.codigo || "").trim();
       if (!cod) return;
-      const ts = stockIniTsByFleje.get(cod);
-      // r.fecha es DATE (YYYY-MM-DD); ts es timestamptz -> comparo por YYYY-MM-DD
-      if (ts && String(r.fecha) < String(ts).slice(0,10)) return;
+      // r.fecha es DATE (YYYY-MM-DD); lastRelevTs es timestamptz -> comparar por fecha
+      if (lastRelevTs && String(r.fecha) < String(lastRelevTs).slice(0, 10)) return;
       const cant = Number(r.cantidad) || 0;
       comprasFlejesMap.set(cod, (comprasFlejesMap.get(cod) || 0) + cant);
       if (!comprasFlejesDetalleMap.has(cod)) comprasFlejesDetalleMap.set(cod, []);
@@ -125,17 +131,6 @@ async function init() {
     eMadreCHData = resCH.data || [];
     relevamientosData = resRelev.data || [];
     matricesData = resMatrices.data || [];
-
-    // Mapear N Fleje → Flejes_Stock_Planta para obtener relevamiento_id
-    flejStockPorNFleje.clear();
-    const resFlejStockPlanta = await sb.from("Flejes_Stock_Planta").select("*").eq("planta", "Cervantes");
-    (resFlejStockPlanta.data || []).forEach(sp => {
-      const f = flejesData.find(x => x.id === sp.fleje_id);
-      if (f) {
-        const nFleje = String(f["N Fleje"]).trim();
-        flejStockPorNFleje.set(nFleje, sp);
-      }
-    });
 
     buildLookups();
 
@@ -308,27 +303,20 @@ function calcularFabricacion(nFleje, fechaRelev) {
 
 /* ================= PROCESAR Y ORDENAR ================= */
 function procesarRows() {
-  // Mapear relevamiento_id → creado_en (timestamp exacto) para Flejes Cervantes
-  let relevIdACreado = new Map();
-  (relevamientosData || []).forEach(r => {
-    if (r.id) relevIdACreado.set(r.id, r.creado_en);
-  });
-
   rowsProcessed = flejesData.map(f => {
     const nFleje = f["N Fleje"] || "";
     const desc = f["Descripción"] || "";
     const medida = f["Medida mm"] || "";
     const prov = f["Proveedor"] || "";
-    const stockInicial = n(f["Stock Inicial"]) || 0;
-    const compras = comprasFlejesMap.get(String(nFleje)) || 0;
-    const comprasDetalle = comprasFlejesDetalleMap.get(String(nFleje)) || [];
-    // Usar timestamp EXACTO del creado_en del relevamiento, no solo la fecha
-    let timestampRelev = f.stock_inicial_updated_at;
-    const flejStockPl = flejStockPorNFleje.get(String(nFleje));
-    if (flejStockPl && flejStockPl.relevamiento_id) {
-      const creado = relevIdACreado.get(flejStockPl.relevamiento_id);
-      if (creado) timestampRelev = creado;
-    }
+    // Stock Inicial: del ultimo relevamiento de Cervantes; fallback a Flejes."Stock Inicial"
+    const nFlejeStr = String(nFleje).trim();
+    const stockInicial = relevStockMap.size > 0
+      ? (relevStockMap.has(nFlejeStr) ? relevStockMap.get(nFlejeStr) : n(f["Stock Inicial"]))
+      : n(f["Stock Inicial"]);
+    const compras = comprasFlejesMap.get(nFlejeStr) || 0;
+    const comprasDetalle = comprasFlejesDetalleMap.get(nFlejeStr) || [];
+    // Timestamp del ultimo relevamiento de Cervantes (para filtrar fabricacion posterior)
+    const timestampRelev = lastRelevTs || f.stock_inicial_updated_at;
     const fabricacion = calcularFabricacion(nFleje, timestampRelev);
     const stockOnline = stockInicial + compras - fabricacion;
     const { total: consumoMes, detalle: consumoDetalle } = calcularConsumoMensual(nFleje);
