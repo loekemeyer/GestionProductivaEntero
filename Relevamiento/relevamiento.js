@@ -1304,12 +1304,8 @@
     const header = ["N° Orden", "Sector", "Descripción", "N° Fleje", "Proveedor", "Medida mm"];
     for (let i = 1; i <= maxRollos; i++) header.push("Cant Rollo " + i, "Kg Rollo " + i);
     header.push("Kg Total");
-    // Filas ordenadas por n_orden
-    const sorted = rows.slice().sort((a, b) => {
-      const na = Number((a.info || {}).n_orden) || 999;
-      const nb = Number((b.info || {}).n_orden) || 999;
-      return na - nb;
-    });
+    // Filas ordenadas por sector (mismo orden que la tabla)
+    const sorted = rows.slice().sort(cmpSectorRow);
     const csvRows = [header];
     sorted.forEach(row => {
       const info = row.info || {};
