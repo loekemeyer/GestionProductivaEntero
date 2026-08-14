@@ -21,6 +21,7 @@ let comprasPorCodISIS = new Map();
 let sectoresPorTallerista = new Map(); // tallerista → Set de sectores plásticos
 let relevamientosData = []; // relevamiento_cervantes.relevamientos para Plasticos
 let plasticoStockPorCodISIS = new Map(); // Cod_ISIS → {plastico_id, relevamiento_id, ...}
+let relevStockMapVirgilioPlast = new Map(); // Sector → stock_relev_bolsa del ultimo relev Virgilio
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function n(v) { return isNaN(v) ? 0 : Number(v); }
@@ -50,16 +51,35 @@ async function init() {
   try {
     // Fetch relevamientos ANTES de procesar consumo para poder filtrar por timestamp
     const resRelev = await sb.from("v_rc_relevamientos")
-      .select("id, creado_en")
-      .eq("tipo", "plasticos")
-      .eq("planta", "Cervantes");
+      .select("id, creado_en, planta")
+      .eq("tipo", "plasticos");
     relevamientosData = resRelev.data || [];
 
-    // Obtener el timestamp más reciente de relevamiento para filtrar consumo
-    let relevamientoTimestamp = null;
-    if (relevamientosData.length > 0) {
-      relevamientoTimestamp = relevamientosData[relevamientosData.length - 1].creado_en;
+    // Determinar el ultimo relevamiento por planta
+    const latestByPlantaPlast = {};
+    for (const r of relevamientosData) {
+      if (!latestByPlantaPlast[r.planta] || new Date(r.creado_en) > new Date(latestByPlantaPlast[r.planta].creado_en)) {
+        latestByPlantaPlast[r.planta] = r;
+      }
     }
+
+    // Obtener el timestamp más reciente de relevamiento Cervantes para filtrar consumo
+    const lastRelevCerv = latestByPlantaPlast["Cervantes"] || null;
+    let relevamientoTimestamp = lastRelevCerv ? lastRelevCerv.creado_en : null;
+
+    // Cargar v_rc_detalle de Virgilio para mapa sector → stock_relev_bolsa
+    relevStockMapVirgilioPlast.clear();
+    const lastRelevVirg = latestByPlantaPlast["Virgilio"] || null;
+    if (lastRelevVirg) {
+      const { data: detVirg } = await sb
+        .from("v_rc_detalle").select("conteo, info").eq("relevamiento_id", lastRelevVirg.id);
+      (detVirg || []).forEach(row => {
+        const sector = String((row.info || {}).nuevo_sector || "").trim();
+        const bolsas = parseFloat((row.conteo || {}).stock_relev_bolsa);
+        if (sector && !isNaN(bolsas)) relevStockMapVirgilioPlast.set(sector, bolsas);
+      });
+    }
+    console.log("[relev] PlastVirg size:", relevStockMapVirgilioPlast.size);
 
     const [plasRes, entregasPS, enviosPS, enviosTall, recepcionInsumos, partesTall, resStockPlanta] = await Promise.all([
       sb.from("Partes_Plasticas").select("*").order("Proveedor", { ascending: true }),
@@ -243,12 +263,16 @@ function procesarRows() {
 
     const stockOnline = stockInicial + comprasUni + entUni - envPSUni - envTallUni;
 
+    const stockVirgilioPlast = relevStockMapVirgilioPlast.size > 0
+      ? (relevStockMapVirgilioPlast.has(sector) ? relevStockMapVirgilioPlast.get(sector) : null)
+      : null;
+
     return {
       desc, prov, familia, sector, stockOnline, stockInicial, consumoMes, pedidoMin,
       entUni, envPSUni, envTallUni, comprasUni,
       entDetalle: ent.detalle, envPSDetalle: envPS.detalle, envTallDetalle: envTall.detalle,
       comprasDetalle: compras.detalle,
-      kgxUni
+      kgxUni, stockVirgilioPlast
     };
   });
 
@@ -337,15 +361,15 @@ function renderTabla(rows) {
         html += `<tr class="row-subtotal">
           <td colspan="3"></td>
           <td class="col-number">${st.pedido.toLocaleString("es-AR")}</td>
-          <td colspan="2"></td>
+          <td colspan="3"></td>
         </tr>`;
-        html += `<tr class="row-sep"><td colspan="6"></td></tr>`;
+        html += `<tr class="row-sep"><td colspan="7"></td></tr>`;
       }
 
       const gId = grupo.replace(/[^a-zA-Z0-9]/g, "_");
       const mVal = getMesesGrupo(grupo);
       html += `<tr class="row-grupo-header">
-        <td colspan="4" style="font-size:14px;font-weight:800">${esc(r.prov)}</td>
+        <td colspan="5" style="font-size:14px;font-weight:800">${esc(r.prov)}</td>
         <td style="text-align:right;font-size:11px">Meses</td>
         <td><input id="meses_${gId}" type="number" value="${mVal}" min="1" max="24"
           onchange="setMesesGrupo('${esc(grupo)}')" /></td>
@@ -361,6 +385,7 @@ function renderTabla(rows) {
       <td class="${pedidoClass}" onclick="popupPedido(${i})">${r.pedido.toLocaleString("es-AR")}</td>
       <td class="col-number col-clickable" onclick="popupStockMax(${i})">${r.stockMax.toLocaleString("es-AR")}</td>
       <td class="col-number col-clickable" onclick="popupStockOnline(${i})">${r.stockOnline.toLocaleString("es-AR")}</td>
+      <td class="col-number">${r.stockVirgilioPlast !== null ? r.stockVirgilioPlast.toLocaleString("es-AR") : "—"}</td>
     </tr>`;
   });
 
@@ -370,11 +395,11 @@ function renderTabla(rows) {
     html += `<tr class="row-subtotal">
       <td colspan="3"></td>
       <td class="col-number">${st.pedido.toLocaleString("es-AR")}</td>
-      <td colspan="2"></td>
+      <td colspan="3"></td>
     </tr>`;
   }
 
-  tblBody.innerHTML = html || `<tr><td colspan="6" class="empty">No hay partes cargadas</td></tr>`;
+  tblBody.innerHTML = html || `<tr><td colspan="7" class="empty">No hay partes cargadas</td></tr>`;
 }
 
 /* ================= POPUPS ================= */

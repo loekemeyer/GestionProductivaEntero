@@ -11,11 +11,11 @@
     /* Comprimir columnas para reducir desperdicio visual */
     .page { max-width: 1050px; }
     #tblStock { table-layout: fixed; }
-    #tblStock col.col-prov    { width: 11%; }
-    #tblStock col.col-nfleje  { width: 9%; }
-    #tblStock col.col-desc    { width: 31%; }
-    #tblStock col.col-med     { width: 11%; }
-    #tblStock col.col-num     { width: 12.66%; }
+    #tblStock col.col-prov    { width: 10%; }
+    #tblStock col.col-nfleje  { width: 8%; }
+    #tblStock col.col-desc    { width: 24%; }
+    #tblStock col.col-med     { width: 8%; }
+    #tblStock col.col-num     { width: 10%; }
     #tblStock td.col-desc {
       white-space: nowrap;
       overflow: hidden;
@@ -66,6 +66,8 @@
           <col class="col-num">
           <col class="col-num">
           <col class="col-num">
+          <col class="col-num">
+          <col class="col-num">
         </colgroup>
         <thead>
           <tr class="header-sub">
@@ -76,6 +78,8 @@
             <th><br>Pedido</th>
             <th>Stock<br>Max</th>
             <th>Stock<br>Online</th>
+            <th>Virg.<br>kg</th>
+            <th>S.Roque<br>kg</th>
           </tr>
         </thead>
         <tbody id="tblBody"></tbody>

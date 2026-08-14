@@ -23,8 +23,10 @@ let relevamientosData = []; // relevamiento_cervantes.relevamientos para Flejes
 let matricesData = [];
 let comprasFlejesMap = new Map(); // N Fleje → total cantidad
 let comprasFlejesDetalleMap = new Map(); // N Fleje → [{proveedor, fecha, cantidad, remito}]
-let relevStockMap = new Map(); // N Fleje (string) → total_kg del ultimo relevamiento Cervantes
-let lastRelevTs = null;         // creado_en del ultimo relevamiento flejes/Cervantes
+let relevStockMap = new Map();         // N Fleje (string) → total_kg del ultimo relev Cervantes
+let relevStockMapVirgilio = new Map(); // N Fleje (string) → stock_kg del ultimo relev Virgilio
+let relevStockMapSanRoque = new Map(); // N Fleje (string) → stock_kg del ultimo relev San Roque
+let lastRelevTs = null;                // creado_en del ultimo relevamiento flejes/Cervantes
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function n(v) { return isNaN(v) ? 0 : Number(v); }
@@ -52,7 +54,7 @@ async function init() {
       sb.from("E. Madre LK").select("*"),
       sb.from("E. Madre CH").select("*"),
       sb.from("Recepcion_Insumos").select("*").eq("rubro","Flejes"),
-      sb.from("v_rc_relevamientos").select("id, creado_en").eq("tipo", "flejes").eq("planta", "Cervantes"),
+      sb.from("v_rc_relevamientos").select("id, creado_en, planta").eq("tipo", "flejes"),
       sb.from("Matrices").select("*")
     ]);
 
@@ -73,32 +75,47 @@ async function init() {
       from += PAGE;
     }
 
-    // Determinar el ultimo relevamiento de flejes/Cervantes y usarlo como Stock Inicial.
+    // Determinar el ultimo relevamiento por planta (Cervantes/Virgilio/San Roque).
     // FILTRO CLAVE: solo se cuentan recepciones y fabricacion POSTERIORES al timestamp
-    // exacto del relevamiento (creado_en). Sin este filtro cualquier recepcion anterior
-    // al relevamiento se contaria doble (ya esta sumada en el relevamiento).
+    // del relevamiento de Cervantes. Sin este filtro cualquier recepcion anterior
+    // se contaria doble (ya esta sumada en el relevamiento).
     console.log("[relev] resRelev:", resRelev.data, resRelev.error);
-    const sortedRelev = (resRelev.data || []).slice().sort((a, b) =>
-      new Date(b.creado_en) - new Date(a.creado_en));
-    const lastRelev = sortedRelev[0] || null;
-    lastRelevTs = lastRelev ? lastRelev.creado_en : null;
-    console.log("[relev] lastRelev:", lastRelev);
 
-    // Cargar el desglose del ultimo relevamiento: N Fleje → total_kg
-    relevStockMap.clear();
-    if (lastRelev) {
-      const { data: detRelev, error: detErr } = await sb
-        .from("v_rc_detalle")
-        .select("conteo, info")
-        .eq("relevamiento_id", lastRelev.id);
-      console.log("[relev] v_rc_detalle rows:", detRelev?.length, detErr);
-      (detRelev || []).forEach(row => {
-        const nf = String((row.info || {}).n_fleje || "").trim();
-        const kg = parseFloat((row.conteo || {}).total_kg);
-        if (nf && !isNaN(kg)) relevStockMap.set(nf, kg);
-      });
-      console.log("[relev] relevStockMap size:", relevStockMap.size, "fleje 7:", relevStockMap.get("7"));
+    // Ultimo relevamiento por planta
+    const latestByPlanta = {};
+    for (const r of (resRelev.data || [])) {
+      if (!latestByPlanta[r.planta] || new Date(r.creado_en) > new Date(latestByPlanta[r.planta].creado_en)) {
+        latestByPlanta[r.planta] = r;
+      }
     }
+    const lastRelev = latestByPlanta["Cervantes"] || null;
+    lastRelevTs = lastRelev ? lastRelev.creado_en : null;
+    console.log("[relev] latestByPlanta:", latestByPlanta);
+
+    // Cargar v_rc_detalle para cada planta en paralelo
+    relevStockMap.clear();
+    relevStockMapVirgilio.clear();
+    relevStockMapSanRoque.clear();
+    const PLANTA_MAP = {
+      "Cervantes": relevStockMap,
+      "Virgilio": relevStockMapVirgilio,
+      "San Roque": relevStockMapSanRoque,
+    };
+    await Promise.all(Object.entries(latestByPlanta).map(async ([planta, relev]) => {
+      const { data: det, error: detErr } = await sb
+        .from("v_rc_detalle").select("conteo, info").eq("relevamiento_id", relev.id);
+      console.log(`[relev] ${planta} v_rc_detalle rows:`, det?.length, detErr);
+      const map = PLANTA_MAP[planta];
+      if (!map) return;
+      // Cervantes usa total_kg (suma de rollos); Virgilio/San Roque usan stock_kg (conteo directo)
+      const kgField = planta === "Cervantes" ? "total_kg" : "stock_kg";
+      (det || []).forEach(row => {
+        const nf = String((row.info || {}).n_fleje || "").trim();
+        const kg = parseFloat((row.conteo || {})[kgField]);
+        if (nf && !isNaN(kg)) map.set(nf, kg);
+      });
+    }));
+    console.log("[relev] Cerv size:", relevStockMap.size, "Virg size:", relevStockMapVirgilio.size, "SR size:", relevStockMapSanRoque.size);
 
     // Compras: solo las POSTERIORES al relevamiento (evitar doble contabilidad)
     comprasFlejesMap.clear();
@@ -325,7 +342,9 @@ function procesarRows() {
     const stockOnline = stockInicial + compras - fabricacion;
     const { total: consumoMes, detalle: consumoDetalle } = calcularConsumoMensual(nFleje);
 
-    return { nFleje, desc, medida, prov, stockOnline, compras, comprasDetalle, fabricacion, stockInicial, consumoMes, consumoDetalle };
+    const stockVirgilio = relevStockMapVirgilio.size > 0 ? (relevStockMapVirgilio.get(nFlejeStr) ?? null) : null;
+    const stockSanRoque = relevStockMapSanRoque.size > 0 ? (relevStockMapSanRoque.get(nFlejeStr) ?? null) : null;
+    return { nFleje, desc, medida, prov, stockOnline, compras, comprasDetalle, fabricacion, stockInicial, consumoMes, consumoDetalle, stockVirgilio, stockSanRoque };
   });
 
   // Ordenar por proveedor, luego N° Fleje
@@ -421,8 +440,10 @@ function renderTabla(rows) {
           <td class="col-number">${st.pedido.toLocaleString("es-AR")}</td>
           <td></td>
           <td class="col-number" style="font-weight:400;font-size:11px;color:#666">mín ${minProv.toLocaleString("es-AR")}</td>
+          <td></td>
+          <td></td>
         </tr>`;
-        html += `<tr class="row-sep"><td colspan="7"></td></tr>`;
+        html += `<tr class="row-sep"><td colspan="9"></td></tr>`;
       }
 
       // Header del nuevo grupo
@@ -430,7 +451,7 @@ function renderTabla(rows) {
       const mVal = getMesesGrupo(grupo);
       html += `<tr class="row-grupo-header">
         <td colspan="2" style="font-size:13px">${esc(r.prov)}</td>
-        <td colspan="3"></td>
+        <td colspan="5"></td>
         <td style="text-align:right;font-size:11px">Meses</td>
         <td><input id="meses_${gId}" type="number" value="${mVal}" min="1" max="24"
           onchange="setMesesGrupo('${esc(grupo)}')" /></td>
@@ -447,6 +468,8 @@ function renderTabla(rows) {
       <td class="${pedidoClass}" onclick="popupPedido(${i})">${r.pedido.toLocaleString("es-AR")}</td>
       <td class="col-number col-clickable" onclick="popupStockMax(${i})">${r.stockMax.toFixed(1)}</td>
       <td class="col-number col-clickable" onclick="popupStockOnline(${i})">${r.stockOnline.toLocaleString("es-AR")}</td>
+      <td class="col-number">${r.stockVirgilio !== null ? r.stockVirgilio.toLocaleString("es-AR") : "—"}</td>
+      <td class="col-number">${r.stockSanRoque !== null ? r.stockSanRoque.toLocaleString("es-AR") : "—"}</td>
     </tr>`;
   });
 
@@ -459,10 +482,12 @@ function renderTabla(rows) {
       <td class="col-number">${st.pedido.toLocaleString("es-AR")}</td>
       <td></td>
       <td class="col-number" style="font-weight:400;font-size:11px;color:#666">mín ${minProv.toLocaleString("es-AR")}</td>
+      <td></td>
+      <td></td>
     </tr>`;
   }
 
-  tblBody.innerHTML = html || `<tr><td colspan="7" class="empty">No hay flejes cargados</td></tr>`;
+  tblBody.innerHTML = html || `<tr><td colspan="9" class="empty">No hay flejes cargados</td></tr>`;
 }
 
 /* ================= POPUPS ================= */
