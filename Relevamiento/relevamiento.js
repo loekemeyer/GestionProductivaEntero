@@ -809,7 +809,7 @@
     $("btnGuardar").style.display = readonly ? "none" : "";
     $("guardarBottomWrap").style.display = readonly ? "none" : "";
     $("detUnsaved").style.display = readonly ? "none" : "";
-    $("excelWrap").style.display = (rel.tipo === "flejes" && rel.planta === "Cervantes") ? "" : "none";
+    $("btnExcelFlejes").classList.toggle("hidden", !(rel.tipo === "flejes" && rel.planta === "Cervantes"));
     $("detLugares").style.display = "none";
     renderDetalle();
     updateGuardarState();
@@ -1282,6 +1282,7 @@
     if (typeof DET.onBack === "function") { const cb = DET.onBack; DET.onBack = null; cb(); return; }
     $("vistaDetalle").style.display = "none";
     $("vistaLista").style.display = "";
+    $("btnExcelFlejes").classList.add("hidden");
     cargarLista();
   }
   $("btnVolver").addEventListener("click", volverAtras);
@@ -1388,6 +1389,7 @@
       if (error) { showMsg("No se pudo borrar: " + error.message, "err"); return; }
       showMsg("Lugar borrado.", "ok");
       $("vistaDetalle").style.display = "none"; $("vistaLista").style.display = "";
+      $("btnExcelFlejes").classList.add("hidden");
       cargarLista();
     }
   });
