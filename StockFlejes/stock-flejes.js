@@ -69,14 +69,21 @@ async function init() {
 
     // Procesar compras Flejes (rubro=Flejes, codigo=N Fleje).
     // FILTRO CLAVE: solo se cuentan las recepciones POSTERIORES al ultimo relevamiento
-    // de ese N Fleje (Flejes.stock_inicial_updated_at). Sin este filtro, cualquier
-    // recepcion cargada antes del relevamiento se contaba 2 veces (una en Stock_Inicial,
-    // otra sumada aca).
+    // de esa planta (Flejes_Stock_Planta.stock_inicial_updated_at). Cervantes es la
+    // planta de origen/produccion. Sin este filtro, cualquier recepcion cargada antes
+    // del relevamiento se contaba 2 veces (una en Stock_Inicial, otra sumada aca).
+    const resStockPlanta = await sb
+      .from("Flejes_Stock_Planta")
+      .select("*")
+      .eq("planta", "Cervantes");
     const stockIniTsByFleje = new Map();
-    (resFlejes.data || []).forEach(f => {
-      const nfl = String(f["N Fleje"] ?? "").trim();
-      const ts = f.stock_inicial_updated_at;
-      if (nfl && ts) stockIniTsByFleje.set(nfl, ts);
+    (resStockPlanta.data || []).forEach(sp => {
+      const f = (resFlejes.data || []).find(x => x.id === sp.fleje_id);
+      if (f) {
+        const nfl = String(f["N Fleje"] ?? "").trim();
+        const ts = sp.stock_inicial_updated_at;
+        if (nfl && ts) stockIniTsByFleje.set(nfl, ts);
+      }
     });
     comprasFlejesMap.clear();
     comprasFlejesDetalleMap.clear();
