@@ -439,7 +439,7 @@ async function init() {
     await cargarMapeoCajas();
 
     // Fetch relevamientos ANTES de cargarConsumo para poder filtrar por timestamp
-    const resRelev = await sb.from("relevamiento_cervantes.relevamientos")
+    const resRelev = await sb.from("v_rc_relevamientos")
       .select("id, creado_en")
       .eq("tipo", "cajas")
       .eq("planta", "Cervantes");

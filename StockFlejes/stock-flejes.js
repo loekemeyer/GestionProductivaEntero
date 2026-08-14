@@ -52,7 +52,7 @@ async function init() {
       sb.from("E. Madre LK").select("*"),
       sb.from("E. Madre CH").select("*"),
       sb.from("Recepcion_Insumos").select("*").eq("rubro","Flejes"),
-      sb.from("relevamiento_cervantes.relevamientos").select("id, creado_en").eq("tipo", "flejes").eq("planta", "Cervantes"),
+      sb.from("v_rc_relevamientos").select("id, creado_en").eq("tipo", "flejes").eq("planta", "Cervantes"),
       sb.from("Matrices").select("*")
     ]);
 
