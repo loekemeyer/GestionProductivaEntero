@@ -3,6 +3,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-08-14 - Relevamiento (?v=20260814c): fix CSV Excel argentino — delimitador cambiado a punto y coma (;) + linea sep=; al inicio. Antes: coma, se veia todo en columna A. claude-remote.
 2026-08-14 - Relevamiento (html ?v=20260814b + js ?v=20260814b): boton "Descargar Excel" en vista flejes/Cervantes. Genera CSV con columnas: N°Orden, Sector, Descripcion, N°Fleje, Proveedor, Medida mm, Cant Rollo N / Kg Rollo N (tantos pares como el fleje con mas rollos distintos), Kg Total. Filas ordenadas por n_orden. BOM UTF-8. Solo visible en tipo=flejes planta=Cervantes (editable y readonly). claude-remote.
 2026-08-14 - Supabase REVERT total rename F→FF en SP Kg, Partes x PS, Despiece x Articulo y Causa-Efecto (Descuenta+Aumenta): eran sectores procesados no flejes. Quedan como FF solo: Flejes.Sector y cat_flejes.sector. claude-remote.
 2026-08-14 - Supabase REVERT parcial rename F→FF: SP Kg (F2,F7,F9,F10,F11,F13), Partes x PS (F2,F7), Despiece x Articulo (F1,F2,F7,F9,F10,F11,F13) vuelven a prefijo F (eran sectores procesados, no flejes). Causa-Efecto pendiente decision usuario. Pendiente: revert Causa-Efecto Descuenta FF7/FF9/FF10 y Aumenta FF9/FF10/FF11/FF13 segun respuesta. claude-remote.
