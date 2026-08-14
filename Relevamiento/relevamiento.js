@@ -1331,51 +1331,99 @@
       dataRows.push(cells);
     });
 
-    // Generar XLSX con formato (xlsx-js-style)
-    const wb = XLSXStyle.utils.book_new();
-    const ws = XLSXStyle.utils.aoa_to_sheet([header, ...dataRows]);
-
+    // Generar SpreadsheetML (XML de Excel 2003) — sin librería externa
     const nCols = header.length;
     const nData = dataRows.length;
-    const brd = style => ({ style, color: { rgb: "000000" } });
-    const M = brd("medium"), T = brd("thin"); // M=grueso exterior, T=fino interior
 
-    for (let r = 0; r <= nData; r++) {
-      for (let c = 0; c < nCols; c++) {
-        const addr = XLSXStyle.utils.encode_cell({ r, c });
-        if (!ws[addr]) ws[addr] = { v: "", t: "s" };
-        const isHdr  = r === 0;
-        const isLeft = c === 0;
-        const isRgt  = c === nCols - 1;
-        const isTop  = r === 1;        // primera fila de datos = borde superior grueso
-        const isBot  = r === nData;
-        ws[addr].s = {
-          font:      isHdr ? { bold: true, sz: 18 } : { sz: 14 },
-          alignment: { horizontal: "center", vertical: "center", wrapText: true },
-          border: isHdr
-            ? { top: M, bottom: M, left: M, right: M }
-            : {
-                left:   isLeft ? M : T,
-                right:  isRgt  ? M : T,
-                top:    isTop  ? M : T,
-                bottom: isBot  ? M : T
-              }
-        };
-      }
+    // Escape XML
+    const xe = s => String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+    // Detectar numérico
+    const isNum = v => v !== "" && v !== null && v !== undefined && isFinite(parseFloat(v));
+
+    // Registro de estilos dinámico (evita duplicados)
+    // key: "l|r|t|b|bold|sz"  (l/r/t/b = peso borde 1=fino 2=grueso)
+    const styleReg = new Map();
+    let sCtr = 0;
+    const regStyle = (l, r, t, b, bold, sz) => {
+      const k = `${l}|${r}|${t}|${b}|${bold}|${sz}`;
+      if (!styleReg.has(k)) styleReg.set(k, "s" + sCtr++);
+      return styleReg.get(k);
+    };
+
+    // Pre-registrar todos los estilos que se van a usar
+    const M = 2, TH = 1; // Medium=grueso, Thin=fino
+    const hdrSid = regStyle(M, M, M, M, true, 18);
+    const getSid = (r, c) => {
+      if (r === 0) return hdrSid;
+      return regStyle(
+        c === 0        ? M : TH,
+        c === nCols-1  ? M : TH,
+        r === 1        ? M : TH,
+        r === nData    ? M : TH,
+        false, 14
+      );
+    };
+    for (let r = 0; r <= nData; r++)
+      for (let c = 0; c < nCols; c++) getSid(r, c);
+
+    // Bloque <Styles>
+    const brdXml = (l, r, t, b) =>
+      `<Border ss:Position="Left"   ss:LineStyle="Continuous" ss:Weight="${l}"/>` +
+      `<Border ss:Position="Right"  ss:LineStyle="Continuous" ss:Weight="${r}"/>` +
+      `<Border ss:Position="Top"    ss:LineStyle="Continuous" ss:Weight="${t}"/>` +
+      `<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="${b}"/>`;
+
+    let stylesXml = "";
+    for (const [k, sid] of styleReg.entries()) {
+      const [l, r, t, b, bold, sz] = k.split("|");
+      stylesXml +=
+        `<Style ss:ID="${sid}">` +
+        `<Font ss:Size="${sz}"${bold === "true" ? ' ss:Bold="1"' : ""}/>` +
+        `<Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>` +
+        `<Borders>${brdXml(l, r, t, b)}</Borders>` +
+        `</Style>`;
     }
 
-    // Anchos de columna (caracteres aprox.)
-    ws["!cols"] = header.map((h, i) => {
-      if (i === 2) return { wch: 32 }; // Descripción
-      if (i === 4) return { wch: 15 }; // Proveedor
-      if (i === 5) return { wch: 14 }; // Medida mm
-      return { wch: 12 };
-    });
-    // Altura fila encabezado
-    ws["!rows"] = [{ hpt: 36 }];
+    // Anchos de columna (pts ≈ chars × 7.5)
+    const colWidths = header.map((_, i) => i === 2 ? 240 : i === 4 ? 110 : i === 5 ? 100 : 90);
+    const colsXml  = colWidths.map(w => `<Column ss:AutoFitWidth="0" ss:Width="${w}"/>`).join("");
 
-    XLSXStyle.utils.book_append_sheet(wb, ws, "Flejes");
-    XLSXStyle.writeFile(wb, "flejes_" + (DET.rel.fecha || "").replace(/-/g, "") + "_" + (DET.rel.planta || "") + ".xlsx");
+    // Filas
+    const allRows = [header, ...dataRows];
+    let rowsXml = "";
+    for (let r = 0; r <= nData; r++) {
+      rowsXml += r === 0 ? `<Row ss:Height="36">` : `<Row>`;
+      for (let c = 0; c < nCols; c++) {
+        const v   = allRows[r][c];
+        const num = isNum(v);
+        rowsXml +=
+          `<Cell ss:StyleID="${getSid(r, c)}">` +
+          `<Data ss:Type="${num ? "Number" : "String"}">${xe(num ? parseFloat(v) : v)}</Data>` +
+          `</Cell>`;
+      }
+      rowsXml += `</Row>`;
+    }
+
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<?mso-application progid="Excel.Sheet"?>\n` +
+      `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n` +
+      ` xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"\n` +
+      ` xmlns:x="urn:schemas-microsoft-com:office:excel">\n` +
+      ` <Styles>${stylesXml}</Styles>\n` +
+      ` <Worksheet ss:Name="Flejes"><Table>${colsXml}${rowsXml}</Table></Worksheet>\n` +
+      `</Workbook>`;
+
+    const blob = new Blob(["﻿" + xml], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url  = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement("a"), {
+      href: url,
+      download: "flejes_" + (DET.rel.fecha || "").replace(/-/g, "") + "_" + (DET.rel.planta || "") + ".xls"
+    });
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
   $("btnExcelFlejes").addEventListener("click", descargarExcelFlejes);
 
