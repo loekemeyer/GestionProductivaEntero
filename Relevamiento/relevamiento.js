@@ -1301,40 +1301,81 @@
       if (rollos.length > maxRollos) maxRollos = rollos.length;
     });
     if (!maxRollos) maxRollos = 1;
+
     // Encabezado
     const header = ["N° Orden", "Sector", "Descripción", "N° Fleje", "Proveedor", "Medida mm"];
     for (let i = 1; i <= maxRollos; i++) header.push("Cant Rollo " + i, "Kg Rollo " + i);
     header.push("Kg Total");
-    // Filas ordenadas por sector (mismo orden que la tabla)
+
+    // Filas ordenadas por sector
     const sorted = rows.slice().sort(cmpSectorRow);
-    const csvRows = [header];
+    const dataRows = [];
     sorted.forEach(row => {
       const info = row.info || {};
       const conteo = row.conteo || {};
       const rollos = DET.rollos[row.det_id] || conteo.rollos_json || [];
       const kgTotal = parseFloat(conteo.total_kg) || 0;
       const cells = [
-        info.n_orden || "",
+        info.n_orden != null ? info.n_orden : "",
         row.sector || "",
         row.descripcion || "",
-        info.n_fleje || "",
+        info.n_fleje != null ? info.n_fleje : "",
         info.prov || "",
         (info.medida_mm || "").replace(/,/g, ".")
       ];
       for (let i = 0; i < maxRollos; i++) {
         cells.push(rollos[i] != null ? (rollos[i].caj != null ? rollos[i].caj : "") : "");
-        cells.push(rollos[i] != null ? (rollos[i].kg != null ? String(rollos[i].kg).replace(",", ".") : "") : "");
+        cells.push(rollos[i] != null ? (rollos[i].kg  != null ? rollos[i].kg  : "") : "");
       }
-      cells.push(kgTotal);
-      csvRows.push(cells);
+      cells.push(kgTotal || "");
+      dataRows.push(cells);
     });
-    const esc = c => { const s = String(c == null ? "" : c); return (s.includes(";") || s.includes('"') || s.includes("\n")) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-    const csv = "﻿sep=;\r\n" + csvRows.map(r => r.map(esc).join(";")).join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement("a"), { href: url, download: "flejes_" + (DET.rel.fecha || "").replace(/-/g, "") + "_" + (DET.rel.planta || "") + ".csv" });
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+
+    // Generar XLSX con formato (xlsx-js-style)
+    const wb = XLSXStyle.utils.book_new();
+    const ws = XLSXStyle.utils.aoa_to_sheet([header, ...dataRows]);
+
+    const nCols = header.length;
+    const nData = dataRows.length;
+    const brd = style => ({ style, color: { rgb: "000000" } });
+    const M = brd("medium"), T = brd("thin"); // M=grueso exterior, T=fino interior
+
+    for (let r = 0; r <= nData; r++) {
+      for (let c = 0; c < nCols; c++) {
+        const addr = XLSXStyle.utils.encode_cell({ r, c });
+        if (!ws[addr]) ws[addr] = { v: "", t: "s" };
+        const isHdr  = r === 0;
+        const isLeft = c === 0;
+        const isRgt  = c === nCols - 1;
+        const isTop  = r === 1;        // primera fila de datos = borde superior grueso
+        const isBot  = r === nData;
+        ws[addr].s = {
+          font:      isHdr ? { bold: true, sz: 18 } : { sz: 14 },
+          alignment: { horizontal: "center", vertical: "center", wrapText: true },
+          border: isHdr
+            ? { top: M, bottom: M, left: M, right: M }
+            : {
+                left:   isLeft ? M : T,
+                right:  isRgt  ? M : T,
+                top:    isTop  ? M : T,
+                bottom: isBot  ? M : T
+              }
+        };
+      }
+    }
+
+    // Anchos de columna (caracteres aprox.)
+    ws["!cols"] = header.map((h, i) => {
+      if (i === 2) return { wch: 32 }; // Descripción
+      if (i === 4) return { wch: 15 }; // Proveedor
+      if (i === 5) return { wch: 14 }; // Medida mm
+      return { wch: 12 };
+    });
+    // Altura fila encabezado
+    ws["!rows"] = [{ hpt: 36 }];
+
+    XLSXStyle.utils.book_append_sheet(wb, ws, "Flejes");
+    XLSXStyle.writeFile(wb, "flejes_" + (DET.rel.fecha || "").replace(/-/g, "") + "_" + (DET.rel.planta || "") + ".xlsx");
   }
   $("btnExcelFlejes").addEventListener("click", descargarExcelFlejes);
 
