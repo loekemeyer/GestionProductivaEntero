@@ -226,7 +226,7 @@ function calcularConsumoMensual(nFleje) {
    2. Para cada matriz, suma uni producidas en db_n8n_espejo.
    3. Multiplica uni × Kg X Uni del sector aumenta para obtener kg consumidos.
 ========================================================= */
-function calcularFabricacion(nFleje) {
+function calcularFabricacion(nFleje, fechaRelev) {
   // Mapa Matriz → [sector_aumenta, ...] (una matriz puede producir varios sectores desde el mismo fleje)
   const matrizAumentaMap = new Map();
   const flejeLbl = "Fleje " + String(nFleje).trim(); // CE guarda "Fleje 20", no "20"
@@ -251,8 +251,16 @@ function calcularFabricacion(nFleje) {
     if (sc && kg > 0) kgXUniBySC.set(sc, kg);
   });
 
+  // FILTRO CLAVE: solo contar producción POSTERIOR al relevamiento
+  const fechaCompara = fechaRelev ? String(fechaRelev).slice(0, 10) : null;
+
   let totalKg = 0;
   produccionData.forEach(reg => {
+    // Filtrar por fecha >= fechaRelev
+    if (fechaCompara) {
+      const regFecha = String(reg.Fecha || "").slice(0, 10);
+      if (!regFecha || regFecha < fechaCompara) return;
+    }
     const matriz = String(reg.Matriz || "").trim();
     if (!matrizAumentaMap.has(matriz)) return;
     const uni = n(reg.Uni);
@@ -277,7 +285,8 @@ function procesarRows() {
     const stockInicial = n(f["Stock Inicial"]) || 0;
     const compras = comprasFlejesMap.get(String(nFleje)) || 0;
     const comprasDetalle = comprasFlejesDetalleMap.get(String(nFleje)) || [];
-    const fabricacion = calcularFabricacion(nFleje);
+    const fechaRelev = f.stock_inicial_updated_at; // fecha del último relevamiento
+    const fabricacion = calcularFabricacion(nFleje, fechaRelev);
     const stockOnline = stockInicial + compras - fabricacion;
     const { total: consumoMes, detalle: consumoDetalle } = calcularConsumoMensual(nFleje);
 
