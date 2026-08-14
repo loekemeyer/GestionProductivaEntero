@@ -22,6 +22,8 @@ let eMadreCHData = [];
 let matricesData = [];
 let comprasFlejesMap = new Map(); // N Fleje → total cantidad
 let comprasFlejesDetalleMap = new Map(); // N Fleje → [{proveedor, fecha, cantidad, remito}]
+let relevStockMap = new Map(); // N Fleje (string) → total_kg del ultimo relevamiento Cervantes
+let lastRelevTs = null;         // creado_en del ultimo relevamiento flejes/Cervantes
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function n(v) { return isNaN(v) ? 0 : Number(v); }
@@ -40,7 +42,7 @@ async function init() {
   statusEl.textContent = "Cargando datos...";
 
   try {
-    const [resFlejes, resCausa, resSC, resPS, resDesp, resLK, resCH, resCompras, resMatrices] = await Promise.all([
+    const [resFlejes, resCausa, resSC, resPS, resDesp, resLK, resCH, resCompras, resMatrices, resRelev] = await Promise.all([
       sb.from("Flejes").select("*"),
       sb.from("Causa-Efecto").select("*"),
       sb.from("SC Kg").select("*"),
@@ -49,7 +51,8 @@ async function init() {
       sb.from("E. Madre LK").select("*"),
       sb.from("E. Madre CH").select("*"),
       sb.from("Recepcion_Insumos").select("*").eq("rubro","Flejes"),
-      sb.from("Matrices").select("*")
+      sb.from("Matrices").select("*"),
+      sb.from("relevamiento_cervantes.relevamientos").select("id, creado_en").eq("tipo", "flejes").eq("planta", "Cervantes")
     ]);
 
     // Cargar db_n8n_espejo con paginacion (Supabase cap 1000 rows/request)
@@ -69,12 +72,37 @@ async function init() {
       from += PAGE;
     }
 
-    // Procesar compras Flejes (rubro=Flejes, codigo=N Fleje)
+    // Determinar el ultimo relevamiento de flejes/Cervantes y usarlo como Stock Inicial.
+    // FILTRO CLAVE: solo se cuentan recepciones y fabricacion POSTERIORES al timestamp
+    // exacto del relevamiento (creado_en). Sin este filtro cualquier recepcion anterior
+    // se contaria doble (ya esta incluida en el total_kg del relevamiento).
+    const sortedRelev = (resRelev.data || []).slice().sort((a, b) =>
+      new Date(b.creado_en) - new Date(a.creado_en));
+    const lastRelev = sortedRelev[0] || null;
+    lastRelevTs = lastRelev ? lastRelev.creado_en : null;
+
+    // Cargar el desglose del ultimo relevamiento: N Fleje → total_kg
+    relevStockMap.clear();
+    if (lastRelev) {
+      const { data: detRelev } = await sb
+        .from("v_rc_detalle")
+        .select("conteo, info")
+        .eq("relevamiento_id", lastRelev.id);
+      (detRelev || []).forEach(row => {
+        const nf = String((row.info || {}).n_fleje || "").trim();
+        const kg = parseFloat((row.conteo || {}).total_kg);
+        if (nf && !isNaN(kg)) relevStockMap.set(nf, kg);
+      });
+    }
+
+    // Compras: solo las POSTERIORES al relevamiento (evitar doble contabilidad)
     comprasFlejesMap.clear();
     comprasFlejesDetalleMap.clear();
     (resCompras.data || []).forEach(r => {
       const cod = String(r.codigo || "").trim();
       if (!cod) return;
+      // r.fecha es DATE (YYYY-MM-DD); lastRelevTs es timestamptz -> comparar por fecha
+      if (lastRelevTs && String(r.fecha) < String(lastRelevTs).slice(0, 10)) return;
       const cant = Number(r.cantidad) || 0;
       comprasFlejesMap.set(cod, (comprasFlejesMap.get(cod) || 0) + cant);
       if (!comprasFlejesDetalleMap.has(cod)) comprasFlejesDetalleMap.set(cod, []);
@@ -219,7 +247,7 @@ function calcularConsumoMensual(nFleje) {
    2. Para cada matriz, suma uni producidas en db_n8n_espejo.
    3. Multiplica uni × Kg X Uni del sector aumenta para obtener kg consumidos.
 ========================================================= */
-function calcularFabricacion(nFleje) {
+function calcularFabricacion(nFleje, fechaRelev) {
   // Mapa Matriz → [sector_aumenta, ...] (una matriz puede producir varios sectores desde el mismo fleje)
   const matrizAumentaMap = new Map();
   const flejeLbl = "Fleje " + String(nFleje).trim(); // CE guarda "Fleje 20", no "20"
@@ -244,8 +272,16 @@ function calcularFabricacion(nFleje) {
     if (sc && kg > 0) kgXUniBySC.set(sc, kg);
   });
 
+  // FILTRO CLAVE: solo contar fabricacion POSTERIOR al timestamp del relevamiento
+  const tsCompara = fechaRelev ? String(fechaRelev) : null;
+
   let totalKg = 0;
   produccionData.forEach(reg => {
+    // Solo produccion posterior al relevamiento
+    if (tsCompara) {
+      const regTs = String(reg.Fecha || "");
+      if (!regTs || regTs <= tsCompara) return;
+    }
     // db_n8n_espejo almacena Matriz como numero; convertir a nombre texto
     const matrizNumerico = String(reg.Matriz || "").trim();
     const matrizNombre = matrizIdToNombre[matrizNumerico] || matrizNumerico;
@@ -269,10 +305,14 @@ function procesarRows() {
     const desc = f["Descripción"] || "";
     const medida = f["Medida mm"] || "";
     const prov = f["Proveedor"] || "";
-    const stockInicial = n(f["Stock Inicial"]) || 0;
-    const compras = comprasFlejesMap.get(String(nFleje)) || 0;
-    const comprasDetalle = comprasFlejesDetalleMap.get(String(nFleje)) || [];
-    const fabricacion = calcularFabricacion(nFleje);
+    // Stock Inicial: del ultimo relevamiento de Cervantes; fallback a Flejes."Stock Inicial"
+    const nFlejeStr = String(nFleje).trim();
+    const stockInicial = relevStockMap.size > 0
+      ? (relevStockMap.has(nFlejeStr) ? relevStockMap.get(nFlejeStr) : n(f["Stock Inicial"]))
+      : n(f["Stock Inicial"]);
+    const compras = comprasFlejesMap.get(nFlejeStr) || 0;
+    const comprasDetalle = comprasFlejesDetalleMap.get(nFlejeStr) || [];
+    const fabricacion = calcularFabricacion(nFleje, lastRelevTs);
     const stockOnline = stockInicial + compras - fabricacion;
     const { total: consumoMes, detalle: consumoDetalle } = calcularConsumoMensual(nFleje);
 
