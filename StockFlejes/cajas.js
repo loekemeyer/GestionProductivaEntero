@@ -12,6 +12,8 @@ const selTallerista = document.getElementById("selTallerista");
 
 let cajasData = [];
 let rowsProcessed = [];
+let relevamientosData = []; // relevamiento_cervantes.relevamientos para Cajas
+let cajStockPorNCaja = new Map(); // N_Caja → {caja_id, relevamiento_id, ...}
 
 // Mapeos: código artículo → { nCaja, uniXCaja }
 let codToCaja = new Map();
@@ -113,11 +115,13 @@ async function fetchAllPaginated(table, selectCols = "*") {
   return out;
 }
 
-async function cargarConsumo() {
+async function cargarConsumo(relevamientoTimestamp) {
   // Leer envíos a talleristas (unidades enviadas por código) — paginado para evitar cap 1000
+  // relevamientoTimestamp: si está presente, filtrar solo consumo POSTERIOR al relevamiento
+  // (regla: Stock Online = Stock_Inicial (ultimo relev) + Recepciones POSTERIORES - Consumo POSTERIOR)
   const [envData, entData] = await Promise.all([
-    fetchAllPaginated("Envios a Talleristas", "Descripcion, Unidades, Tallerista, \"Dia-mes\""),
-    fetchAllPaginated("Entregas_Tall_Todas")
+    fetchAllPaginated("Envios a Talleristas", "id, Descripcion, Unidades, Tallerista, \"Dia-mes\", created_at, updated_at, fecha"),
+    fetchAllPaginated("Entregas_Tall_Todas", "*")
   ]);
   const resEnvios = { data: envData, error: null };
   const resEntregas = { data: entData, error: null };
@@ -146,6 +150,14 @@ async function cargarConsumo() {
   // Envios a Talleristas: procesar cada envío
   // NOTA: El campo "Unidades" YA está en cajas, no en unidades de producto
   (resEnvios.data || []).forEach(r => {
+    // FILTRO TEMPORAL: Si hay relevamiento, solo contar envíos POSTERIORES a creado_en
+    if (relevamientoTimestamp) {
+      const envTimestamp = r.created_at || r.updated_at || r.fecha;
+      if (envTimestamp && String(envTimestamp).slice(0, 10) < String(relevamientoTimestamp).slice(0, 10)) {
+        return; // Ignorar envíos antes de la fecha del relevamiento
+      }
+    }
+
     const desc = String(r["Descripcion"] || "").trim();
     const cajasEnviadas = n(r["Unidades"]); // Este valor YA es en cajas
     const tallerista = String(r["Tallerista"] || "").trim();
@@ -230,6 +242,14 @@ async function cargarConsumo() {
 
   // Entregas Log/Fabrica en Virgilio: también consumen cajas
   (resEntregas.data || []).forEach(r => {
+    // FILTRO TEMPORAL: Si hay relevamiento, solo contar entregas POSTERIORES a creado_en
+    if (relevamientoTimestamp) {
+      const entTimestamp = r.created_at || r.updated_at || r.fecha;
+      if (entTimestamp && String(entTimestamp).slice(0, 10) < String(relevamientoTimestamp).slice(0, 10)) {
+        return; // Ignorar entregas antes de la fecha del relevamiento
+      }
+    }
+
     const codTall = String(r["Cod_Tall"] || "").trim();
     const nombre = String(r["Nombre_Tall"] || "").trim().toLowerCase();
     if (codTall !== "0001" && !nombre.includes("log")) return;
@@ -399,8 +419,43 @@ async function init() {
 
   try {
     await cargarMapeoCajas();
-    await Promise.all([cargarConsumo(), cargarOCPendientes(), cargarCompras()]);
+
+    // Fetch relevamientos ANTES de cargarConsumo para poder filtrar por timestamp
+    const resRelev = await sb.from("relevamiento_cervantes.relevamientos")
+      .select("id, creado_en")
+      .eq("tipo", "cajas")
+      .eq("planta", "Cervantes");
+    relevamientosData = resRelev.data || [];
+
+    // Obtener el timestamp más reciente de relevamiento para filtrar consumo
+    let relevamientoTimestamp = null;
+    if (relevamientosData.length > 0) {
+      relevamientoTimestamp = relevamientosData[relevamientosData.length - 1].creado_en;
+    }
+
+    await Promise.all([
+      cargarConsumo(relevamientoTimestamp),
+      cargarOCPendientes(),
+      cargarCompras()
+    ]);
     cajasData = await cargarCajas();
+
+    // Mapear N_Caja → Cajas_Stock_Planta para obtener relevamiento_id y creado_en
+    cajStockPorNCaja.clear();
+    const resCajStockPlanta = await sb.from("Cajas_Stock_Planta")
+      .select("*")
+      .eq("planta", "Cervantes");
+    const resCajasMapeo = await sb.from("Cajas").select("id, N_Caja");
+    const cajaIdToNCaja = new Map();
+    (resCajasMapeo.data || []).forEach(c => {
+      cajaIdToNCaja.set(c.id, Number(c.N_Caja));
+    });
+    (resCajStockPlanta.data || []).forEach(sp => {
+      const nCaja = cajaIdToNCaja.get(sp.caja_id);
+      if (nCaja) {
+        cajStockPorNCaja.set(nCaja, sp);
+      }
+    });
 
     poblarTalleristas();
     procesarRows();
