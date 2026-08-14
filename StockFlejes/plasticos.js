@@ -46,13 +46,14 @@ async function init() {
   statusEl.textContent = "Cargando datos...";
 
   try {
-    const [plasRes, entregasPS, enviosPS, enviosTall, recepcionInsumos, partesTall] = await Promise.all([
+    const [plasRes, entregasPS, enviosPS, enviosTall, recepcionInsumos, partesTall, resStockPlanta] = await Promise.all([
       sb.from("Partes_Plasticas").select("*").order("Proveedor", { ascending: true }),
       fetchAll("Entregas PS"),
       fetchAll("Envios a PS"),
       fetchAll("Envios a Talleristas"),
       fetchAll("Recepcion_Insumos"),
-      sb.from("Partes x Tallerista").select("tallerista,sector_proce").limit(20000)
+      sb.from("Partes x Tallerista").select("tallerista,sector_proce").limit(20000),
+      sb.from("Partes_Plasticas_Stock_Planta").select("*").eq("planta", "Cervantes")
     ]);
     if (plasRes.error) throw plasRes.error;
     plasticosData = plasRes.data || [];
@@ -102,12 +103,15 @@ async function init() {
 
     // Compras: Recepcion_Insumos rubro=Plasticos, key=Cod_ISIS, suma cantidad.
     // FILTRO CLAVE: solo cuenta recepciones POSTERIORES al ultimo relev del Cod_ISIS
-    // (Partes_Plasticas.stock_inicial_updated_at). Sino se doble contabiliza.
+    // (Partes_Plasticas_Stock_Planta.stock_inicial_updated_at, planta=Cervantes). Sino se doble contabiliza.
     const stockIniTsByCod = new Map();
+    const plasticoIdToCodISIS = new Map();
     for (const p of plasticosData) {
-      const c = String(p["Cod_ISIS"] || "").trim();
-      const ts = p.stock_inicial_updated_at;
-      if (c && ts) stockIniTsByCod.set(c, ts);
+      plasticoIdToCodISIS.set(p.id, String(p["Cod_ISIS"] || "").trim());
+    }
+    for (const sp of (resStockPlanta.data || [])) {
+      const c = plasticoIdToCodISIS.get(sp.plastico_id);
+      if (c && sp.stock_inicial_updated_at) stockIniTsByCod.set(c, sp.stock_inicial_updated_at);
     }
     comprasPorCodISIS = new Map();
     for (const r of recepcionInsumos) {

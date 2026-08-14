@@ -382,14 +382,20 @@ async function bloqueoMeOlvide() {
 async function cargarCompras() {
   comprasCajasMap.clear();
   comprasDetalleMap.clear();
-  const [resCompras, resCajasTs] = await Promise.all([
+  const [resCompras, resStockPlanta] = await Promise.all([
     sb.from("Recepcion_Insumos").select("*").eq("rubro", "Cajas"),
-    sb.from("Cajas").select('N_Caja, stock_inicial_updated_at'),
+    sb.from("Cajas_Stock_Planta").select("*").eq("planta", "Cervantes"),
   ]);
   if (resCompras.error) { console.error("Error compras Cajas:", resCompras.error); return; }
   const stockIniTsByCaja = new Map();
-  (resCajasTs.data || []).forEach(c => {
-    if (c.N_Caja != null && c.stock_inicial_updated_at) stockIniTsByCaja.set(Number(c.N_Caja), c.stock_inicial_updated_at);
+  const resCajasMapeo = await sb.from("Cajas").select('id, N_Caja');
+  const cajaIdToNCaja = new Map();
+  (resCajasMapeo.data || []).forEach(c => {
+    cajaIdToNCaja.set(c.id, Number(c.N_Caja));
+  });
+  (resStockPlanta.data || []).forEach(sp => {
+    const nCaja = cajaIdToNCaja.get(sp.caja_id);
+    if (nCaja && sp.stock_inicial_updated_at) stockIniTsByCaja.set(nCaja, sp.stock_inicial_updated_at);
   });
   (resCompras.data || []).forEach(r => {
     const nCaja = Number(String(r.codigo || "").trim());
