@@ -29,6 +29,7 @@ let relevStockMapSanRoque = new Map(); // N Fleje (string) → stock_kg del ulti
 let lastRelevTs = null;                // creado_en del ultimo relevamiento flejes/Cervantes
 let lastRelevTsVirgilio = null;        // creado_en del ultimo relevamiento flejes/Virgilio
 let lastRelevTsSanRoque = null;        // creado_en del ultimo relevamiento flejes/San Roque
+let relevRollosCervMap = new Map();    // N Fleje (string) → rollos_json [{caj, kg}] del relev Cervantes
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function n(v) { return isNaN(v) ? 0 : Number(v); }
@@ -100,6 +101,7 @@ async function init() {
     relevStockMap.clear();
     relevStockMapVirgilio.clear();
     relevStockMapSanRoque.clear();
+    relevRollosCervMap.clear();
     const PLANTA_MAP = {
       "Cervantes": relevStockMap,
       "Virgilio": relevStockMapVirgilio,
@@ -118,6 +120,10 @@ async function init() {
         const kg = parseFloat((row.conteo || {})[kgField]);
         if (planta !== "Cervantes") console.log(`[relev] ${planta} row info:`, row.info, `conteo[${kgField}]:`, (row.conteo || {})[kgField], `-> nf="${nf}" kg=${kg}`);
         if (nf && !isNaN(kg)) map.set(nf, kg);
+        // Guardar desglose de rollos para Cervantes
+        if (planta === "Cervantes" && nf && Array.isArray((row.conteo || {}).rollos_json)) {
+          relevRollosCervMap.set(nf, row.conteo.rollos_json);
+        }
       });
     }));
     console.log("[relev] Cerv size:", relevStockMap.size, "Virg size:", relevStockMapVirgilio.size, "SR size:", relevStockMapSanRoque.size);
@@ -529,21 +535,37 @@ function popupStockOnline(i) {
   const r = window._rowsPedido[i];
   if (!r) return;
 
-  // Sección por planta (relevamientos)
-  const plantasRows = [
-    { label: "📦 Cervantes", val: r.stockInicial, ts: lastRelevTs },
-    { label: "📦 Virgilio",  val: r.stockVirgilio, ts: lastRelevTsVirgilio },
-    { label: "📦 S.Roque",   val: r.stockSanRoque, ts: lastRelevTsSanRoque },
-  ];
+  const nFlejeStr = String(r.nFleje).trim();
+  const rollosCerv = relevRollosCervMap.get(nFlejeStr) || [];
+
   function fmtFecha(ts) {
     if (!ts) return "";
     const d = new Date(ts);
     return ` <span style="font-size:10px;color:#aaa">${d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>`;
   }
-  const plantasHtml = plantasRows
+
+  // Fila Cervantes + desglose de rollos
+  let cervHtml = "";
+  if (lastRelevTs !== null) {
+    cervHtml += `<tr style="color:#444"><td>📦 Cervantes${fmtFecha(lastRelevTs)}</td><td style="text-align:right">${fmtN(r.stockInicial)} kg</td></tr>`;
+    rollosCerv.filter(ro => Number(ro.caj) > 0).forEach(ro => {
+      const cant = Number(ro.caj);
+      const kgRollo = Number(ro.kg);
+      const tot = cant * kgRollo;
+      cervHtml += `<tr style="font-size:12px;color:#999"><td style="padding-left:16px">${cant} rollo${cant > 1 ? "s" : ""} × ${fmtN(kgRollo)} kg</td><td style="text-align:right">${fmtN(tot)} kg</td></tr>`;
+    });
+  }
+
+  // Filas de otras plantas
+  const otrasHtml = [
+    { label: "📦 Virgilio",  val: r.stockVirgilio, ts: lastRelevTsVirgilio },
+    { label: "📦 S.Roque",   val: r.stockSanRoque, ts: lastRelevTsSanRoque },
+  ]
     .filter(p => p.val !== null)
     .map(p => `<tr style="color:#444"><td>${p.label}${fmtFecha(p.ts)}</td><td style="text-align:right">${fmtN(p.val)} kg</td></tr>`)
     .join("");
+
+  const plantasHtml = cervHtml + otrasHtml;
   const sepPlanta = plantasHtml
     ? `<tr><td colspan="2" style="padding:3px 0"><hr style="border:none;border-top:1px solid #ddd;margin:0"></td></tr>`
     : "";
