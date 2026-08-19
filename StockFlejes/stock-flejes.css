@@ -301,9 +301,9 @@ body {
   background: #fff;
   border-radius: 10px;
   box-shadow: 0 12px 40px rgba(0,0,0,.2);
-  min-width: 260px;
-  max-width: 400px;
-  max-height: 70vh;
+  min-width: 340px;
+  max-width: 600px;
+  max-height: 80vh;
   overflow-y: auto;
 }
 
@@ -311,24 +311,25 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 14px;
+  padding: 14px 20px;
   border-bottom: 1px solid #eee;
   font-weight: 700;
-  font-size: 20px;
+  font-size: 24px;
 }
 
 .popup-detalle-header button {
   background: none;
   border: 1px solid #ccc;
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 6px 12px;
   cursor: pointer;
   font-weight: 700;
+  font-size: 20px;
 }
 
 #popupBody {
-  padding: 10px 14px;
-  font-size: 20px;
+  padding: 14px 20px;
+  font-size: 22px;
 }
 
 #popupBody table {
@@ -337,7 +338,7 @@ body {
 }
 
 #popupBody td {
-  padding: 4px 6px;
+  padding: 6px 10px;
   border-bottom: 1px solid #f0f0f0;
 }
 
