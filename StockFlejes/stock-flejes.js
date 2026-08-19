@@ -15,6 +15,7 @@ let rowsProcessed = [];
 let causaEfectoData = [];
 let produccionData = [];
 let scKgData = [];
+let spKgData = [];
 let partesXPSData = [];
 let despieceData = [];
 let eMadreLKData = [];
@@ -48,10 +49,11 @@ async function init() {
   statusEl.textContent = "Cargando datos...";
 
   try {
-    const [resFlejes, resCausa, resSC, resPS, resDesp, resLK, resCH, resCompras, resRelev, resMatrices] = await Promise.all([
+    const [resFlejes, resCausa, resSC, resSP, resPS, resDesp, resLK, resCH, resCompras, resRelev, resMatrices] = await Promise.all([
       sb.from("Flejes").select("*"),
       sb.from("Causa-Efecto").select("*"),
       sb.from("SC Kg").select("*"),
+      sb.from("SP Kg").select("*"),
       sb.from("Partes x PS").select("*"),
       sb.from("Despiece x Articulo").select("*"),
       sb.from("E. Madre LK").select("*"),
@@ -147,6 +149,7 @@ async function init() {
     if (resFlejes.error) throw resFlejes.error;
     if (resCausa.error) throw resCausa.error;
     if (resSC.error) throw resSC.error;
+    if (resSP.error) throw resSP.error;
     if (resPS.error) throw resPS.error;
     if (resDesp.error) throw resDesp.error;
     if (resLK.error) throw resLK.error;
@@ -157,6 +160,7 @@ async function init() {
     causaEfectoData = resCausa.data || [];
     produccionData = allProd; /* paginado completo */
     scKgData = resSC.data || [];
+    spKgData = resSP.data || [];
     partesXPSData = resPS.data || [];
     despieceData = resDesp.data || [];
     eMadreLKData = resLK.data || [];
@@ -301,7 +305,9 @@ function calcularFabricacion(nFleje, fechaRelev) {
   const flejeLbl = "Fleje " + String(nFleje).trim(); // CE guarda "Fleje 20", no "20"
   causaEfectoData.forEach(ce => {
     if (String(ce.Descuenta || "").trim() === flejeLbl) {
-      const m = String(ce.Matriz || "").trim();
+      const mRaw = String(ce.Matriz || "").trim();
+      // Convertir numero de matriz a nombre (igual que produccion) para que matcheen
+      const m = matrizIdToNombre[mRaw] || mRaw;
       const a = String(ce.Aumenta || "").trim().toUpperCase();
       if (m && a) {
         if (!matrizAumentaMap.has(m)) matrizAumentaMap.set(m, []);
@@ -312,12 +318,18 @@ function calcularFabricacion(nFleje, fechaRelev) {
 
   if (matrizAumentaMap.size === 0) return 0;
 
-  // Construir mapa sector → kgXuni (desde SC Kg para conversiones)
+  // Construir mapa sector → kg con desperdicio (SC Kg primero, SP Kg como fallback)
   const kgXUniBySC = new Map();
   scKgData.forEach(r => {
     const sc = String(r["SC"] || "").trim().toUpperCase();
-    const kg = n(r["Kg X Uni"]);
+    const kg = n(r["KG Mat PARTE    C/Desp"]);
     if (sc && kg > 0) kgXUniBySC.set(sc, kg);
+  });
+  // Fallback: sectores en SP Kg que no están en SC Kg
+  spKgData.forEach(r => {
+    const sp = String(r["Sp"] || "").trim().toUpperCase();
+    const kg = n(r["Kg X Uni"]);
+    if (sp && kg > 0 && !kgXUniBySC.has(sp)) kgXUniBySC.set(sp, kg);
   });
 
   // FILTRO CLAVE: solo contar producción POSTERIOR al timestamp exacto del relevamiento
