@@ -316,7 +316,7 @@ function calcularFabricacion(nFleje, fechaRelev) {
     }
   });
 
-  if (matrizAumentaMap.size === 0) return 0;
+  if (matrizAumentaMap.size === 0) return { total: 0, detalle: [] };
 
   // Construir mapa sector → kg con desperdicio (SC Kg primero, SP Kg como fallback)
   const kgXUniBySC = new Map();
@@ -336,6 +336,8 @@ function calcularFabricacion(nFleje, fechaRelev) {
   // (no incluir producción anterior al relevamiento ni la del rollo en alimentador)
   const tsCompara = fechaRelev ? String(fechaRelev) : null;
 
+  // Acumular detalle por (matriz, sectorAumenta)
+  const detalleMap = new Map(); // key "matriz|sector" → {matriz, sectorAumenta, uni, kgPorUni, kg}
   let totalKg = 0;
   produccionData.forEach(reg => {
     // Filtrar por timestamp > timestampRelev (DESPUÉS del momento exacto del relev)
@@ -352,11 +354,22 @@ function calcularFabricacion(nFleje, fechaRelev) {
     const sectores = matrizAumentaMap.get(matrizNombre);
     for (const sectorAumenta of sectores) {
       const kgPorUni = kgXUniBySC.get(sectorAumenta) || 0;
-      totalKg += uni * kgPorUni;
+      const kg = uni * kgPorUni;
+      totalKg += kg;
+      const key = matrizNombre + "|" + sectorAumenta;
+      if (!detalleMap.has(key)) {
+        detalleMap.set(key, { matriz: matrizNombre, sectorAumenta, uni: 0, kgPorUni, kg: 0 });
+      }
+      const d = detalleMap.get(key);
+      d.uni += uni;
+      d.kg += kg;
     }
   });
 
-  return Math.round(totalKg * 100) / 100;
+  // Ordenar detalle por kg desc
+  const detalle = [...detalleMap.values()].sort((a, b) => b.kg - a.kg);
+
+  return { total: Math.round(totalKg * 100) / 100, detalle };
 }
 
 /* ================= PROCESAR Y ORDENAR ================= */
@@ -375,14 +388,14 @@ function procesarRows() {
     const comprasDetalle = comprasFlejesDetalleMap.get(nFlejeStr) || [];
     // Timestamp del ultimo relevamiento de Cervantes (para filtrar fabricacion posterior)
     const timestampRelev = lastRelevTs || f.stock_inicial_updated_at;
-    const fabricacion = calcularFabricacion(nFleje, timestampRelev);
+    const { total: fabricacion, detalle: fabricacionDetalle } = calcularFabricacion(nFleje, timestampRelev);
     const stockOnline = stockInicial + compras - fabricacion;
     const { total: consumoMes, detalle: consumoDetalle } = calcularConsumoMensual(nFleje);
 
     // null = sin relevamiento de esa planta; 0 = relevamiento existe pero fleje no contado; número = kg
     const stockVirgilio = lastRelevTsVirgilio !== null ? (relevStockMapVirgilio.get(nFlejeStr) ?? 0) : null;
     const stockSanRoque = lastRelevTsSanRoque !== null ? (relevStockMapSanRoque.get(nFlejeStr) ?? 0) : null;
-    return { nFleje, desc, medida, prov, stockOnline, compras, comprasDetalle, fabricacion, stockInicial, consumoMes, consumoDetalle, stockVirgilio, stockSanRoque };
+    return { nFleje, desc, medida, prov, stockOnline, compras, comprasDetalle, fabricacion, fabricacionDetalle, stockInicial, consumoMes, consumoDetalle, stockVirgilio, stockSanRoque };
   });
 
   // Ordenar por proveedor, luego N° Fleje
@@ -412,6 +425,7 @@ function aplicarFiltros() {
 
     if (stockFiltro === "conStock" && r.stockOnline === 0) return false;
     if (stockFiltro === "sinStock" && r.stockOnline !== 0) return false;
+    if (stockFiltro === "utilizados" && r.fabricacion === 0) return false;
 
     return true;
   });
@@ -587,7 +601,7 @@ function popupStockOnline(i) {
       ${plantasHtml}${sepPlanta}
       <tr><td>Stock Inicial (Cerv.)</td><td style="text-align:right">${fmtN(r.stockInicial)}</td></tr>
       <tr><td>+ Compras</td><td style="text-align:right">${fmtN(r.compras)}</td></tr>
-      <tr><td>− Fabricación</td><td style="text-align:right">${fmtN(r.fabricacion)}</td></tr>
+      <tr class="col-clickable" style="cursor:pointer" onclick="popupFabricacion(${i})"><td>− Fabricación</td><td style="text-align:right">${fmtN(r.fabricacion)}</td></tr>
       <tr style="border-top:2px solid #333"><td><b>= Stock Online</b></td><td style="text-align:right"><b>${fmtN(r.stockOnline)}</b></td></tr>
     </table>`
   );
@@ -629,6 +643,52 @@ function popupPedido(i) {
       <tr><td>Ped Min Cod</td><td>${fmtN(PEDIDO_MIN_COD)}</td></tr>
       <tr><td>Ped Min Prov</td><td>${fmtN(r.pedMinProv)}</td></tr>
       <tr style="border-top:2px solid #333"><td><b>= Pedido</b></td><td><b>${fmtN(r.pedido)}</b></td></tr>
+    </table>`
+  );
+}
+
+function popupFabricacion(i) {
+  const r = window._rowsPedido[i];
+  if (!r) return;
+
+  function fmtFechaRelev(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  }
+
+  let detalleHtml = "";
+  if (r.fabricacionDetalle && r.fabricacionDetalle.length) {
+    r.fabricacionDetalle.forEach(d => {
+      detalleHtml += `<tr style="font-size:12px;color:#444">
+        <td style="padding:2px 6px">${esc(d.matriz)}</td>
+        <td style="padding:2px 6px">${esc(d.sectorAumenta)}</td>
+        <td style="padding:2px 6px;text-align:right">${fmtN(d.uni)}</td>
+        <td style="padding:2px 6px;text-align:right">${d.kgPorUni.toFixed(4)}</td>
+        <td style="padding:2px 6px;text-align:right">${fmtN(Math.round(d.kg * 100) / 100)}</td>
+      </tr>`;
+    });
+  } else {
+    detalleHtml = `<tr><td colspan="5" style="color:#999;padding:8px">Sin producción registrada</td></tr>`;
+  }
+
+  const relevLabel = lastRelevTs ? `después del ${fmtFechaRelev(lastRelevTs)}` : "";
+
+  abrirPopup(`Fabricación — Fleje ${r.nFleje}`,
+    `<div style="font-size:12px;color:#888;margin-bottom:8px">Producción ${relevLabel}</div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="font-size:11px;color:#888;border-bottom:1px solid #ddd">
+        <th style="text-align:left;padding:4px 6px">Matriz</th>
+        <th style="text-align:left;padding:4px 6px">Sector</th>
+        <th style="text-align:right;padding:4px 6px">Uni</th>
+        <th style="text-align:right;padding:4px 6px">Kg/Uni</th>
+        <th style="text-align:right;padding:4px 6px">Kg</th>
+      </tr></thead>
+      <tbody>${detalleHtml}</tbody>
+      <tfoot><tr style="border-top:2px solid #333;font-weight:700">
+        <td colspan="4" style="padding:4px 6px">Total</td>
+        <td style="text-align:right;padding:4px 6px">${fmtN(r.fabricacion)}</td>
+      </tr></tfoot>
     </table>`
   );
 }
