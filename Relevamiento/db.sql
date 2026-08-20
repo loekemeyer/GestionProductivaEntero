@@ -8,7 +8,8 @@
 --   CABECERA (1 fila por relevamiento) relevamientos  (tipo, planta, fecha, encargado)
 --   DETALLE  (conteo)                det_*         <- generado desde el catalogo por generar_relevamiento()
 --
---   Plantas por tipo:  flejes = Cervantes/Virgilio/San Roque ; cajas y plasticos = Cervantes/Virgilio ; resto = Cervantes.
+--   Plantas por tipo:  flejes = Cervantes/Virgilio ; cajas y plasticos = Cervantes/Virgilio ; resto = Cervantes.
+--   (San Roque dado de baja 2026-08-10: nunca se relevo ahi; sacado del front y del check de planta.)
 --   Conteo por planta: cajas Cerv=paq+uni_suelta / Virg=uni ; flejes Cerv=rollos+total_kg / Virg-SR=stock_kg.
 --   Seeds cargados: cat_cajas 14 · cat_flejes 62 · cat_cartones 243 · cat_plasticos 64 · cat_remaches 22 · cat_bombillas 22 · cat_garage 17.
 -- ============================================================
@@ -41,7 +42,7 @@ create table if not exists relevamiento_cervantes.cat_garage (
 create table if not exists relevamiento_cervantes.relevamientos (
   id        bigint generated always as identity primary key,
   tipo      text not null check (tipo in ('cajas','flejes','cartones','plasticos','remaches','bombillas','garage')),
-  planta    text not null default 'Cervantes' check (planta in ('Cervantes','Virgilio','San Roque')),
+  planta    text not null default 'Cervantes' check (planta in ('Cervantes','Virgilio')),  -- San Roque dado de baja 2026-08-10
   fecha       date not null,
   encargado   text,        -- obligatorio desde el modulo (no en DB)
   dispositivo text,        -- (no se usa; el modulo no lo envia)
