@@ -621,7 +621,7 @@
       const tr = document.createElement('tr');
       const enProceso = r._enProceso || !r.Hora_Fin;
       if (enProceso) tr.classList.add('en-proceso');
-      else if (r.Uni === 0) tr.classList.add('tm-row');
+      else if (TM_CODES.includes(String(r.Matriz || '').toUpperCase())) tr.classList.add('tm-row');
       if (isMovHijo) {
         tr.classList.add('mov-hijo', 'hidden');
         tr.dataset.padreCajon = r._padreCajonId;
@@ -808,7 +808,7 @@
     editingRow = currentRows.find(r => r.id === id);
     if (!editingRow) return;
 
-    if (editingRow.Uni === 0) {
+    if (TM_CODES.includes(String(editingRow.Matriz || '').toUpperCase())) {
       // TM — editable (Hora Inicio / Hora Fin / código)
       modalTitle.textContent = 'Editar Tiempo Muerto';
       let tmOpts = '';
@@ -1007,7 +1007,8 @@
     const row = currentRows.find(r => r.id === id);
     if (!row) return;
 
-    const label = row.Uni === 0 ? 'tiempo muerto' : 'registro (Uni=' + row.Uni + ')';
+    const esTM = TM_CODES.includes(String(row.Matriz || '').toUpperCase());
+    const label = esTM ? 'tiempo muerto' : 'registro (Uni=' + row.Uni + ')';
     if (!confirm('Eliminar ' + label + ' de ' + (row.Nombre_Empleado || row.Legajo) + ' a las ' + row.Hora_Fin + '?')) return;
 
     // Soft delete
@@ -1017,7 +1018,7 @@
 
     if (error) { alert('Error: ' + error.message); return; }
 
-    const wasTM = row.Uni === 0;
+    const wasTM = TM_CODES.includes(String(row.Matriz || '').toUpperCase());
     const legajo = row.Legajo;
     const dia = row.Dia;
     const mes = row.Mes;
