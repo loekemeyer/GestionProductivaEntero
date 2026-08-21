@@ -664,8 +664,12 @@ function buildItemBtn(item) {
   if (item._cant) clases.push("active");
   if (oc) clases.push("tiene-oc");
   btn.className = clases.join(" ");
-  // 1) Medida (o codigo/desc si no hay medida)
-  const label = item.medida || item.descripcion || item.codigo;
+  // 1) Etiqueta principal del boton
+  //    Cajas: "Caja N" (N = N_Caja / item.codigo) para identificar directo, sin medida.
+  //    Resto: medida (o fallback a descripcion/codigo si no hay medida).
+  const label = (rubroSel === "Cajas")
+    ? `Caja ${item.codigo}`
+    : (item.medida || item.descripcion || item.codigo);
   btn.innerHTML = `<div class="medida">${esc(label)}</div>`;
   // 2) OC / sin OC
   if (oc) {
