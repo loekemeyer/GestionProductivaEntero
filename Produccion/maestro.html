@@ -837,7 +837,7 @@
       modalBody.innerHTML =
         '<div class="modal-field"><label>Legajo</label><input disabled value="' + esc(editingRow.Legajo) + '" /></div>' +
         '<div class="modal-field"><label>Operario</label><input disabled value="' + esc(editingRow.Nombre_Empleado) + '" /></div>' +
-        '<div class="modal-field"><label>Uni</label><input type="number" id="editUni" min="1" value="' + editingRow.Uni + '" /></div>' +
+        '<div class="modal-field"><label>Uni</label><input type="text" inputmode="decimal" id="editUni" value="' + editingRow.Uni + '" /></div>' +
         '<div class="modal-field"><label>Matriz</label><select id="editMatriz">' + matrizOpts + '</select></div>' +
         '<div class="modal-field"><label>Día Inicio</label><input type="date" id="editDiaIni" value="' + esc(_dIniDef) + '" /></div>' +
         '<div class="modal-field"><label>Hora Inicio (HH:MM:SS)</label><input type="text" id="editHoraIni" value="' + esc(editingRow.Hora_Inicio) + '" placeholder="HH:MM:SS" /></div>' +
@@ -899,13 +899,14 @@
 
   async function saveEdit() {
     if (!editingRow) return;
-    const newUni = parseInt(document.getElementById('editUni').value, 10);
+    const rawUni = document.getElementById('editUni').value.trim().replace(',', '.');
+    const newUni = parseFloat(rawUni);
     const newMatriz = document.getElementById('editMatriz').value;
     const newHoraIni = document.getElementById('editHoraIni').value.trim();
     const newHoraFin = document.getElementById('editHoraFin').value.trim();
     const diaIni = document.getElementById('editDiaIni').value;
     const diaFin = document.getElementById('editDiaFin').value || diaIni;
-    if (!newUni || newUni < 1) { alert('Uni debe ser >= 1'); return; }
+    if (isNaN(newUni) || newUni < 0) { alert('Uni debe ser un número >= 0'); return; }
     if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(newHoraIni) || !/^\d{1,2}:\d{2}(:\d{2})?$/.test(newHoraFin)) {
       alert('Formato de hora invalido. Usar HH:MM:SS'); return;
     }
@@ -955,9 +956,9 @@
       });
 
       const segNeto = Math.max(1, segBruto - segTM);
-      const segHistorico = tiempoProm * newUni;
-      const tiempoToma = segNeto / newUni;
-      const premio = Math.round(((-(segNeto / segHistorico) + 1) * 10) * 100) / 100;
+      const segHistorico = newUni > 0 ? tiempoProm * newUni : 0;
+      const tiempoToma = newUni > 0 ? segNeto / newUni : 0;
+      const premio = (newUni > 0 && segHistorico > 0) ? Math.round(((-(segNeto / segHistorico) + 1) * 10) * 100) / 100 : 0;
 
       const updateObj = {
         Uni: newUni,
