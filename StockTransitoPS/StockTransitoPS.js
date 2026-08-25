@@ -57,11 +57,28 @@ async function cargarDatos() {
   try {
     statusEl.textContent = "Cargando datos...";
 
-    const [partesPS, entregasPS, enviosPS] = await Promise.all([
+    const [partesPS, entregasPS, enviosPS, scKgRows, spKgRows, plastRows] = await Promise.all([
       fetchAll("Partes x PS"),
       fetchAll("Entregas PS"),
-      fetchAll("Envios a PS")
+      fetchAll("Envios a PS"),
+      fetchAll("SC Kg"),
+      fetchAll("SP Kg"),
+      fetchAll("SectorPlasticos")
     ]);
+
+    // Mapa sector(normalizado) -> Kg/Uni para convertir kg a unidades.
+    // Para piezas en transito el peso real es el del SC (material crudo enviado),
+    // asi que se prioriza SC Kg; luego SectorPlasticos; luego SP Kg como ultimo recurso.
+    const kgUniBySector = new Map();
+    const setKgUni = (sector, kg) => {
+      const k = norm(sector);
+      const v = num(kg);
+      if (k && v > 0 && !kgUniBySector.has(k)) kgUniBySector.set(k, v);
+    };
+    (scKgRows   || []).forEach(r => setKgUni(r["SC"], r["Kg X Uni"] || r["Kg x Uni"]));
+    (plastRows  || []).forEach(r => setKgUni(r["Sector"], r["Kg x Uni"] || r["Kg X Uni"]));
+    (spKgRows   || []).forEach(r => setKgUni(r["Sp"] || r["SP"], r["Kg X Uni"] || r["Kg x Uni"]));
+    const kgUniDe = (sc) => kgUniBySector.get(norm(sc)) || 0;
 
     // 1. Identificar partes en transito: Partes x PS donde SP es null o SP es "ST"
     const transitoParts = partesPS.filter(p => {
@@ -104,7 +121,8 @@ async function cargarDatos() {
         ps: ps,
         fecha: String(e["Dia-mes"] || "").trim(),
         kg: num(e["KG"]),
-        cajones: num(e["Cajones"])
+        cajones: num(e["Cajones"]),
+        created_at: e["created_at"]
       });
     }
 
@@ -124,7 +142,8 @@ async function cargarDatos() {
         ps: ps,
         fecha: String(e["Dia-mes"] || "").trim(),
         kg: num(e["KG"]),
-        cajones: num(e["Cajones"])
+        cajones: num(e["Cajones"]),
+        created_at: e["created_at"]
       });
     }
 
@@ -186,6 +205,7 @@ async function cargarDatos() {
       filasGlobal.push({
         ps, proceso, parte, sc,
         psSiguiente, procesoSiguiente,
+        kgUni: kgUniDe(sc),
         entregaKg: ent.kg, entregaCaj: ent.cajones, entregaDetalle: ent.detalle,
         envioKg: env.kg, envioCaj: env.cajones, envioDetalle: env.detalle,
         transitoKg, transitoCaj
@@ -248,10 +268,10 @@ function renderTabla(filas) {
 
     // Popup entregas
     const idxEnt = popupData.length;
-    popupData.push({ title: "Entregas de " + r.ps + " — " + r.parte, items: r.entregaDetalle });
+    popupData.push({ title: "Entregas de " + r.ps + " — " + r.parte, items: r.entregaDetalle, kgUni: r.kgUni });
     // Popup envios
     const idxEnv = popupData.length;
-    popupData.push({ title: "Envios a " + (r.psSiguiente || "?") + " — " + r.parte, items: r.envioDetalle });
+    popupData.push({ title: "Envios a " + (r.psSiguiente || "?") + " — " + r.parte, items: r.envioDetalle, kgUni: r.kgUni });
 
     rows += '<tr>';
     rows += '<td>' + esc(r.parte) + '</td>';
@@ -298,20 +318,21 @@ function abrirPopup(idx) {
   if (!data.items || data.items.length === 0) {
     bodyHtml = '<div class="popup-line" style="color:#888;text-align:center">Sin movimientos registrados</div>';
   } else {
-    // Ordenar por fecha desc
-    const sorted = [...data.items].sort((a, b) => {
-      const fa = String(a.fecha || "").split(/[/-]/);
-      const fb = String(b.fecha || "").split(/[/-]/);
-      const da = (fa[1] || 0) * 100 + (fa[0] || 0);
-      const db = (fb[1] || 0) * 100 + (fb[0] || 0);
-      return db - da;
-    });
+    // Ordenar cronologico por created_at (fecha real). El campo `fecha` (Dia-mes)
+    // mezcla formatos DD/MM (envios) y YYYY-MM-DD (entregas) y no es confiable para ordenar.
+    const sorted = [...data.items].sort((a, b) =>
+      String(a.created_at || "").localeCompare(String(b.created_at || "")));
+    const kgUni = Number(data.kgUni || 0);
     for (const it of sorted) {
       bodyHtml += '<div class="popup-line">';
       if (it.ps) bodyHtml += '<span class="badge-ps" style="margin-right:6px">' + esc(it.ps) + '</span>';
       bodyHtml += '<strong>' + esc(it.fecha || "?") + '</strong>';
       if (it.kg) bodyHtml += ' — ' + fmt(it.kg) + ' kg';
       if (it.cajones) bodyHtml += ' — ' + fmt(it.cajones) + ' caj';
+      // Conversion a unidades (redondeo al mas cercano) si hay peso y kg/uni conocido
+      if (kgUni > 0 && Number(it.kg) > 0) {
+        bodyHtml += ' — ' + Math.round(Number(it.kg) / kgUni).toLocaleString("es-AR") + ' uni';
+      }
       bodyHtml += '</div>';
     }
   }
