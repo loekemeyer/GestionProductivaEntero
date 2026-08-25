@@ -244,6 +244,13 @@ async function cargarIndicesPiezaMadre() {
 function resolverRefSP(r, idx) {
   const sp = normalizeText(pick(r, ["Sector SP", "Sector_SP", "sector sp", "sector_sp", "SP", "Sp", "sp"]));
   const parte = normalizeText(pick(r, ["Parte", "PARTE", "parte"]));
+  // ST (Sector Transito) es un bucket compartido con peso arbitrario (ej "Resorte U" 0.012):
+  // NO usarlo para convertir kg->uni. Para piezas en transito (SP=ST) resolver por el SC real.
+  if (sp === "st") {
+    const sc = normalizeText(pick(r, ["Sector SC", "Sector_SC", "sector sc", "sector_sc", "SC", "Sc", "sc"]));
+    const refSc = sc ? idx.scPorSector.get(sc) : null;
+    if (refSc) return refSc;
+  }
   return idx.spPorSector.get(sp) || idx.spPorParte.get(parte) || null;
 }
 
