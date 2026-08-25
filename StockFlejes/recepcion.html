@@ -281,8 +281,17 @@
     <div id="flejesRollosGrid" style="display:none"></div>
 
     <div id="kgInputGroup">
-      <label style="display:block;margin-bottom:8px;font-size:16px;font-weight:700">KG</label>
+      <label id="kgUnitLabel" style="display:block;margin-bottom:8px;font-size:16px;font-weight:700">KG</label>
       <input type="text" id="inputKgValue" inputmode="decimal" placeholder="0,0" />
+    </div>
+
+    <div id="paqInputGroup" style="display:none">
+      <div id="paqUppHint" style="margin-bottom:10px;font-size:18px;font-weight:800;color:#0b5cad;background:#eef4fb;padding:8px 12px;border-radius:8px;text-align:center"></div>
+      <label style="display:block;margin-bottom:8px;font-size:16px;font-weight:700">Paquetes</label>
+      <input type="text" id="inputPaquetes" inputmode="numeric" placeholder="0" />
+      <label style="display:block;margin:14px 0 8px;font-size:16px;font-weight:700">Unidades sueltas</label>
+      <input type="text" id="inputSueltas" inputmode="numeric" placeholder="0" />
+      <div id="paqTotalLine" style="margin-top:16px;font-size:22px;font-weight:900;text-align:right">Total: 0</div>
     </div>
 
     <div id="rollosInputGroup" style="display:none;margin-top:14px">
@@ -595,7 +604,8 @@ btnContinuar.addEventListener("click", async () => {
         desc: String(r[cfg.colDesc] ?? "").trim(),
         isis: cfg.colIsis ? String(r[cfg.colIsis] ?? "").trim() : "",
         medida: cfg.colMedida ? String(r[cfg.colMedida] ?? "").trim() : "",
-        sector: cfg.colSector ? String(r[cfg.colSector] ?? "").trim() : ""
+        sector: cfg.colSector ? String(r[cfg.colSector] ?? "").trim() : "",
+        uniXPaq: r["Uni_x_Paq"] ?? r["Un_x_Paq"] ?? ""
       }));
     }
 
@@ -611,6 +621,7 @@ btnContinuar.addEventListener("click", async () => {
       isis: String(r.isis ?? "").trim(),
       medida: String(r.medida ?? "").trim(),
       sector: String(r.sector ?? "").trim(),
+      uniXPaq: Number(String(r.uniXPaq ?? "").replace(",", ".")) || 0,
       _cant: "",
       _rollos: "",
       _pesoRollo: ""
@@ -703,11 +714,18 @@ function buildItemBtn(item) {
   }
   // 3) Sector abajo
   if (item.sector) btn.innerHTML += `<div class="sector">${esc(item.sector)}</div>`;
-  // 4) Kg cargados (si ya se registro)
+  // 4) Cantidad cargada (si ya se registro), en la unidad del rubro
   if (item._cant) {
-    btn.innerHTML += `<div class="medida" style="margin-top:8px;color:#0a7a2f;font-weight:700">${esc(item._cant)} kg`;
-    if (item._rollos) btn.innerHTML += ` · ${item._rollos} rollos`;
-    btn.innerHTML += `</div>`;
+    let extra;
+    const u = getUnidad(rubroSel, provSel);
+    const uTxt = u === "Kg" ? "kg" : u === "Cajas" ? "cajas" : u === "Millares" ? "millares" : u === "Litros" ? "L" : "uni";
+    if (item._paqBreak) {
+      extra = `${esc(item._cant)} ${uTxt} (${item._paqBreak.paquetes} paq + ${item._paqBreak.sueltas})`;
+    } else {
+      extra = `${esc(item._cant)} ${uTxt}`;
+      if (item._rollos) extra += ` · ${item._rollos} rollos`;
+    }
+    btn.innerHTML += `<div class="medida" style="margin-top:8px;color:#0a7a2f;font-weight:700">${extra}</div>`;
   }
   btn.addEventListener("click", () => onItemClick(item));
   return btn;
@@ -991,26 +1009,46 @@ function openKgPopup(item) {
   if (item.isis) kgItemInfo.innerHTML += ` <br><small>ISIS: ${esc(item.isis)}</small>`;
   if (rubroSel === "Flejes") kgItemInfo.innerHTML += ` <br>Medida: <strong>${esc(item.medida || "—")}</strong>`;
 
-  // Flejes: grilla de rollos por peso. Otros rubros: input KG simple.
+  // Flejes: grilla de rollos por peso. Rubros con "unidades por paquete" (Cajas/Cartones):
+  // input de paquetes + unidades sueltas. Resto: input simple en la unidad del rubro.
   const isFlejes = rubroSel === "Flejes";
+  const upp = Number(item.uniXPaq) || 0;
+  const usaPaq = !isFlejes && upp > 0;
   document.getElementById("flejesRollosGrid").style.display = isFlejes ? "block" : "none";
-  document.getElementById("kgInputGroup").style.display = isFlejes ? "none" : "block";
+  document.getElementById("kgInputGroup").style.display = (isFlejes || usaPaq) ? "none" : "block";
+  document.getElementById("paqInputGroup").style.display = usaPaq ? "block" : "none";
   document.getElementById("rollosInputGroup").style.display = "none";
   document.getElementById("pesoRolloInputGroup").style.display = "none";
-  document.getElementById("kgModalTitle").textContent = isFlejes ? "Recepción de Fleje" : "Cantidad en KG";
+
+  // Titulo + label segun la unidad real del rubro (no "KG" fijo).
+  const unidadItem = getUnidad(rubroSel, provSel);
+  const UNIDAD_LABEL = { Kg: "Kg", Uni: "Unidades", Millares: "Millares", Litros: "Litros", Cajas: "Cajas" };
+  const unidadTxt = UNIDAD_LABEL[unidadItem] || unidadItem;
+  document.getElementById("kgModalTitle").textContent = isFlejes
+    ? "Recepción de Fleje"
+    : (usaPaq ? "Cantidad (paquetes + sueltas)" : ("Cantidad en " + unidadTxt));
+  const kgUnitLabel = document.getElementById("kgUnitLabel");
+  if (kgUnitLabel) kgUnitLabel.textContent = unidadTxt;
 
   if (isFlejes) {
     flejesCols = (Array.isArray(item._rollosBreak) && item._rollosBreak.length)
       ? item._rollosBreak.map((c, i) => ({ count: i === 0 ? String(c.count) : 1, kg: (c.kg || c.kg === 0) ? String(c.kg) : "" }))
       : [{ count: "", kg: "" }];
     renderFlejesGrid();
+  } else if (usaPaq) {
+    document.getElementById("paqUppHint").textContent = `Cada paquete tiene ${upp.toLocaleString("es-AR")} unidades`;
+    document.getElementById("inputPaquetes").value = item._paq || "";
+    document.getElementById("inputSueltas").value = item._sueltas || "";
+    recalcPaqTotal();
   } else {
     inputKgValue.value = item._cant || "";
   }
 
   inputKgPopup.classList.add("open");
   setTimeout(() => {
-    const f = isFlejes ? document.querySelector("#flejesRollosGrid .rg-count") : inputKgValue;
+    const f = isFlejes ? document.querySelector("#flejesRollosGrid .rg-count")
+            : usaPaq ? document.getElementById("inputPaquetes")
+            : inputKgValue;
     if (f) f.focus();
   }, 100);
 }
@@ -1032,7 +1070,30 @@ overlay.addEventListener("click", e => { if (e.target === overlay) closeModalFn(
 
 // Manejo del popup de kg
 inputKgValue.addEventListener("input", () => {
-  inputKgValue.value = inputKgValue.value.replace(/[^0-9.,]/g, "").replace(/([.,].*)[.,]/g, "$1");
+  let v = inputKgValue.value.replace(/[^0-9.,]/g, "").replace(/([.,].*)[.,]/g, "$1");
+  // Unidades enteras (Uni/Millares/Cajas): no permitir decimales.
+  if (!esDecimal(getUnidad(rubroSel, provSel))) v = v.replace(/[.,]/g, "");
+  inputKgValue.value = v;
+});
+
+// Popup paquetes + unidades sueltas (Cajas/Cartones)
+function recalcPaqTotal() {
+  const upp = Number(selectedItem && selectedItem.uniXPaq) || 0;
+  const paq = parseInt(document.getElementById("inputPaquetes").value, 10) || 0;
+  const sueltas = parseInt(document.getElementById("inputSueltas").value, 10) || 0;
+  const total = paq * upp + sueltas;
+  const u = getUnidad(rubroSel, provSel);
+  const uTxt = u === "Cajas" ? "cajas" : "uni";
+  document.getElementById("paqTotalLine").textContent = `Total: ${total.toLocaleString("es-AR")} ${uTxt}`;
+  return total;
+}
+["inputPaquetes", "inputSueltas"].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener("input", () => {
+    el.value = el.value.replace(/\D/g, "");
+    recalcPaqTotal();
+  });
+  el.addEventListener("keydown", e => { if (e.key === "Enter") kgConfirmBtn.click(); });
 });
 
 document.getElementById("inputRollos").addEventListener("input", () => {
@@ -1078,6 +1139,24 @@ document.getElementById("estipPopup").addEventListener("click", e => {
 kgConfirmBtn.addEventListener("click", () => {
   if (!selectedItem) return;
   const isFlejes = rubroSel === "Flejes";
+
+  // Rubros con paquetes (Cajas/Cartones): total = paquetes x uni_x_paq + sueltas.
+  const upp = Number(selectedItem.uniXPaq) || 0;
+  if (!isFlejes && upp > 0) {
+    const paq = parseInt(document.getElementById("inputPaquetes").value, 10) || 0;
+    const sueltas = parseInt(document.getElementById("inputSueltas").value, 10) || 0;
+    const total = paq * upp + sueltas;
+    if (total > 0) {
+      selectedItem._paq = String(paq);
+      selectedItem._sueltas = String(sueltas);
+      selectedItem._cant = String(total);
+      selectedItem._paqBreak = { paquetes: paq, uni_x_paq: upp, sueltas };
+      renderItems();
+    }
+    closeKgPopup();
+    return;
+  }
+
   if (isFlejes) recalcFlejesTotalsOnly(); // asegura inputKgValue/inputRollos al día
   const val = inputKgValue.value.trim();
 
@@ -1203,6 +1282,10 @@ document.getElementById("sendModal").addEventListener("click", async () => {
         reg.peso_x_rollo = null; // reemplazado por el desglose por peso
         reg.rollos_json = (Array.isArray(it._rollosBreak) && it._rollosBreak.length) ? it._rollosBreak : null;
         reg.kg_estipulado = it._estipulado ? parseFloat(String(it._estipulado).replace(",", ".")) || null : null;
+      } else if (it._paqBreak) {
+        // Cajas/Cartones: guardar desglose paquetes + sueltas para trazabilidad.
+        reg.rollos = it._paqBreak.paquetes || null;
+        reg.rollos_json = it._paqBreak;
       }
       return reg;
     });
