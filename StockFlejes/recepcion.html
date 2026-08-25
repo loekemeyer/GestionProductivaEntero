@@ -627,6 +627,22 @@ btnContinuar.addEventListener("click", async () => {
       _pesoRollo: ""
     }));
 
+    // Cartones: el "unidades por paquete" no vive en Despiece; se toma de cat_cartones
+    // (misma fuente que el relevamiento) via la vista publica v_cat_cartones. Match por COD.
+    // Los cartones sin uni_x_paq (prescintos, etiquetas, film...) quedan en 0 -> input simple.
+    if (rubroSel === "Cartones") {
+      const { data: catCart } = await sb.from("v_cat_cartones").select("cod, uni_x_paq");
+      if (Array.isArray(catCart)) {
+        const uppByCod = new Map();
+        catCart.forEach(c => {
+          const cod = String(c.cod ?? "").trim();
+          const upp = Number(String(c.uni_x_paq ?? "").replace(",", ".")) || 0;
+          if (cod && upp > 0) uppByCod.set(cod, upp);
+        });
+        items.forEach(it => { if (!it.uniXPaq) it.uniXPaq = uppByCod.get(it.codigo) || 0; });
+      }
+    }
+
     if (!items.length) {
       statusMsg.textContent = "No hay artículos para este proveedor.";
       statusMsg.className = "status bad";
