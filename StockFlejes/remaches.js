@@ -127,10 +127,12 @@ async function init() {
     // las recepciones ingresan primero al SC. Si el mismo cod aparece en SP, usamos el
     // mayor (mas restrictivo).
     const stockIniTsByCod = new Map();
+    // Las recepciones guardan "codigo" = SECTOR (ej "V9"/"V9C"), no cod_verificacion.
+    // Indexar el ts del stock inicial por sector para que el filtro de recepciones funcione.
     for (const row of [...scRows, ...spRows]) {
-      if (!row.codVerif || !row.stockIniTs) continue;
-      const prev = stockIniTsByCod.get(row.codVerif);
-      if (!prev || String(row.stockIniTs) > String(prev)) stockIniTsByCod.set(row.codVerif, row.stockIniTs);
+      if (!row.sector || !row.stockIniTs) continue;
+      const prev = stockIniTsByCod.get(row.sector);
+      if (!prev || String(row.stockIniTs) > String(prev)) stockIniTsByCod.set(row.sector, row.stockIniTs);
     }
     comprasPorCodVerif = new Map();
     for (const r of recepcionInsumos) {
@@ -154,12 +156,14 @@ async function init() {
       const ent = entregasPorSector.get(s.sector) || { kg: 0, uni: 0, detalle: [] };
       const envPS = enviosPSPorSector.get(s.sector) || { kg: 0, uni: 0, detalle: [] };
       const envTall = enviosTallPorSector.get(s.sector) || { kg: 0, uni: 0, detalle: [] };
-      const compras = comprasPorCodVerif.get(s.codVerif) || { cantidad: 0, detalle: [] };
+      const compras = comprasPorCodVerif.get(s.sector) || { cantidad: 0, detalle: [] };
       const kgxUni = s.kgxUni;
       const entUni = kgxUni > 0 ? Math.round(ent.kg / kgxUni) : n(ent.uni);
       const envPSUni = kgxUni > 0 ? Math.round(envPS.kg / kgxUni) : n(envPS.uni);
       const envTallUni = kgxUni > 0 ? Math.round(envTall.kg / kgxUni) : n(envTall.uni);
-      const comprasUni = n(compras.cantidad);
+      // Recepciones de remaches se cargan en KG (unidad "Kg"). Convertir a unidades
+      // con el peso por unidad del sector. Fallback: tratar como uni si no hay peso.
+      const comprasUni = kgxUni > 0 ? Math.round(n(compras.cantidad) / kgxUni) : n(compras.cantidad);
       const stockUni = s.stockInicial + comprasUni + entUni - envPSUni - envTallUni;
       const stockKg = kgxUni > 0 ? stockUni * kgxUni : 0;
       return { uni: stockUni, kg: stockKg, entUni, envPSUni, envTallUni, comprasUni,
@@ -311,7 +315,7 @@ function buildDetRows(detalle, tipo) {
   let h = '<table style="width:100%;font-size:11px;margin:2px 0">';
   [...detalle].reverse().forEach(d => {
     const quien = tipo === "tall" ? (d.tall || "") : tipo === "compra" ? (d.proveedor || "") : (d.ps || "");
-    const valor = tipo === "compra" ? `${fmtN(d.cantidad)} uni` : `${fmtN(d.kg)} kg / ${fmtN(d.uni || 0)} uni`;
+    const valor = tipo === "compra" ? `${fmtN(d.cantidad)} kg` : `${fmtN(d.kg)} kg / ${fmtN(d.uni || 0)} uni`;
     h += `<tr><td style="color:#666;padding:2px 4px">${esc(quien)}</td><td style="padding:2px 4px">${esc(d.fecha || "")}</td><td style="text-align:right;padding:2px 4px">${valor}</td></tr>`;
   });
   h += '</table>';
