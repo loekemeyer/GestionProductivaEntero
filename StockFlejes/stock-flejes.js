@@ -142,7 +142,8 @@ async function init() {
       comprasFlejesMap.set(cod, (comprasFlejesMap.get(cod) || 0) + cant);
       if (!comprasFlejesDetalleMap.has(cod)) comprasFlejesDetalleMap.set(cod, []);
       comprasFlejesDetalleMap.get(cod).push({
-        proveedor: r.proveedor, fecha: r.fecha, cantidad: cant, remito: r.remito
+        proveedor: r.proveedor, fecha: r.fecha, cantidad: cant, remito: r.remito,
+        rollos_json: Array.isArray(r.rollos_json) ? r.rollos_json : null
       });
     });
 
@@ -570,15 +571,32 @@ function popupStockOnline(i) {
     return ` <span style="font-size:10px;color:#aaa">${d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>`;
   }
 
-  // Fila Cervantes + desglose de rollos
+  // Fila Cervantes + desglose de rollos (relevamiento + compras posteriores)
   let cervHtml = "";
   if (lastRelevTs !== null) {
-    cervHtml += `<tr style="color:#444"><td>📦 Cervantes${fmtFecha(lastRelevTs)}</td><td style="text-align:right">${fmtN(r.stockInicial)} kg</td></tr>`;
+    // Sumar total: stockInicial (relev) + compras (posteriores)
+    const totalCerv = Number(r.stockInicial) + Number(r.compras);
+    cervHtml += `<tr style="color:#444"><td>📦 Cervantes${fmtFecha(lastRelevTs)}</td><td style="text-align:right">${fmtN(totalCerv)} kg</td></tr>`;
+    // Rollos del relevamiento
     rollosCerv.filter(ro => Number(ro.caj) > 0).forEach(ro => {
       const cant = Number(ro.caj);
       const kgRollo = Number(ro.kg);
       const tot = cant * kgRollo;
       cervHtml += `<tr style="font-size:12px;color:#999"><td style="padding-left:16px">${cant} rollo${cant > 1 ? "s" : ""} × ${fmtN(kgRollo)} kg</td><td style="text-align:right">${fmtN(tot)} kg</td></tr>`;
+    });
+    // Rollos de compras posteriores al relev (verde para distinguir)
+    (r.comprasDetalle || []).forEach(c => {
+      if (Array.isArray(c.rollos_json) && c.rollos_json.length) {
+        c.rollos_json.filter(ro => Number(ro.count || ro.caj || 0) > 0).forEach(ro => {
+          const cant = Number(ro.count || ro.caj);
+          const kgRollo = Number(ro.kg);
+          const tot = cant * kgRollo;
+          cervHtml += `<tr style="font-size:12px;color:#0a7a2f"><td style="padding-left:16px">+ ${cant} rollo${cant > 1 ? "s" : ""} × ${fmtN(kgRollo)} kg <span style="color:#aaa">(${esc(c.proveedor || "")})</span></td><td style="text-align:right">${fmtN(tot)} kg</td></tr>`;
+        });
+      } else if (Number(c.cantidad) > 0) {
+        // Compra sin desglose de rollos (formato viejo): mostrar como una linea
+        cervHtml += `<tr style="font-size:12px;color:#0a7a2f"><td style="padding-left:16px">+ Compra <span style="color:#aaa">(${esc(c.proveedor || "")})</span></td><td style="text-align:right">${fmtN(c.cantidad)} kg</td></tr>`;
+      }
     });
   }
 
