@@ -1124,14 +1124,23 @@ function abrirPopupOnlinePS(sp, parte) {
   overlay.querySelector("#popupTitle").textContent = `Online PS — ${parte} (${sp}) · ${mesNombre}`;
 
   const spKey = normalizeText(sp);
-  // Extrae MM de "DD/MM" o "DD-MM" o "DD/MM/AAAA"
+  // Extrae MM. Los ENVIOS guardan "DD/MM" pero las ENTREGAS guardan "YYYY-MM-DD".
+  // Hay que soportar ambos formatos o las entregas nunca matchean el filtro de mes.
   const mmDe = (diaMes) => {
-    const m = String(diaMes || "").match(/^\s*\d{1,2}[\/\-](\d{1,2})/);
-    return m ? String(parseInt(m[1], 10)).padStart(2, "0") : "";
+    const s = String(diaMes || "").trim();
+    // YYYY-MM-DD (entregas)
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return String(parseInt(m[2], 10)).padStart(2, "0");
+    // DD/MM o DD-MM o DD/MM/AAAA (envios)
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})/);
+    return m ? String(parseInt(m[2], 10)).padStart(2, "0") : "";
   };
-  // día numérico para ordenar
+  // día numérico para ordenar (mismo doble formato)
   const ddDe = (diaMes) => {
-    const m = String(diaMes || "").match(/^\s*(\d{1,2})/);
+    const s = String(diaMes || "").trim();
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return parseInt(m[3], 10);
+    m = s.match(/^(\d{1,2})/);
     return m ? parseInt(m[1], 10) : 0;
   };
 
