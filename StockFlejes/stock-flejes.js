@@ -600,7 +600,7 @@ function popupStockOnline(i) {
     `<table style="width:100%">
       ${plantasHtml}${sepPlanta}
       <tr><td>Stock Inicial (Cerv.)</td><td style="text-align:right">${fmtN(r.stockInicial)}</td></tr>
-      <tr><td>+ Compras</td><td style="text-align:right">${fmtN(r.compras)}</td></tr>
+      <tr class="col-clickable" style="cursor:pointer" onclick="popupCompras(${i})"><td>+ Compras</td><td style="text-align:right">${fmtN(r.compras)}</td></tr>
       <tr class="col-clickable" style="cursor:pointer" onclick="popupFabricacion(${i})"><td>− Fabricación</td><td style="text-align:right">${fmtN(r.fabricacion)}</td></tr>
       <tr style="border-top:2px solid #333"><td><b>= Stock Online</b></td><td style="text-align:right"><b>${fmtN(r.stockOnline)}</b></td></tr>
     </table>`
@@ -643,6 +643,55 @@ function popupPedido(i) {
       <tr><td>Ped Min Cod</td><td>${fmtN(PEDIDO_MIN_COD)}</td></tr>
       <tr><td>Ped Min Prov</td><td>${fmtN(r.pedMinProv)}</td></tr>
       <tr style="border-top:2px solid #333"><td><b>= Pedido</b></td><td><b>${fmtN(r.pedido)}</b></td></tr>
+    </table>`
+  );
+}
+
+function popupCompras(i) {
+  const r = window._rowsPedido[i];
+  if (!r) return;
+
+  function fmtFechaComp(f) {
+    if (!f) return "";
+    // f puede venir 'YYYY-MM-DD' (DATE) — mostrar 'DD/MM/YY'
+    const s = String(f).slice(0, 10);
+    const [y, m, d] = s.split("-");
+    return d && m && y ? `${d}/${m}/${y.slice(2)}` : s;
+  }
+
+  const relevLabel = lastRelevTs ? `posteriores al relev del ${fmtFecha(lastRelevTs).replace(" ","")}` : "";
+
+  let filas = "";
+  if (r.comprasDetalle && r.comprasDetalle.length) {
+    r.comprasDetalle
+      .slice()
+      .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))
+      .forEach(c => {
+        filas += `<tr style="font-size:12px;color:#444">
+          <td style="padding:2px 6px">${fmtFechaComp(c.fecha)}</td>
+          <td style="padding:2px 6px">${esc(c.proveedor || "—")}</td>
+          <td style="padding:2px 6px">${esc(c.remito || "—")}</td>
+          <td style="padding:2px 6px;text-align:right">${fmtN(c.cantidad)} kg</td>
+        </tr>`;
+      });
+  } else {
+    filas = `<tr><td colspan="4" style="color:#999;padding:8px">Sin compras registradas</td></tr>`;
+  }
+
+  abrirPopup(`Compras — Fleje ${r.nFleje}`,
+    `<div style="font-size:12px;color:#888;margin-bottom:8px">Recepciones ${relevLabel}</div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="font-size:11px;color:#888;border-bottom:1px solid #ddd">
+        <th style="text-align:left;padding:4px 6px">Fecha</th>
+        <th style="text-align:left;padding:4px 6px">Proveedor</th>
+        <th style="text-align:left;padding:4px 6px">Remito</th>
+        <th style="text-align:right;padding:4px 6px">Kg</th>
+      </tr></thead>
+      <tbody>${filas}</tbody>
+      <tfoot><tr style="border-top:2px solid #333;font-weight:700">
+        <td colspan="3" style="padding:4px 6px">Total</td>
+        <td style="text-align:right;padding:4px 6px">${fmtN(r.compras)} kg</td>
+      </tr></tfoot>
     </table>`
   );
 }
