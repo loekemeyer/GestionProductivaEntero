@@ -76,6 +76,12 @@
   .item-btn{padding:16px 6px;background:#fff;border:2px solid #d0d7de;border-radius:8px;cursor:pointer;text-align:center;font-weight:600;font-size:22px;transition:all .2s;overflow:hidden}
   .item-btn:hover{border-color:#111;background:#f6f8fa}
   .item-btn.active{background:#111;color:#fff;border-color:#111}
+  /* Cuando el boton queda activo (bg negro), forzar texto claro en medida/sector/code/isis
+     porque tienen color:#111 hardcoded y quedarian invisibles. */
+  .item-btn.active .medida,
+  .item-btn.active .sector,
+  .item-btn.active .isis{color:#fff}
+  .item-btn.active .code{color:#7ab8ff}
   .item-btn .code{display:block;font-size:24px;font-weight:800;color:#0066cc}
   .item-btn .isis{display:block;font-size:16px;color:#666;margin-top:4px}
   .item-btn .medida{display:block;font-size:28px;font-weight:900;color:#111;margin-top:0;line-height:1.1;white-space:nowrap}
