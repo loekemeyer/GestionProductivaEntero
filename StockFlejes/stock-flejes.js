@@ -666,7 +666,7 @@ function popupCompras(i) {
     return d && m && y ? `${d}/${m}/${y.slice(2)}` : s;
   }
 
-  const relevLabel = lastRelevTs ? `posteriores al relev del ${fmtFecha(lastRelevTs).replace(" ","")}` : "";
+  const relevLabel = lastRelevTs ? `posteriores al relev del ${fmtFechaComp(lastRelevTs)}` : "";
 
   let filas = "";
   if (r.comprasDetalle && r.comprasDetalle.length) {
