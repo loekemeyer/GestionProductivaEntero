@@ -582,16 +582,12 @@ btnContinuar.addEventListener("click", async () => {
     let data, error;
 
     if (cfg.especial === "remaches") {
-      // Remaches: une Remaches SC + Remaches SP filtrando por proveedor
-      const [scRes, spRes] = await Promise.all([
-        sb.from("Remaches SC").select("*").eq("Proveedor", provSel),
-        sb.from("Remaches SP").select("*").eq("Proveedor", provSel)
-      ]);
+      // Remaches: la recepcion de insumo es SOLO el CRUDO (Remaches SC). Los procesados
+      // (Remaches SP: niquelado/zincado) NO se reciben del proveedor — vienen de un PS
+      // (ej. V9C crudo de Bella Vista -> Guazzaroni niquela -> V9). Por eso no se listan aca.
+      const scRes = await sb.from("Remaches SC").select("*").eq("Proveedor", provSel);
       if (scRes.error) throw scRes.error;
-      if (spRes.error) throw spRes.error;
-      const scRows = (scRes.data || []).map(r => ({ cod: r["SC"], desc: r["Descripción"], isis: r["Cod_ISIS"] || "", medida: "", sector: r["SC"] || "" }));
-      const spRows = (spRes.data || []).map(r => ({ cod: r["SP"], desc: r["Descripción"], isis: r["Cod_ISIS"] || "", medida: "", sector: r["SP"] || "" }));
-      data = [...scRows, ...spRows];
+      data = (scRes.data || []).map(r => ({ cod: r["SC"], desc: r["Descripción"], isis: r["Cod_ISIS"] || "", medida: "", sector: r["SC"] || "" }));
       data.sort((a,b) => String(a.cod).localeCompare(String(b.cod), "es"));
     } else {
       let query = sb.from(cfg.tabla).select("*");
