@@ -632,8 +632,11 @@ async function seleccionar(ps){
     // Procesar cada sub-fila para entregas individuales, agrupando por SP para combinar variantes
     let rawSubFilas = grupo.map(item => {
       const spKey = String(item.SP || item.Sp || "").trim().toLowerCase();
-      let info = spKg.get(spKey) || scKg.get(scKey);
-      if (!info || !info.kgUni) info = plasticas.get(spKey) || plasticas.get(scKey) || info;
+      // ST (Sector Transito) es un bucket compartido con peso arbitrario (ej "Resorte U" 0.012):
+      // NO usarlo para convertir kg->uni, caer al peso del SC real.
+      const spItemEsTransito = spKey === "st";
+      let info = (spItemEsTransito ? null : spKg.get(spKey)) || scKg.get(scKey);
+      if (!info || !info.kgUni) info = (spItemEsTransito ? null : plasticas.get(spKey)) || plasticas.get(scKey) || info;
       if (!info || !info.kgUni) {
         const itemKg = parseDecimal(item["KG x Uni"]);
         const itemKgCaj = parseDecimal(item["KG x Cajon"]);
