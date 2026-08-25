@@ -26,10 +26,8 @@ let comprasFlejesMap = new Map(); // N Fleje → total cantidad
 let comprasFlejesDetalleMap = new Map(); // N Fleje → [{proveedor, fecha, cantidad, remito}]
 let relevStockMap = new Map();         // N Fleje (string) → total_kg del ultimo relev Cervantes
 let relevStockMapVirgilio = new Map(); // N Fleje (string) → stock_kg del ultimo relev Virgilio
-let relevStockMapSanRoque = new Map(); // N Fleje (string) → stock_kg del ultimo relev San Roque
 let lastRelevTs = null;                // creado_en del ultimo relevamiento flejes/Cervantes
 let lastRelevTsVirgilio = null;        // creado_en del ultimo relevamiento flejes/Virgilio
-let lastRelevTsSanRoque = null;        // creado_en del ultimo relevamiento flejes/San Roque
 let relevRollosCervMap = new Map();    // N Fleje (string) → rollos_json [{caj, kg}] del relev Cervantes
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
@@ -80,7 +78,7 @@ async function init() {
       from += PAGE;
     }
 
-    // Determinar el ultimo relevamiento por planta (Cervantes/Virgilio/San Roque).
+    // Determinar el ultimo relevamiento por planta (Cervantes/Virgilio).
     // FILTRO CLAVE: solo se cuentan recepciones y fabricacion POSTERIORES al timestamp
     // del relevamiento de Cervantes. Sin este filtro cualquier recepcion anterior
     // se contaria doble (ya esta sumada en el relevamiento).
@@ -96,18 +94,15 @@ async function init() {
     const lastRelev = latestByPlanta["Cervantes"] || null;
     lastRelevTs = lastRelev ? lastRelev.creado_en : null;
     lastRelevTsVirgilio = latestByPlanta["Virgilio"] ? latestByPlanta["Virgilio"].creado_en : null;
-    lastRelevTsSanRoque = latestByPlanta["San Roque"] ? latestByPlanta["San Roque"].creado_en : null;
-    console.log("[relev] latestByPlanta:", latestByPlanta, "Virgilio:", lastRelevTsVirgilio, "San Roque:", lastRelevTsSanRoque);
+    console.log("[relev] latestByPlanta:", latestByPlanta, "Virgilio:", lastRelevTsVirgilio);
 
     // Cargar v_rc_detalle para cada planta en paralelo
     relevStockMap.clear();
     relevStockMapVirgilio.clear();
-    relevStockMapSanRoque.clear();
     relevRollosCervMap.clear();
     const PLANTA_MAP = {
       "Cervantes": relevStockMap,
       "Virgilio": relevStockMapVirgilio,
-      "San Roque": relevStockMapSanRoque,
     };
     await Promise.all(Object.entries(latestByPlanta).map(async ([planta, relev]) => {
       const { data: det, error: detErr } = await sb
@@ -115,7 +110,7 @@ async function init() {
       console.log(`[relev] ${planta} v_rc_detalle rows:`, det?.length, detErr);
       const map = PLANTA_MAP[planta];
       if (!map) return;
-      // Cervantes usa total_kg (suma de rollos); Virgilio/San Roque usan stock_kg (conteo directo)
+      // Cervantes usa total_kg (suma de rollos); Virgilio usa stock_kg (conteo directo)
       const kgField = planta === "Cervantes" ? "total_kg" : "stock_kg";
       (det || []).forEach(row => {
         const nf = String((row.info || {}).n_fleje || "").trim();
@@ -128,7 +123,7 @@ async function init() {
         }
       });
     }));
-    console.log("[relev] Cerv size:", relevStockMap.size, "Virg size:", relevStockMapVirgilio.size, "SR size:", relevStockMapSanRoque.size);
+    console.log("[relev] Cerv size:", relevStockMap.size, "Virg size:", relevStockMapVirgilio.size);
 
     // Compras: solo las POSTERIORES al relevamiento (evitar doble contabilidad)
     comprasFlejesMap.clear();
@@ -190,13 +185,10 @@ async function init() {
       return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
     }
     const thVirg = document.getElementById("thVirg");
-    const thSR   = document.getElementById("thSanRoque");
     if (thVirg) thVirg.innerHTML = `Virg.<br><span style="font-size:10px;font-weight:400">${fmtRelevFecha(lastRelevTsVirgilio)}</span>`;
-    if (thSR)   thSR.innerHTML   = `S.Roque<br><span style="font-size:10px;font-weight:400">${fmtRelevFecha(lastRelevTsSanRoque)}</span>`;
 
     const diagVirg = lastRelevTsVirgilio ? `Virg: ${relevStockMapVirgilio.size} flejes` : "Virg: sin relevamiento";
-    const diagSR   = lastRelevTsSanRoque ? `S.Roque: ${relevStockMapSanRoque.size} flejes` : "S.Roque: sin relevamiento";
-    statusEl.textContent = `${rowsProcessed.length} flejes | ${diagVirg} | ${diagSR}`;
+    statusEl.textContent = `${rowsProcessed.length} flejes | ${diagVirg}`;
   } catch (err) {
     statusEl.textContent = "Error: " + err.message;
     console.error("Init error:", err);
@@ -395,8 +387,7 @@ function procesarRows() {
 
     // null = sin relevamiento de esa planta; 0 = relevamiento existe pero fleje no contado; número = kg
     const stockVirgilio = lastRelevTsVirgilio !== null ? (relevStockMapVirgilio.get(nFlejeStr) ?? 0) : null;
-    const stockSanRoque = lastRelevTsSanRoque !== null ? (relevStockMapSanRoque.get(nFlejeStr) ?? 0) : null;
-    return { nFleje, desc, medida, prov, stockOnline, compras, comprasDetalle, fabricacion, fabricacionDetalle, stockInicial, consumoMes, consumoDetalle, stockVirgilio, stockSanRoque };
+    return { nFleje, desc, medida, prov, stockOnline, compras, comprasDetalle, fabricacion, fabricacionDetalle, stockInicial, consumoMes, consumoDetalle, stockVirgilio };
   });
 
   // Ordenar por proveedor, luego N° Fleje
@@ -522,7 +513,6 @@ function renderTabla(rows) {
       <td class="col-number col-clickable" onclick="popupStockMax(${i})">${r.stockMax.toFixed(1)}</td>
       <td class="col-number col-clickable" onclick="popupStockOnline(${i})">${r.stockOnline.toLocaleString("es-AR")}</td>
       <td class="col-number">${r.stockVirgilio !== null ? r.stockVirgilio.toLocaleString("es-AR") : "—"}</td>
-      <td class="col-number">${r.stockSanRoque !== null ? r.stockSanRoque.toLocaleString("es-AR") : "—"}</td>
     </tr>`;
   });
 
@@ -603,7 +593,6 @@ function popupStockOnline(i) {
   // Filas de otras plantas
   const otrasHtml = [
     { label: "📦 Virgilio",  val: r.stockVirgilio, ts: lastRelevTsVirgilio },
-    { label: "📦 S.Roque",   val: r.stockSanRoque, ts: lastRelevTsSanRoque },
   ]
     .filter(p => p.val !== null)
     .map(p => `<tr style="color:#444"><td>${p.label}${fmtFecha(p.ts)}</td><td style="text-align:right">${fmtN(p.val)} kg</td></tr>`)
