@@ -761,7 +761,12 @@ async function seleccionar(ps){
     const vAlign = rowspan > 1 ? ' style="vertical-align:middle"' : "";
 
     subFilas.forEach((sf, idx) => {
-      const codProvVal = escapeHtml(sf.item.Cod_Prov_Externo || "");
+      // Preferir el codigo nuevo (Cod_ISIS) sobre el viejo (Cod_Prov_Externo) en el display.
+      // data-field indica a que columna se guarda el input al editar: si mostramos Cod_ISIS,
+      // el input edita Cod_ISIS; sino edita el placeholder Cod_Prov_Externo.
+      const tieneIsis = !!(sf.item.Cod_ISIS && String(sf.item.Cod_ISIS).trim());
+      const codProvVal = escapeHtml(tieneIsis ? sf.item.Cod_ISIS : (sf.item.Cod_Prov_Externo || ""));
+      const codField = tieneIsis ? "Cod_ISIS" : "Cod_Prov_Externo";
 
       rows += `<tr data-grp="${grpIdx}">`;
 
@@ -830,10 +835,10 @@ async function seleccionar(ps){
         <td${rs}${vAlign}>${formatNumber(stockInicial)}</td>`;
       }
 
-      // Columna individual: Cod Prov
+      // Columna individual: Cod Prov (muestra Cod_ISIS si existe, sino Cod_Prov_Externo)
       rows += `
         <td class="cod-prov-cell">
-          <input type="text" class="cod-prov-input" value="${codProvVal}" data-id="${sf.item.id}" placeholder="-" />
+          <input type="text" class="cod-prov-input" value="${codProvVal}" data-id="${sf.item.id}" data-field="${codField}" placeholder="-" />
         </td>
       </tr>`;
     });
@@ -989,14 +994,16 @@ async function seleccionar(ps){
     }
   });
 
-  // Guardar Cod_Prov_Externo al perder foco
+  // Guardar Cod ISIS (nuevo) o Cod_Prov_Externo (viejo) al perder foco.
+  // data-field indica cual columna se actualiza (segun cual mostraba el input).
   resultEl.querySelectorAll(".cod-prov-input").forEach(input => {
     input.addEventListener("blur", async () => {
       const id = Number(input.dataset.id);
+      const field = input.dataset.field || "Cod_Prov_Externo";
       const val = input.value.trim() || null;
-      const { error } = await supabaseClient.from(TABLA_PARTES).update({ Cod_Prov_Externo: val }).eq("id", id);
+      const { error } = await supabaseClient.from(TABLA_PARTES).update({ [field]: val }).eq("id", id);
       if (error) {
-        console.error("Error guardando Cod Prov:", error);
+        console.error("Error guardando " + field + ":", error);
         input.style.borderColor = "#ef4444";
       } else {
         input.style.borderColor = "#22c55e";
@@ -1004,7 +1011,7 @@ async function seleccionar(ps){
         // Actualizar cache
         if (partesCache) {
           const item = partesCache.find(x => x.id === id);
-          if (item) item.Cod_Prov_Externo = val;
+          if (item) item[field] = val;
         }
       }
     });
