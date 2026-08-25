@@ -352,7 +352,7 @@ async function cargarEnviosPS(){
     else return;
 
     if (!detalleMap.has(key)) detalleMap.set(key, []);
-    detalleMap.get(key).push({ id: r.id, fecha, kg, cajones, unidades });
+    detalleMap.get(key).push({ id: r.id, fecha, kg, cajones, unidades, created_at: r.created_at });
     totalKgMap.set(key, (totalKgMap.get(key) || 0) + kg);
     totalCajMap.set(key, (totalCajMap.get(key) || 0) + cajones);
     totalUniMap.set(key, (totalUniMap.get(key) || 0) + unidades);
@@ -404,7 +404,7 @@ async function cargarEntregasPS(){
     else return;
 
     if (!detalleMap.has(key)) detalleMap.set(key, []);
-    detalleMap.get(key).push({ fecha, kg, cajones });
+    detalleMap.get(key).push({ fecha, kg, cajones, created_at: r.created_at });
     totalKgMap.set(key, (totalKgMap.get(key) || 0) + kg);
     totalCajMap.set(key, (totalCajMap.get(key) || 0) + cajones);
   });
@@ -477,7 +477,9 @@ function obtenerEnviosPS(ps, sp, parte, enviosData, kgXUni, sc){
   const totalUniDirecto = Number((enviosData.totalUniMap && enviosData.totalUniMap.get(key)) || 0);
   // PS por unidades: usar las Unidades cargadas directamente. Sino, derivar de KG / (Kg x Uni).
   const totalUni = totalUniDirecto > 0 ? totalUniDirecto : (kgXUni > 0 ? Math.floor(totalKg / kgXUni) : 0);
-  const detalleBase = enviosData.detalleMap.get(key) || [];
+  const detalleBase = (enviosData.detalleMap.get(key) || [])
+    .slice()
+    .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
 
   const detalle = detalleBase.map(x => {
     const uniDirecto = Number(x.unidades || 0);
@@ -513,7 +515,9 @@ function obtenerEntregasPS(ps, sp, parte, entregasData, kgXUni, sc){
   // Si hay KG y kgXUni, calcular unidades desde KG. Si no, cajones contiene las unidades directas.
   const totalUni = kgXUni > 0 ? Math.floor(totalKg / kgXUni) : (totalKg === 0 ? totalCaj : 0);
 
-  const detalleBase = entregasData.detalleMap.get(key) || [];
+  const detalleBase = (entregasData.detalleMap.get(key) || [])
+    .slice()
+    .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
 
   const detalle = detalleBase.map(x => {
     const xkg = Number(x.kg || 0);
