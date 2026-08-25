@@ -322,7 +322,7 @@ function abrirPopupStocks(titulo, detalle, kgUni, kgCaj, tipo) {
     const caj = item.cajones !== undefined && item.cajones !== null
       ? num(item.cajones)
       : (itemKgCaj > 0 ? kg / itemKgCaj : 0);
-    const uni = itemKgUni > 0 ? Math.floor(kg / itemKgUni) : 0;
+    const uni = itemKgUni > 0 ? Math.round(kg / itemKgUni) : 0;
 
     let label;
     if (tipo === "ps") {
