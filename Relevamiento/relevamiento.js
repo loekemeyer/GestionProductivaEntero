@@ -24,12 +24,12 @@
     { key: "garage",    label: "Garage" },
   ];
   const TIPO_LABEL = Object.fromEntries(TIPOS.map(t => [t.key, t.label]));
-  const PLANTAS = ["Cervantes", "Virgilio", "San Roque"];
-  const ABREV_PLANTA = { "Cervantes": "Cerv.", "Virgilio": "Virg.", "San Roque": "San R." };
+  const PLANTAS = ["Cervantes", "Virgilio"];
+  const ABREV_PLANTA = { "Cervantes": "Cerv.", "Virgilio": "Virg." };
 
   // Plantas donde aplica cada tipo (espejo de rc_plantas_tipo)
   const PLANTAS_TIPO = {
-    flejes: ["Cervantes", "Virgilio", "San Roque"],
+    flejes: ["Cervantes", "Virgilio"],
     cajas: ["Cervantes", "Virgilio"],
     plasticos: ["Cervantes", "Virgilio"],
     cartones: ["Cervantes"],
@@ -63,7 +63,7 @@
       // Cervantes: cada fleje puede tener varios rollos (algunos usados a distinto peso) -> se cargan POR TANDAS
       // (Cant rollos x Kg c/u); el Total Kg = suma de (cant x kg) cae en esta celda. Boton "T" abre el popup.
       { key: "total_kg", label: "Total Kg", plantas: ["Cervantes"], tandas: true, flejeTandas: true },
-      { key: "stock_kg", label: "Stock Kg", plantas: ["Virgilio", "San Roque"] },
+      { key: "stock_kg", label: "Stock Kg", plantas: ["Virgilio"] },
     ],
     cartones: [
       { key: "conteo_paquete", label: "Paquetes" },
