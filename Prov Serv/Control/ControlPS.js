@@ -476,14 +476,14 @@ function obtenerEnviosPS(ps, sp, parte, enviosData, kgXUni, sc){
   const totalCaj = Number(enviosData.totalCajMap.get(key) || 0);
   const totalUniDirecto = Number((enviosData.totalUniMap && enviosData.totalUniMap.get(key)) || 0);
   // PS por unidades: usar las Unidades cargadas directamente. Sino, derivar de KG / (Kg x Uni).
-  const totalUni = totalUniDirecto > 0 ? totalUniDirecto : (kgXUni > 0 ? Math.floor(totalKg / kgXUni) : 0);
+  const totalUni = totalUniDirecto > 0 ? totalUniDirecto : (kgXUni > 0 ? Math.round(totalKg / kgXUni) : 0);
   const detalleBase = (enviosData.detalleMap.get(key) || [])
     .slice()
     .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
 
   const detalle = detalleBase.map(x => {
     const uniDirecto = Number(x.unidades || 0);
-    const unidades = uniDirecto > 0 ? uniDirecto : (kgXUni > 0 ? Math.floor(Number(x.kg || 0) / kgXUni) : 0);
+    const unidades = uniDirecto > 0 ? uniDirecto : (kgXUni > 0 ? Math.round(Number(x.kg || 0) / kgXUni) : 0);
     return {
       fecha: x.fecha,
       kg: x.kg,
@@ -513,7 +513,7 @@ function obtenerEntregasPS(ps, sp, parte, entregasData, kgXUni, sc){
   const totalKg = Number(entregasData.totalKgMap.get(key) || 0);
   const totalCaj = Number(entregasData.totalCajMap.get(key) || 0);
   // Si hay KG y kgXUni, calcular unidades desde KG. Si no, cajones contiene las unidades directas.
-  const totalUni = kgXUni > 0 ? Math.floor(totalKg / kgXUni) : (totalKg === 0 ? totalCaj : 0);
+  const totalUni = kgXUni > 0 ? Math.round(totalKg / kgXUni) : (totalKg === 0 ? totalCaj : 0);
 
   const detalleBase = (entregasData.detalleMap.get(key) || [])
     .slice()
@@ -521,7 +521,7 @@ function obtenerEntregasPS(ps, sp, parte, entregasData, kgXUni, sc){
 
   const detalle = detalleBase.map(x => {
     const xkg = Number(x.kg || 0);
-    const unidades = kgXUni > 0 ? Math.floor(xkg / kgXUni) : (xkg === 0 ? Number(x.cajones || 0) : 0);
+    const unidades = kgXUni > 0 ? Math.round(xkg / kgXUni) : (xkg === 0 ? Number(x.cajones || 0) : 0);
     return {
       id: x.id,
       fecha: x.fecha,
@@ -699,7 +699,7 @@ async function seleccionar(ps){
           entDetalles = entDetalles.concat(sf.entregasInfo.detalle || []);
         });
         const totalEntUni = firstSF.info.kgUni > 0
-          ? Math.floor(totalEntKg / firstSF.info.kgUni)
+          ? Math.round(totalEntKg / firstSF.info.kgUni)
           : (totalEntKg === 0 ? entDetalles.reduce((s, d) => s + Number(d.cajones || 0), 0) : 0);
 
         const entPopupItems = entDetalles.length
@@ -721,7 +721,7 @@ async function seleccionar(ps){
 
     const onlinePSKg = Number(enviosInfo.totalKg || 0) - totalEntregasKg;
     const onlinePSCaj = scKgCaj > 0 ? (onlinePSKg / scKgCaj) : 0;
-    const onlinePSUni = scKgUni > 0 ? Math.floor(onlinePSKg / scKgUni) : 0;
+    const onlinePSUni = scKgUni > 0 ? Math.round(onlinePSKg / scKgUni) : 0;
 
     const stockInicial = Number(scInfo.stockInicial || 0);
 
