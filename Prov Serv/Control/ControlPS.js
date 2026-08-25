@@ -601,10 +601,14 @@ async function seleccionar(ps){
     // Datos compartidos del SC (usar primer item para info SC)
     const firstItem = grupo[0];
     const scKey = sc.toLowerCase();
-    // Buscar peso: primero en SP Kg (sector procesado), luego SC Kg (crudo), luego plasticas
+    // Buscar peso: primero en SP Kg (sector procesado), luego SC Kg (crudo), luego plasticas.
+    // EXCEPCION: si el SP es 'ST' (Sector Transito) NO usar su peso — ST es un bucket
+    // compartido registrado arbitrariamente (ej. "Resorte U" 0.012), y daria unidades
+    // erroneas para todas las piezas que pasan por transito. En ese caso caer al peso del SC real.
     const firstSP = String(firstItem.SP || firstItem.Sp || "").trim().toLowerCase();
-    let scInfo = spKg.get(firstSP) || spKg.get(scKey) || scKg.get(scKey);
-    if (!scInfo || !scInfo.kgUni) scInfo = plasticas.get(firstSP) || plasticas.get(scKey) || scInfo;
+    const spEsTransito = firstSP === "st";
+    let scInfo = (spEsTransito ? null : spKg.get(firstSP)) || spKg.get(scKey) || scKg.get(scKey);
+    if (!scInfo || !scInfo.kgUni) scInfo = (spEsTransito ? null : plasticas.get(firstSP)) || plasticas.get(scKey) || scInfo;
     if (!scInfo) scInfo = { kgUni: 0, kgCaj: 0, stockInicial: 0, maxCajonSPTotal: 0 };
 
     const scKgUni = Number(scInfo.kgUni || 0);
