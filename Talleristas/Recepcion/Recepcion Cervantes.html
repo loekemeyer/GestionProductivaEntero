@@ -840,7 +840,8 @@
 
       kg.addEventListener("input", () => {
         if (esCarlosInput || esGrj){
-          kg.value = kg.value.replace(/[^\d.]/g, "");
+          // Permitir coma o punto como separador decimal (se normaliza a punto al parsear).
+          kg.value = kg.value.replace(/[^\d.,]/g, "").replace(/([.,].*)[.,]/g, "$1");
         } else {
           kg.value = kg.value.replace(/\D/g, "");
         }
