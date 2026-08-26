@@ -33,6 +33,34 @@ let datosParaFiltro = [];
 // explicito en lugar de operar con datos viejos (regla: single source of truth en BD).
 let GRJ_COMPONENTES = {};
 
+// Uni x caja por articulo terminado (tabla "Uni_x_Articulo_x_Caja"). cod_art(norm) -> uni_x_caja.
+// Se usa para que la entrega de un GRJ (armado) descuente cajas x uni_x_caja del articulo.
+let uniXCajaArtMap = new Map();
+
+async function cargarUniXArticuloCaja(){
+  const { data, error } = await supabaseClient.from("Uni_x_Articulo_x_Caja").select("cod_art, uni_x_caja").limit(2000);
+  if (error){ console.error("Uni_x_Articulo_x_Caja:", error); return; }
+  uniXCajaArtMap = new Map();
+  (data || []).forEach(r => {
+    const cod = normalizeCode(r.cod_art);
+    const v = Number(r.uni_x_caja || 0);
+    if (cod && v > 0 && !uniXCajaArtMap.has(cod)) uniXCajaArtMap.set(cod, v);
+  });
+}
+
+// uni_x_caja de un GRJ armado: se resuelve por el articulo (Sector Proce=GRJ en su despiece).
+// Ej: GRJ7 -> articulo 506 -> 12. Fallback 1 (comportamiento viejo: 1 caja = 1 unidad).
+function uniXCajaDeGrj(grj){
+  const arts = sectoresCache && sectoresCache.articuloPorGrj && sectoresCache.articuloPorGrj.get(String(grj || "").trim());
+  if (arts){
+    for (const cod of arts){
+      const v = uniXCajaArtMap.get(normalizeCode(cod));
+      if (v > 0) return v;
+    }
+  }
+  return 1;
+}
+
 // Inverso de GRJ_COMPONENTES: componente → Set de GRJs que lo contienen.
 // Ej: A10 → {GRJ7}, C10 → {GRJ1, GRJ7, GRJ9}, V9 → {GRJ1, GRJ7, GRJ9}.
 let COMPONENTE_A_GRJS = new Map();
@@ -1414,13 +1442,15 @@ function obtenerEntregasTallerista(nombreTallerista, codigos, entregasData, sect
       }
       const esGrj = !!x.codGrj;
       const sectorKey = `${nombreTallNorm}__${cod}__${sectorNorm}`;
-      let uniXCaja = esGrj ? 1 : Number(
+      // GRJ: uni_x_caja real del articulo (tabla Uni_x_Articulo_x_Caja) — 1 caja descuenta
+      // uni_x_caja unidades de cada componente (antes era 1 caja = 1 unidad).
+      let uniXCaja = esGrj ? uniXCajaDeGrj(x.codGrj) : Number(
         entregasData.uniXCajaBySector.get(sectorKey) ||
         entregasData.uniXCajaByNombreTallAndCod.get(key) || 0
       );
       // Fallback: si no se encontró uniXCaja, usar el valor por defecto (1 para cartones/cajas)
       if (!esGrj && uniXCaja === 0 && defaultUniXCaja > 0) uniXCaja = defaultUniXCaja;
-      const unidades = esGrj ? x.cajas : x.cajas * uniXCaja;
+      const unidades = x.cajas * uniXCaja;
       totalUnidades += unidades;
       detalle.push({
         fecha: x.fecha,
@@ -1528,7 +1558,8 @@ async function buscar(nombreParam){
       cargarCajasExcluidas(),
       cargarGRJDesdeBD(), // sin destructure — solo asegurar que GRJ_COMPONENTES esta poblado
       cargarProporciones(),
-      cargarDevoluciones()
+      cargarDevoluciones(),
+      cargarUniXArticuloCaja() // sin destructure — pobla uniXCajaArtMap (uni_x_caja por articulo)
     ]);
   }catch (err){
     console.error(err);
