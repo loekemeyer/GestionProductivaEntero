@@ -308,6 +308,18 @@
       transition: all .15s;
     }
     .btn-borrar-row:hover { background: #fee2e2; color: #991b1b; }
+    .btn-editar-row {
+      border: none; background: transparent; cursor: pointer;
+      color: #2563eb; font-size: 14px; padding: 2px 6px; border-radius: 5px;
+      transition: all .15s; margin-right: 2px;
+    }
+    .btn-editar-row:hover { background: #dbeafe; color: #1d4ed8; }
+    .mini-box input:disabled {
+      background: #f1f5f9; color: #64748b; cursor: not-allowed;
+    }
+    #modalConfirm .body p { font-size: 14px; color: #334155; line-height: 1.55; white-space: pre-line; margin: 0; }
+    .mini-btn.danger { background: #dc2626; color: #fff; }
+    .mini-btn.danger:hover { background: #b91c1c; }
   </style>
 </head>
 <body>
@@ -466,6 +478,20 @@
       <div class="footer">
         <button class="mini-btn cancel" id="mtzCancel">Cancelar</button>
         <button class="mini-btn save" id="mtzSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CONFIRMAR BORRADO -->
+  <div class="mini-overlay" id="modalConfirm">
+    <div class="mini-box" style="max-width:440px">
+      <header id="confirmTitle">Confirmar borrado</header>
+      <div class="body">
+        <p id="confirmMsg"></p>
+      </div>
+      <div class="footer">
+        <button class="mini-btn cancel" id="confirmCancel">Cancelar</button>
+        <button class="mini-btn danger" id="confirmOk">Borrar</button>
       </div>
     </div>
   </div>
@@ -775,7 +801,10 @@ function renderTable() {
       <td class="num">${fmtSeg(r.min)}</td>
       <td class="num">${fmtSeg(r.max)}</td>
       <td class="num">${r.activeCount} / ${r.registros}</td>
-      <td class="num"><button class="btn-borrar-row" data-matid-del="${r.matId}" data-nmat-del="${r.numStr}" title="Borrar matriz">🗑️</button></td>
+      <td class="num" style="white-space:nowrap">
+        <button class="btn-editar-row" data-nmat-edit="${r.numStr}" title="Editar matriz">✏️</button>
+        <button class="btn-borrar-row" data-matid-del="${r.matId}" data-nmat-del="${r.numStr}" title="Borrar matriz">🗑️</button>
+      </td>
     </tr>`;
 
     if (showOps && r.activeCount > 0) {
@@ -1124,6 +1153,7 @@ tbody.addEventListener("click", e => {
   // No abrir popup de registros si se clickeo una celda/boton especial
   if (e.target.closest(".editable-hist")) return;
   if (e.target.closest(".btn-borrar-row")) return; // handler dedicado
+  if (e.target.closest(".btn-editar-row")) return; // handler dedicado
   if (e.target.closest(".gauss-cell")) {
     const td = e.target.closest(".gauss-cell");
     const row = matData.find(r => r.numStr === td.dataset.nmat);
@@ -1689,17 +1719,37 @@ tbody.addEventListener("click", e => {
   });
 });
 
-/* ===== NUEVA MATRIZ (MODAL) ===== */
+/* ===== NUEVA / EDITAR MATRIZ (MODAL) ===== */
 const modalMatriz = document.getElementById("modalMatriz");
+let editingMatId = null;   // null = alta; id = edicion
+
 function abrirModalNuevaMatriz() {
+  editingMatId = null;
   document.getElementById("modalMatrizTitle").textContent = "Nueva Matriz";
   document.getElementById("mtzN").value = "";
+  document.getElementById("mtzN").disabled = false;
   document.getElementById("mtzNombre").value = "";
   document.getElementById("mtzTipo").value = "";
   document.getElementById("mtzTHist").value = "";
   modalMatriz.classList.add("visible");
   setTimeout(() => document.getElementById("mtzN").focus(), 50);
 }
+
+function abrirModalEditarMatriz(row) {
+  const mat = matrices.find(m => m.id === row.matId);
+  if (!mat) return;
+  editingMatId = mat.id;
+  document.getElementById("modalMatrizTitle").textContent = "Editar Matriz " + row.numStr;
+  // El N° es la clave que relaciona con los registros: no se edita.
+  document.getElementById("mtzN").value = row.numStr;
+  document.getElementById("mtzN").disabled = true;
+  document.getElementById("mtzNombre").value = row.nombre || "";
+  document.getElementById("mtzTipo").value = row.tipoMatriz || "";
+  document.getElementById("mtzTHist").value = row.historico > 0 ? row.historico : "";
+  modalMatriz.classList.add("visible");
+  setTimeout(() => document.getElementById("mtzNombre").focus(), 50);
+}
+
 function cerrarModalNuevaMatriz() { modalMatriz.classList.remove("visible"); }
 
 document.getElementById("btnNuevaMatriz").addEventListener("click", abrirModalNuevaMatriz);
@@ -1712,13 +1762,50 @@ document.getElementById("mtzSave").addEventListener("click", async () => {
   const tipo = document.getElementById("mtzTipo").value.trim();
   const tHistRaw = document.getElementById("mtzTHist").value.trim();
   if (!nMat) { toastMsg("Ingresá el N° de Matriz"); return; }
-  if (matrices.some(m => String(m.N_Matriz).trim() === nMat)) {
-    toastMsg("Ya existe una matriz con ese N°"); return;
-  }
   const tHist = tHistRaw !== "" ? parseFloat(tHistRaw) : null;
   if (tHistRaw !== "" && (isNaN(tHist) || tHist < 0)) { toastMsg("T. Histórico inválido"); return; }
 
   const btnSave = document.getElementById("mtzSave");
+
+  /* ---- EDICION ---- */
+  if (editingMatId != null) {
+    const mat = matrices.find(m => m.id === editingMatId);
+    if (!mat) { toastMsg("No se encontró la matriz"); return; }
+    if (!nombre) { toastMsg("Ingresá el nombre"); return; }
+
+    btnSave.disabled = true; btnSave.textContent = "Guardando...";
+    const { error } = await sb.from("Matrices").update({
+      Matriz: nombre,
+      Tipo_Matriz: tipo || null,
+      Tiempo_Historico: tHist
+    }).eq("id", editingMatId);
+    if (error) { btnSave.disabled = false; btnSave.textContent = "Guardar"; toastMsg("Error: " + error.message); return; }
+
+    // Si cambió el T. Histórico, recalcular puntajes de los registros de la matriz
+    const oldTHist = Number(mat.Tiempo_Historico || 0);
+    const newTHist = tHist || 0;
+    if (Math.abs(oldTHist - newTHist) >= 0.001) {
+      const { data: upd, error: errRpc } = await sb.rpc("recalcular_matriz", { p_matriz: nMat, p_nuevo_tiempo: newTHist });
+      if (errRpc) toastMsg("Guardado, pero error recalculando: " + errRpc.message);
+      else toastMsg("Matriz " + nMat + " actualizada — " + (upd || 0) + " registros recalculados");
+    } else {
+      toastMsg("Matriz " + nMat + " actualizada");
+    }
+
+    mat.Matriz = nombre;
+    mat.Tipo_Matriz = tipo || null;
+    mat.Tiempo_Historico = tHist;
+    btnSave.disabled = false; btnSave.textContent = "Guardar";
+    cerrarModalNuevaMatriz();
+    computeMatData();
+    renderTable();
+    return;
+  }
+
+  /* ---- ALTA ---- */
+  if (matrices.some(m => String(m.N_Matriz).trim() === nMat)) {
+    toastMsg("Ya existe una matriz con ese N°"); return;
+  }
   btnSave.disabled = true; btnSave.textContent = "Guardando...";
   const payload = {
     N_Matriz: nMat,
@@ -1736,6 +1823,33 @@ document.getElementById("mtzSave").addEventListener("click", async () => {
   renderTable();
 });
 
+/* ===== EDITAR MATRIZ (boton lapiz) ===== */
+tbody.addEventListener("click", e => {
+  const btn = e.target.closest(".btn-editar-row");
+  if (!btn) return;
+  e.stopPropagation();
+  const row = matData.find(r => r.numStr === btn.dataset.nmatEdit);
+  if (row) abrirModalEditarMatriz(row);
+});
+
+/* ===== CONFIRMACION (modal reutilizable) ===== */
+const modalConfirm = document.getElementById("modalConfirm");
+let confirmResolver = null;
+function pedirConfirmacion({ title = "Confirmar", msg = "", okText = "Aceptar" }) {
+  document.getElementById("confirmTitle").textContent = title;
+  document.getElementById("confirmMsg").textContent = msg;
+  document.getElementById("confirmOk").textContent = okText;
+  modalConfirm.classList.add("visible");
+  return new Promise(resolve => { confirmResolver = resolve; });
+}
+function cerrarConfirm(val) {
+  modalConfirm.classList.remove("visible");
+  if (confirmResolver) { confirmResolver(val); confirmResolver = null; }
+}
+document.getElementById("confirmOk").addEventListener("click", () => cerrarConfirm(true));
+document.getElementById("confirmCancel").addEventListener("click", () => cerrarConfirm(false));
+modalConfirm.addEventListener("click", e => { if (e.target === modalConfirm) cerrarConfirm(false); });
+
 /* ===== BORRAR MATRIZ ===== */
 tbody.addEventListener("click", async e => {
   const btn = e.target.closest(".btn-borrar-row");
@@ -1750,7 +1864,8 @@ tbody.addEventListener("click", async e => {
   const msg = tieneRegs
     ? `⚠ La matriz ${nMat} "${row.nombre}" tiene ${row.registros} registro(s) en db_n8n_espejo.\n\nBorrarla puede dejar registros huérfanos o fallar por FK.\n\n¿Continuar igual?`
     : `¿Borrar la matriz ${nMat} "${row.nombre}"?\n\nEsta acción no se puede deshacer.`;
-  if (!confirm(msg)) return;
+  const ok = await pedirConfirmacion({ title: "Borrar matriz " + nMat, msg, okText: "Borrar" });
+  if (!ok) return;
 
   btn.disabled = true;
   const { error } = await sb.from("Matrices").delete().eq("id", matId);
@@ -1765,7 +1880,10 @@ tbody.addEventListener("click", async e => {
 });
 
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && modalMatriz.classList.contains("visible")) cerrarModalNuevaMatriz();
+  if (e.key === "Escape") {
+    if (modalConfirm.classList.contains("visible")) cerrarConfirm(false);
+    else if (modalMatriz.classList.contains("visible")) cerrarModalNuevaMatriz();
+  }
 });
 </script>
 </body>
