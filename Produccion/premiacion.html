@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <script src="../auth-guard.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tiempos Premiacion</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #d9d9de; padding: 20px; min-height: 100vh;
+    }
+    .top-bar {
+      max-width: 1080px; margin: 0 auto 16px;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .btn-volver {
+      height: 40px; padding: 0 20px; border-radius: 999px;
+      border: 2px solid #b9b9b9; background: #f7f7f7;
+      font-size: 14px; cursor: pointer; font-weight: 700; text-decoration: none;
+      color: #1e293b; display: inline-flex; align-items: center;
+    }
+    .btn-volver:hover { background: #e5e5e5; border-color: #7f7f7f; }
+    .top-bar h1 { font-size: 22px; flex: 1; color: #1e293b; }
+    .refresh-info { font-size: 12px; color: #475569; white-space: nowrap; }
+
+    .main-card {
+      max-width: 1080px; margin: 0 auto;
+      background: #fff; border: 1px solid #cfcfcf;
+      border-radius: 14px; overflow: hidden;
+    }
+    .card-header {
+      background: #111; color: #fff; padding: 14px 22px;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    }
+    .card-header h2 { font-size: 16px; color: #fff; margin: 0; }
+    .card-header .count { font-size: 13px; color: #cbd5e1; }
+    .card-body { padding: 0; }
+
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      background: #f1f5f9; color: #334155; font-size: 12px; font-weight: 700;
+      text-align: left; padding: 10px 14px; border-bottom: 2px solid #e2e8f0;
+      text-transform: uppercase; letter-spacing: .02em; white-space: nowrap;
+    }
+    thead th.num { text-align: right; }
+    tbody td { padding: 11px 14px; border-bottom: 1px solid #eef2f6; font-size: 14px; color: #1e293b; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #f8fafc; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+    .op-nombre { font-weight: 700; }
+    .op-legajo { font-size: 11px; color: #64748b; font-weight: 500; }
+    .matriz-num {
+      display: inline-block; min-width: 30px; text-align: center;
+      background: #111; color: #fff; border-radius: 6px; padding: 2px 7px;
+      font-size: 12px; font-weight: 700; margin-right: 6px;
+    }
+    .matriz-nombre { font-size: 13px; color: #334155; }
+    .sub { display: block; font-size: 11px; color: #94a3b8; font-weight: 500; }
+
+    /* color premiacion: verde = toma menor a T.Hist (bien), rojo = mayor (mal) */
+    .toma { font-weight: 700; }
+    .toma.bien { color: #16a34a; }
+    .toma.mal  { color: #dc2626; }
+    .toma.neutro { color: #1e293b; }
+    .dash { color: #cbd5e1; font-weight: 500; }
+
+    .estado {
+      display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 999px; margin-left: 6px; vertical-align: middle;
+    }
+    .estado.prod { background: #dcfce7; color: #166534; }
+    .estado.tm   { background: #fef9c3; color: #854d0e; }
+
+    .empty, .loading, .errbox {
+      padding: 40px 20px; text-align: center; color: #64748b; font-size: 15px;
+    }
+    .errbox { color: #b91c1c; }
+    .foot-note {
+      max-width: 1080px; margin: 12px auto 0; font-size: 12px; color: #64748b; line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <a class="btn-volver" href="../Inicio/index.html">← Volver</a>
+    <h1>Tiempos Premiación</h1>
+    <span class="refresh-info" id="refreshInfo">Cargando…</span>
+  </div>
+
+  <div class="main-card">
+    <div class="card-header">
+      <h2>Operarios en producción</h2>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="card-body">
+      <div id="content"><div class="loading">Cargando datos…</div></div>
+    </div>
+  </div>
+
+  <p class="foot-note">
+    Sólo se listan operarios que están trabajando ahora (Sede Cervantes, con actividad hoy y sin Fin de Jornada),
+    en la matriz que están haciendo en este momento. <b>Últ. cajón</b> = Tiempo Toma del último cajón cerrado en esa matriz.
+    <b>Prom. hoy</b> / <b>Prom. día anterior</b> = promedio de Tiempo Toma del operario en esa matriz ese día.
+    Color: <span style="color:#16a34a;font-weight:700;">verde</span> = más rápido que el T. Histórico,
+    <span style="color:#dc2626;font-weight:700;">rojo</span> = más lento.
+  </p>
+
+  <script src="../version.js"></script>
+  <script>
+  (function() {
+    'use strict';
+    const SUPABASE_URL = 'https://hrxfctzncixxqmpfhskv.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs';
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // opciones que NO son tiempo muerto (igual criterio que monitor.html)
+    const NON_DOWNTIME = new Set(['E', 'C', 'PC', 'FJ', 'LT']);
+
+    let matricesMap = {};      // N_Matriz -> Nombre
+    let matrizTHist = {};      // N_Matriz -> Tiempo_Historico
+
+    function esc(v) { return v == null ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    function fmtToma(v) {
+      if (v == null || !isFinite(v)) return null;
+      return Number(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function fechaCorta(iso) {
+      // iso: "YYYY-MM-DD" -> "DD/MM"
+      if (!iso) return '';
+      const p = iso.split('-');
+      return p.length === 3 ? (p[2] + '/' + p[1]) : iso;
+    }
+    function claseToma(valor, tHist) {
+      if (valor == null || !isFinite(valor) || !tHist || tHist <= 0) return 'neutro';
+      return valor <= tHist ? 'bien' : 'mal';
+    }
+    function celdaToma(valor, tHist) {
+      const txt = fmtToma(valor);
+      if (txt == null) return '<span class="dash">—</span>';
+      return '<span class="toma ' + claseToma(valor, tHist) + '">' + txt + '</span>';
+    }
+
+    // Reconstruye la matriz actual y el estado de cada operario desde los registros de hoy.
+    // Devuelve Map legajo -> { matriz, estado } SOLO para los que están trabajando ahora.
+    function operariosActivos(empleados, regs) {
+      const porLeg = {};
+      regs.forEach(r => {
+        const leg = String(r.legajo).trim();
+        (porLeg[leg] = porLeg[leg] || []).push(r);
+      });
+      const activos = new Map();
+
+      empleados.forEach(emp => {
+        const leg = String(emp.Legajo).trim();
+        if (leg === '1') return; // ficha de pruebas
+        if (String(emp.Sede || '').trim().toUpperCase() !== 'C') return;
+        const empRegs = porLeg[leg];
+        if (!empRegs || empRegs.length === 0) return;
+
+        let currentMatriz = null;
+        let pendingTM = null;
+        let lastAction = null;
+        let fjEvent = null;
+
+        empRegs.forEach(r => {
+          const op = r.opcion;
+          if (op === 'LT') return;
+          if (op === 'FJ') { fjEvent = r; pendingTM = null; return; }
+          if (op === 'E') {
+            currentMatriz = r.texto || r.matriz || null;
+            lastAction = r; pendingTM = null;
+          } else if (op === 'C') {
+            lastAction = { ...r, opcion: 'C' }; pendingTM = null;
+          } else if (!NON_DOWNTIME.has(op)) {
+            if (pendingTM && pendingTM.opcion === op) pendingTM = null;
+            else if (!pendingTM) pendingTM = r;
+          } else {
+            lastAction = r;
+          }
+        });
+
+        if (fjEvent) return;                 // cerró jornada -> no está trabajando
+        if (!currentMatriz) return;          // sin matriz asignada hoy
+        if (!lastAction && !pendingTM) return;
+
+        const matNum = String(currentMatriz).trim();
+        if (!matNum) return;
+        activos.set(leg, {
+          legajo: leg,
+          nombre: emp.Empleado,
+          matriz: matNum,
+          estado: pendingTM ? 'tm' : 'prod'
+        });
+      });
+
+      return activos;
+    }
+
+    async function refresh() {
+      const cont = document.getElementById('content');
+      try {
+        const hoyISO = new Date().toISOString().slice(0, 10);
+
+        // 1) empleados + matrices + registros de hoy
+        const [empRes, matRes, regRes] = await Promise.all([
+          sb.from('Empleados').select('Legajo, Empleado, Activo, Sede').eq('Activo', 'SI'),
+          sb.from('Matrices').select('N_Matriz, Matriz, Tiempo_Historico'),
+          sb.from('Registros Produccion Cervantes')
+            .select('legajo, opcion, ts_event, matriz, texto')
+            .gte('ts_event', hoyISO + 'T00:00:00')
+            .lte('ts_event', hoyISO + 'T23:59:59')
+            .order('ts_event', { ascending: true })
+        ]);
+
+        matricesMap = {}; matrizTHist = {};
+        (matRes.data || []).forEach(m => {
+          const k = String(m.N_Matriz).trim();
+          matricesMap[k] = m.Matriz;
+          matrizTHist[k] = Number(m.Tiempo_Historico) || 0;
+        });
+
+        const activos = operariosActivos(empRes.data || [], regRes.data || []);
+        const legajos = [...activos.keys()];
+
+        if (legajos.length === 0) {
+          cont.innerHTML = '<div class="empty">No hay operarios en producción en este momento.</div>';
+          document.getElementById('count').textContent = '';
+          marcarActualizado();
+          return;
+        }
+
+        // 2) cajones de db_n8n_espejo (últimos 45 días) de esos operarios
+        const desde = new Date(); desde.setDate(desde.getDate() - 45);
+        const desdeISO = desde.toISOString().slice(0, 10);
+        const { data: cajones, error: cajErr } = await sb.from('db_n8n_espejo')
+          .select('Legajo, Matriz, Tiempo_Toma, Hora_Fin, Fecha, Uni, Eliminar')
+          .in('Legajo', legajos)
+          .gte('Fecha', desdeISO + 'T00:00:00');
+        if (cajErr) throw cajErr;
+
+        // Agrupar por legajo|matriz -> filas válidas
+        const grupo = {}; // key -> [{fecha, horaFin, toma}]
+        (cajones || []).forEach(c => {
+          if (c.Eliminar === 'S') return;
+          if (!(Number(c.Uni) > 0)) return;
+          const toma = Number(c.Tiempo_Toma);
+          if (!(toma > 0)) return;
+          const leg = String(c.Legajo).trim();
+          const mat = c.Matriz ? String(c.Matriz).trim() : null;
+          if (!mat) return;
+          const key = leg + '|' + mat;
+          const fecha = c.Fecha ? String(c.Fecha).slice(0, 10) : '';
+          (grupo[key] = grupo[key] || []).push({ fecha, horaFin: c.Hora_Fin || '', toma });
+        });
+
+        // 3) armar filas para cada operario activo, sólo su matriz actual
+        const filas = legajos.map(leg => {
+          const a = activos.get(leg);
+          const key = leg + '|' + a.matriz;
+          const rows = grupo[key] || [];
+
+          // último cajón = fila más reciente (fecha, luego hora_fin)
+          let ultimo = null;
+          rows.forEach(r => {
+            if (!ultimo) { ultimo = r; return; }
+            const rk = r.fecha + '|' + r.horaFin;
+            const uk = ultimo.fecha + '|' + ultimo.horaFin;
+            if (rk > uk) ultimo = r;
+          });
+
+          // promedio por día
+          const porDia = {}; // fecha -> {sum,n}
+          rows.forEach(r => {
+            const d = porDia[r.fecha] = porDia[r.fecha] || { sum: 0, n: 0 };
+            d.sum += r.toma; d.n += 1;
+          });
+          const promHoy = porDia[hoyISO] ? porDia[hoyISO].sum / porDia[hoyISO].n : null;
+
+          // día anterior = fecha más reciente < hoy con datos
+          let diaAntFecha = null;
+          Object.keys(porDia).forEach(d => {
+            if (d < hoyISO && (!diaAntFecha || d > diaAntFecha)) diaAntFecha = d;
+          });
+          const promAnt = diaAntFecha ? porDia[diaAntFecha].sum / porDia[diaAntFecha].n : null;
+
+          const tHist = matrizTHist[a.matriz] || 0;
+          return {
+            legajo: leg, nombre: a.nombre, estado: a.estado,
+            matriz: a.matriz, matrizNombre: matricesMap[a.matriz] || '',
+            ultimo: ultimo ? ultimo.toma : null,
+            promHoy, promAnt, diaAntFecha, tHist
+          };
+        });
+
+        filas.sort((x, y) => parseInt(x.legajo.replace(/\D/g, '')) - parseInt(y.legajo.replace(/\D/g, '')));
+        render(filas);
+        document.getElementById('count').textContent = filas.length + ' operario' + (filas.length === 1 ? '' : 's');
+        marcarActualizado();
+      } catch (e) {
+        cont.innerHTML = '<div class="errbox">Error cargando datos: ' + esc(e.message || e) + '</div>';
+      }
+    }
+
+    function render(filas) {
+      const cont = document.getElementById('content');
+      let html = '<table><thead><tr>' +
+        '<th>Operario</th>' +
+        '<th>Matriz actual</th>' +
+        '<th class="num">Últ. cajón</th>' +
+        '<th class="num">Prom. hoy</th>' +
+        '<th class="num">Prom. día ant.</th>' +
+        '<th class="num">T. Hist.</th>' +
+        '</tr></thead><tbody>';
+
+      filas.forEach(f => {
+        const estadoBadge = f.estado === 'tm'
+          ? '<span class="estado tm">T. Muerto</span>'
+          : '<span class="estado prod">Produciendo</span>';
+        const antHead = f.diaAntFecha
+          ? '<span class="sub">' + fechaCorta(f.diaAntFecha) + '</span>'
+          : '';
+        html += '<tr>' +
+          '<td><span class="op-nombre">' + esc(f.nombre) + '</span>' + estadoBadge +
+            '<span class="op-legajo">Legajo ' + esc(f.legajo) + '</span></td>' +
+          '<td><span class="matriz-num">' + esc(f.matriz) + '</span>' +
+            '<span class="matriz-nombre">' + esc(f.matrizNombre) + '</span></td>' +
+          '<td class="num">' + celdaToma(f.ultimo, f.tHist) + '</td>' +
+          '<td class="num">' + celdaToma(f.promHoy, f.tHist) + '</td>' +
+          '<td class="num">' + celdaToma(f.promAnt, f.tHist) + antHead + '</td>' +
+          '<td class="num">' + (f.tHist > 0 ? fmtToma(f.tHist) : '<span class="dash">—</span>') + '</td>' +
+          '</tr>';
+      });
+
+      html += '</tbody></table>';
+      cont.innerHTML = html;
+    }
+
+    function marcarActualizado() {
+      document.getElementById('refreshInfo').textContent =
+        'Actualizado: ' + new Date().toLocaleTimeString('es-AR');
+    }
+
+    refresh();
+    setInterval(refresh, 60000); // auto-refresh cada 60s
+  })();
+  </script>
+</body>
+</html>
