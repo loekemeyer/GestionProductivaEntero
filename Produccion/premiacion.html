@@ -105,7 +105,7 @@
   <p class="foot-note">
     Sólo se listan operarios que están trabajando ahora (Sede Cervantes, con actividad hoy y sin Fin de Jornada),
     en la matriz que están haciendo en este momento. <b>Últ. cajón</b> = Tiempo Toma del último cajón cerrado en esa matriz.
-    <b>Prom. hoy</b> / <b>Prom. ayer</b> = promedio de Tiempo Toma del operario en esa matriz ese día (ayer = último día con producción antes de hoy, se muestra la fecha).
+    <b>Prom. hoy</b> / <b>Prom. ayer</b> = promedio de Tiempo Toma del operario en esa matriz ese día (ayer = día calendario anterior; vacío si ayer no produjo en esa matriz).
     Color: <span style="color:#16a34a;font-weight:700;">verde</span> = más rápido que el T. Histórico,
     <span style="color:#dc2626;font-weight:700;">rojo</span> = más lento.
   </p>
@@ -282,12 +282,12 @@
           });
           const promHoy = porDia[hoyISO] ? porDia[hoyISO].sum / porDia[hoyISO].n : null;
 
-          // día anterior = fecha más reciente < hoy con datos
-          let diaAntFecha = null;
-          Object.keys(porDia).forEach(d => {
-            if (d < hoyISO && (!diaAntFecha || d > diaAntFecha)) diaAntFecha = d;
-          });
-          const promAnt = diaAntFecha ? porDia[diaAntFecha].sum / porDia[diaAntFecha].n : null;
+          // ayer = ayer calendario literal (hoy - 1 dia)
+          const ayerD = new Date(hoyISO + 'T12:00:00');
+          ayerD.setDate(ayerD.getDate() - 1);
+          const ayerISO = ayerD.toISOString().slice(0, 10);
+          const promAnt = porDia[ayerISO] ? porDia[ayerISO].sum / porDia[ayerISO].n : null;
+          const diaAntFecha = promAnt != null ? ayerISO : null;
 
           const tHist = matrizTHist[a.matriz] || 0;
           return {
