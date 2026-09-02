@@ -5,133 +5,111 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Tiempos Premiacion</title>
-  <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&family=Inter:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; }
     body {
       font-family: 'Inter', sans-serif;
-      background: #05070a; color: #ffb000; overflow: hidden;
+      background: #d9d9de; padding: 20px; min-height: 100vh;
     }
+    .top-bar {
+      max-width: 1080px; margin: 0 auto 16px;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .btn-volver {
+      height: 40px; padding: 0 20px; border-radius: 999px;
+      border: 2px solid #b9b9b9; background: #f7f7f7;
+      font-size: 14px; cursor: pointer; font-weight: 700; text-decoration: none;
+      color: #1e293b; display: inline-flex; align-items: center;
+    }
+    .btn-volver:hover { background: #e5e5e5; border-color: #7f7f7f; }
+    .top-bar h1 { font-size: 22px; flex: 1; color: #1e293b; }
+    .refresh-info { font-size: 12px; color: #475569; white-space: nowrap; }
 
-    /* ---- Tablero a pantalla completa (TV) ---- */
-    .board {
-      position: relative;
-      width: 100vw; height: 100vh;
-      display: flex; flex-direction: column;
-      background: linear-gradient(180deg, #0b0d0f 0%, #070809 100%);
-      padding: 2.4vh 2.6vw;           /* safe-area para overscan de TV */
+    .main-card {
+      max-width: 1080px; margin: 0 auto;
+      background: #fff; border: 1px solid #cfcfcf;
+      border-radius: 14px; overflow: hidden;
     }
-    /* grilla de LEDs (huecos oscuros entre puntos) */
-    .board::after {
-      content:""; position:absolute; inset:0; pointer-events:none; z-index:5;
-      background-image: radial-gradient(circle, transparent 46%, #05070a 48%);
-      background-size: 5px 5px; mix-blend-mode: multiply; opacity:.85;
+    .card-header {
+      background: #111; color: #fff; padding: 14px 22px;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
     }
-    /* scanline + vignette */
-    .board::before {
-      content:""; position:absolute; inset:0; pointer-events:none; z-index:4;
-      background:
-        repeating-linear-gradient(0deg, transparent 0 3px, #0003 3px 4px),
-        radial-gradient(120% 80% at 50% 40%, transparent 55%, #000a 100%);
-    }
+    .card-header h2 { font-size: 16px; color: #fff; margin: 0; }
+    .card-header .count { font-size: 13px; color: #cbd5e1; }
+    .card-body { padding: 0; }
 
-    .head {
-      position: relative; z-index: 6;
-      display: flex; align-items: baseline; gap: 2vw;
-      padding-bottom: 1.4vh; margin-bottom: .6vh;
-      border-bottom: 3px solid #3a2a08;
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      background: #f1f5f9; color: #334155; font-size: 12px; font-weight: 700;
+      text-align: left; padding: 10px 14px; border-bottom: 2px solid #e2e8f0;
+      text-transform: uppercase; letter-spacing: .02em; white-space: nowrap;
     }
-    .head h1 {
-      flex: 1; text-align: center;
-      font-family: 'Silkscreen', monospace; font-weight: 700; letter-spacing: .1em;
-      font-size: clamp(26px, 3.4vw, 58px); color: #ffb000;
-      text-shadow: 0 0 10px #ff9d00, 0 0 26px #ff6a0066;
-    }
-    .head .clock, .head .back {
-      font-family: 'VT323', monospace; font-size: clamp(18px, 1.6vw, 30px);
-      color: #8a6a1e; white-space: nowrap; text-decoration: none;
-    }
-    .head .back { color:#5a4412; }
-    .head .clock b { color:#c79236; }
+    thead th.num { text-align: right; }
+    tbody td { padding: 11px 14px; border-bottom: 1px solid #eef2f6; font-size: 14px; color: #1e293b; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #f8fafc; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 
-    .rows {
-      position: relative; z-index: 6;
-      flex: 1; display: flex; flex-direction: column; min-height: 0;
+    .op-nombre { font-weight: 700; }
+    .op-legajo { font-size: 11px; color: #64748b; font-weight: 500; }
+    .matriz-num {
+      display: inline-block; min-width: 30px; text-align: center;
+      background: #111; color: #fff; border-radius: 6px; padding: 2px 7px;
+      font-size: 12px; font-weight: 700; margin-right: 6px;
     }
-    .row {
-      flex: 1;                         /* reparten el alto -> sin huecos vacios */
-      display: grid; grid-template-columns: auto 1fr auto; align-items: center;
-      gap: 2vw; padding: 0 1vw;
-      border-bottom: 1px solid #1c1405;
-    }
-    .row:last-child { border-bottom: none; }
+    .matriz-nombre { font-size: 13px; color: #334155; }
+    .sub { display: block; font-size: 11px; color: #94a3b8; font-weight: 500; }
 
-    .rank {
-      font-family:'VT323', monospace; text-align:center; line-height:1;
-      font-size: clamp(46px, 6.4vh, 120px); color:#5a4412; min-width: 1.4em;
-    }
-    .row:nth-child(1) .rank { color:#ffb000; text-shadow:0 0 14px #ff9d00; }
+    /* color premiacion: verde = toma menor a T.Hist (bien), rojo = mayor (mal) */
+    .toma { font-weight: 700; }
+    .toma.bien { color: #16a34a; }
+    .toma.mal  { color: #dc2626; }
+    .toma.neutro { color: #1e293b; }
+    .dash { color: #cbd5e1; font-weight: 500; }
 
-    .who { min-width: 0; }
-    .who .name {
-      font-family:'Silkscreen', monospace; letter-spacing:.03em; text-transform: uppercase;
-      font-size: clamp(20px, 2.3vw, 42px); color:#ffc23e; text-shadow:0 0 8px #ff9d0055;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    .estado {
+      display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 999px; margin-left: 6px; vertical-align: middle;
     }
-    .who .meta {
-      margin-top: .5vh; font-family:'VT323',monospace; text-transform: uppercase;
-      font-size: clamp(19px, 2vw, 36px); color:#c79236; line-height:1.05;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .who .meta b { color:#ffb000; }
-    .who .meta .st { color:#8fe07a; }
-    .who .meta .st.tm { color:#ffd24a; }
+    .estado.prod { background: #dcfce7; color: #166534; }
+    .estado.tm   { background: #fef9c3; color: #854d0e; }
 
-    .stats {
-      margin-top: .7vh; display:flex; gap: 1.8vw; flex-wrap: wrap;
-      font-family:'VT323',monospace; font-size: clamp(19px, 1.9vw, 34px);
+    .empty, .loading, .errbox {
+      padding: 40px 20px; text-align: center; color: #64748b; font-size: 15px;
     }
-    .stats .k { color:#6d5217; }
-    .stats .v { color:#c79236; }
-    .stats .v.bien { color:#8fe07a; text-shadow:0 0 8px #4bd06055; }
-    .stats .v.mal  { color:#ff6a5a; text-shadow:0 0 8px #ff3b2555; }
-    .stats .f { color:#5a4412; font-size:.8em; }
-    .stats .dash { color:#4a3a12; }
-
-    /* CONTADOR HERO */
-    .counter { text-align:right; min-width: 3.2em; }
-    .counter .big {
-      font-family:'VT323', monospace; line-height:.8;
-      font-size: clamp(80px, 13vh, 200px); color:#ffb000;
-      text-shadow: 0 0 12px #ff9d00, 0 0 34px #ff6a0066;
+    .errbox { color: #b91c1c; }
+    .foot-note {
+      max-width: 1080px; margin: 12px auto 0; font-size: 12px; color: #64748b; line-height: 1.5;
     }
-    .counter .lbl {
-      font-family:'Silkscreen',monospace; letter-spacing:.16em; color:#8a6a1e;
-      font-size: clamp(9px, .85vw, 15px); margin-top: .6vh;
-    }
-
-    .msg {
-      position: relative; z-index: 6; flex: 1;
-      display: flex; align-items: center; justify-content: center; text-align: center;
-      font-family:'Silkscreen',monospace; font-size: clamp(20px, 2.4vw, 44px);
-      color:#8a6a1e; padding: 4vh;
-    }
-    .msg.err { color:#ff6a5a; }
   </style>
 </head>
 <body>
-  <div class="board">
-    <div class="head">
-      <a class="back" href="../Inicio/index.html">◄ VOLVER</a>
-      <h1>TIEMPOS PREMIACION</h1>
-      <span class="clock" id="clock">EN VIVO</span>
+  <div class="top-bar">
+    <a class="btn-volver" href="../Inicio/index.html">← Volver</a>
+    <h1>Tiempos Premiación</h1>
+    <span class="refresh-info" id="refreshInfo">Cargando…</span>
+  </div>
+
+  <div class="main-card">
+    <div class="card-header">
+      <h2>Operarios en producción</h2>
+      <span class="count" id="count"></span>
     </div>
-    <div class="rows" id="rows">
-      <div class="msg">CARGANDO...</div>
+    <div class="card-body">
+      <div id="content"><div class="loading">Cargando datos…</div></div>
     </div>
   </div>
+
+  <p class="foot-note">
+    Sólo se listan operarios que están trabajando ahora (Sede Cervantes, con actividad hoy y sin Fin de Jornada),
+    en la matriz que están haciendo en este momento. <b>En cajón</b> = minutos que llevan en el cajón en curso (desde que arrancaron el cajón actual; incluye tiempos muertos).
+    <b>Últ. cajón</b> = Tiempo Toma del último cajón cerrado en esa matriz.
+    <b>Prom. hoy</b> / <b>Prom. ayer</b> = promedio de Tiempo Toma del operario en esa matriz ese día (ayer = día calendario anterior; vacío si ayer no produjo en esa matriz).
+    Color: <span style="color:#16a34a;font-weight:700;">verde</span> = más rápido que el T. Histórico,
+    <span style="color:#dc2626;font-weight:700;">rojo</span> = más lento.
+  </p>
 
   <script src="../version.js"></script>
   <script>
@@ -154,40 +132,36 @@
       return Number(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
     function fechaCorta(iso) {
+      // iso: "YYYY-MM-DD" -> "DD/MM"
       if (!iso) return '';
       const p = iso.split('-');
       return p.length === 3 ? (p[2] + '/' + p[1]) : iso;
     }
-    // minutos enteros que el operario lleva en el cajon en curso
-    function minutosEnCajon(iso) {
-      if (!iso) return null;
+    function fmtMin(iso) {
+      if (!iso) return '—';
       const t = new Date(iso).getTime();
-      if (isNaN(t)) return null;
-      return Math.max(0, Math.floor((Date.now() - t) / 60000));
-    }
-    function fmtCounter(iso) {
-      const m = minutosEnCajon(iso);
-      return m == null ? '--' : String(m).padStart(2, '0');
+      if (isNaN(t)) return '—';
+      const min = Math.floor((Date.now() - t) / 60000);
+      return (min < 0 ? 0 : min) + ' min';
     }
     function updateTimers() {
-      document.querySelectorAll('.big[data-inicio]').forEach(el => {
-        el.textContent = fmtCounter(el.getAttribute('data-inicio'));
+      document.querySelectorAll('.timer[data-inicio]').forEach(el => {
+        el.textContent = fmtMin(el.getAttribute('data-inicio'));
       });
     }
 
     function claseToma(valor, tHist) {
-      if (valor == null || !isFinite(valor) || !tHist || tHist <= 0) return '';
+      if (valor == null || !isFinite(valor) || !tHist || tHist <= 0) return 'neutro';
       return valor <= tHist ? 'bien' : 'mal';
     }
-    function stat(kLabel, valor, tHist, fechaISO) {
+    function celdaToma(valor, tHist) {
       const txt = fmtToma(valor);
-      const f = fechaISO ? ' <span class="f">' + fechaCorta(fechaISO) + '</span>' : '';
-      const v = txt == null
-        ? '<span class="dash">—</span>'
-        : '<span class="v ' + claseToma(valor, tHist) + '">' + txt + '</span>' + f;
-      return '<span><span class="k">' + kLabel + '</span> ' + v + '</span>';
+      if (txt == null) return '<span class="dash">—</span>';
+      return '<span class="toma ' + claseToma(valor, tHist) + '">' + txt + '</span>';
     }
 
+    // Reconstruye la matriz actual y el estado de cada operario desde los registros de hoy.
+    // Devuelve Map legajo -> { matriz, estado } SOLO para los que están trabajando ahora.
     function operariosActivos(empleados, regs) {
       const porLeg = {};
       regs.forEach(r => {
@@ -226,8 +200,8 @@
           }
         });
 
-        if (fjEvent) return;
-        if (!currentMatriz) return;
+        if (fjEvent) return;                 // cerró jornada -> no está trabajando
+        if (!currentMatriz) return;          // sin matriz asignada hoy
         if (!lastAction && !pendingTM) return;
 
         const matNum = String(currentMatriz).trim();
@@ -245,10 +219,11 @@
     }
 
     async function refresh() {
-      const rows = document.getElementById('rows');
+      const cont = document.getElementById('content');
       try {
         const hoyISO = new Date().toISOString().slice(0, 10);
 
+        // 1) empleados + matrices + registros de hoy
         const [empRes, matRes, regRes] = await Promise.all([
           sb.from('Empleados').select('Legajo, Empleado, Activo, Sede').eq('Activo', 'SI'),
           sb.from('Matrices').select('N_Matriz, Matriz, Tiempo_Historico'),
@@ -270,11 +245,13 @@
         const legajos = [...activos.keys()];
 
         if (legajos.length === 0) {
-          rows.innerHTML = '<div class="msg">SIN OPERARIOS EN PRODUCCION</div>';
+          cont.innerHTML = '<div class="empty">No hay operarios en producción en este momento.</div>';
+          document.getElementById('count').textContent = '';
           marcarActualizado();
           return;
         }
 
+        // 2) cajones de db_n8n_espejo (últimos 45 días) de esos operarios
         const desde = new Date(); desde.setDate(desde.getDate() - 45);
         const desdeISO = desde.toISOString().slice(0, 10);
         const { data: cajones, error: cajErr } = await sb.from('db_n8n_espejo')
@@ -283,7 +260,8 @@
           .gte('Fecha', desdeISO + 'T00:00:00');
         if (cajErr) throw cajErr;
 
-        const grupo = {};
+        // Agrupar por legajo|matriz -> filas válidas
+        const grupo = {}; // key -> [{fecha, horaFin, toma}]
         (cajones || []).forEach(c => {
           if (c.Eliminar === 'S') return;
           if (!(Number(c.Uni) > 0)) return;
@@ -297,28 +275,35 @@
           (grupo[key] = grupo[key] || []).push({ fecha, horaFin: c.Hora_Fin || '', toma });
         });
 
-        const ayerD = new Date(hoyISO + 'T12:00:00');
-        ayerD.setDate(ayerD.getDate() - 1);
-        const ayerISO = ayerD.toISOString().slice(0, 10);
-
+        // 3) armar filas para cada operario activo, sólo su matriz actual
         const filas = legajos.map(leg => {
           const a = activos.get(leg);
           const key = leg + '|' + a.matriz;
-          const rowsG = grupo[key] || [];
+          const rows = grupo[key] || [];
 
+          // último cajón = fila más reciente (fecha, luego hora_fin)
           let ultimo = null;
-          rowsG.forEach(r => {
+          rows.forEach(r => {
             if (!ultimo) { ultimo = r; return; }
-            if ((r.fecha + '|' + r.horaFin) > (ultimo.fecha + '|' + ultimo.horaFin)) ultimo = r;
+            const rk = r.fecha + '|' + r.horaFin;
+            const uk = ultimo.fecha + '|' + ultimo.horaFin;
+            if (rk > uk) ultimo = r;
           });
 
-          const porDia = {};
-          rowsG.forEach(r => {
+          // promedio por día
+          const porDia = {}; // fecha -> {sum,n}
+          rows.forEach(r => {
             const d = porDia[r.fecha] = porDia[r.fecha] || { sum: 0, n: 0 };
             d.sum += r.toma; d.n += 1;
           });
           const promHoy = porDia[hoyISO] ? porDia[hoyISO].sum / porDia[hoyISO].n : null;
+
+          // ayer = ayer calendario literal (hoy - 1 dia)
+          const ayerD = new Date(hoyISO + 'T12:00:00');
+          ayerD.setDate(ayerD.getDate() - 1);
+          const ayerISO = ayerD.toISOString().slice(0, 10);
           const promAnt = porDia[ayerISO] ? porDia[ayerISO].sum / porDia[ayerISO].n : null;
+          const diaAntFecha = promAnt != null ? ayerISO : null;
 
           const tHist = matrizTHist[a.matriz] || 0;
           return {
@@ -326,62 +311,64 @@
             matriz: a.matriz, matrizNombre: matricesMap[a.matriz] || '',
             cajonInicio: a.cajonInicio,
             ultimo: ultimo ? ultimo.toma : null,
-            promHoy, promAnt, ayerFecha: promAnt != null ? ayerISO : null, tHist
+            promHoy, promAnt, diaAntFecha, tHist
           };
         });
 
-        // Ranking: mejor toma de hoy primero (menor = mejor); sin dato de hoy, al final.
-        filas.sort((x, y) => {
-          const hx = x.promHoy == null ? Infinity : x.promHoy;
-          const hy = y.promHoy == null ? Infinity : y.promHoy;
-          if (hx !== hy) return hx - hy;
-          const ux = x.ultimo == null ? Infinity : x.ultimo;
-          const uy = y.ultimo == null ? Infinity : y.ultimo;
-          if (ux !== uy) return ux - uy;
-          return parseInt(x.legajo.replace(/\D/g, '')) - parseInt(y.legajo.replace(/\D/g, ''));
-        });
-
+        filas.sort((x, y) => parseInt(x.legajo.replace(/\D/g, '')) - parseInt(y.legajo.replace(/\D/g, '')));
         render(filas);
+        document.getElementById('count').textContent = filas.length + ' operario' + (filas.length === 1 ? '' : 's');
         marcarActualizado();
       } catch (e) {
-        rows.innerHTML = '<div class="msg err">ERROR: ' + esc(e.message || e) + '</div>';
+        cont.innerHTML = '<div class="errbox">Error cargando datos: ' + esc(e.message || e) + '</div>';
       }
     }
 
     function render(filas) {
-      const rows = document.getElementById('rows');
-      rows.innerHTML = filas.map((f, i) => {
-        const est = f.estado === 'tm'
-          ? '<span class="st tm">TIEMPO MUERTO</span>'
-          : '<span class="st">PRODUCIENDO</span>';
-        const counter = f.cajonInicio
-          ? '<span class="big" data-inicio="' + esc(f.cajonInicio) + '">' + fmtCounter(f.cajonInicio) + '</span>'
-          : '<span class="big">--</span>';
-        return '<div class="row">' +
-          '<div class="rank">' + (i + 1) + '</div>' +
-          '<div class="who">' +
-            '<div class="name">' + esc(f.nombre) + '</div>' +
-            '<div class="meta"><b>M' + esc(f.matriz) + '</b> ' + esc(f.matrizNombre) + ' · ' + est + '</div>' +
-            '<div class="stats">' +
-              stat('ULT', f.ultimo, f.tHist) +
-              stat('HOY', f.promHoy, f.tHist) +
-              stat('AYER', f.promAnt, f.tHist, f.ayerFecha) +
-              stat('HIST', f.tHist > 0 ? f.tHist : null, 0) +
-            '</div>' +
-          '</div>' +
-          '<div class="counter">' + counter + '<div class="lbl">MIN EN CAJON</div></div>' +
-        '</div>';
-      }).join('');
+      const cont = document.getElementById('content');
+      let html = '<table><thead><tr>' +
+        '<th>Operario</th>' +
+        '<th>Matriz actual</th>' +
+        '<th class="num">En cajón</th>' +
+        '<th class="num">Últ. cajón</th>' +
+        '<th class="num">Prom. hoy</th>' +
+        '<th class="num">Prom. ayer</th>' +
+        '<th class="num">T. Hist.</th>' +
+        '</tr></thead><tbody>';
+
+      filas.forEach(f => {
+        const estadoBadge = f.estado === 'tm'
+          ? '<span class="estado tm">T. Muerto</span>'
+          : '<span class="estado prod">Produciendo</span>';
+        const antHead = f.diaAntFecha
+          ? '<span class="sub">' + fechaCorta(f.diaAntFecha) + '</span>'
+          : '';
+        html += '<tr>' +
+          '<td><span class="op-nombre">' + esc(f.nombre) + '</span>' + estadoBadge + '</td>' +
+          '<td><span class="matriz-num">' + esc(f.matriz) + '</span>' +
+            '<span class="matriz-nombre">' + esc(f.matrizNombre) + '</span></td>' +
+          '<td class="num">' + (f.cajonInicio
+              ? '<span class="timer" data-inicio="' + esc(f.cajonInicio) + '">' + fmtMin(f.cajonInicio) + '</span>'
+              : '<span class="dash">—</span>') + '</td>' +
+          '<td class="num">' + celdaToma(f.ultimo, f.tHist) + '</td>' +
+          '<td class="num">' + celdaToma(f.promHoy, f.tHist) + '</td>' +
+          '<td class="num">' + celdaToma(f.promAnt, f.tHist) + antHead + '</td>' +
+          '<td class="num">' + (f.tHist > 0 ? fmtToma(f.tHist) : '<span class="dash">—</span>') + '</td>' +
+          '</tr>';
+      });
+
+      html += '</tbody></table>';
+      cont.innerHTML = html;
     }
 
     function marcarActualizado() {
-      document.getElementById('clock').innerHTML =
-        'EN VIVO · <b>' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + '</b>';
+      document.getElementById('refreshInfo').textContent =
+        'Actualizado: ' + new Date().toLocaleTimeString('es-AR');
     }
 
     refresh();
     setInterval(refresh, 30000);      // auto-refresh datos cada 30s
-    setInterval(updateTimers, 15000); // cronometro "En cajón" cada 15s
+    setInterval(updateTimers, 15000); // refrescar cronometro "En cajón" cada 15s
   })();
   </script>
 </body>

@@ -3,6 +3,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-09-02 - Produccion/premiacion.html: REVERTIDO el skin Monsters Inc/TV. Vuelve al visual de tabla blanca original (estado del commit ae866ca), conservando las funciones: columna "En cajón", refresh 30s, "Prom. ayer" literal. Solo se revirtio lo visual. loekemeyer (claude-remote).
 2026-09-02 - Produccion/premiacion.html: rediseno completo a tablero estilo "scare board" Monsters Inc para TV (pantalla completa, fondo negro, ambar LED, grilla de puntos + scanlines, fuentes Silkscreen/VT323). El contador de minutos en cajon es el numero gigante protagonista. Filas con flex:1 que llenan el alto (sin huecos). Ranking por mejor toma de hoy (menor=mejor; sin dato de hoy va al final). Toda la logica de datos (operariosActivos, queries, timers 30s/15s) se conservo intacta; solo cambio el shell/CSS/render. loekemeyer (claude-remote).
 2026-09-02 - Produccion/premiacion.html: nueva columna "En cajón" = minutos que el operario lleva en el cajón en curso (desde el ts_event de la ultima E/C, incluye tiempos muertos). Se refresca cada 15s. loekemeyer (claude-remote).
 2026-09-02 - Produccion/premiacion.html: auto-refresh bajado de 60s a 30s. loekemeyer (claude-remote).
