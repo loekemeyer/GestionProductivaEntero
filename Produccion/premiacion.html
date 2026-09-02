@@ -104,7 +104,8 @@
 
   <p class="foot-note">
     Sólo se listan operarios que están trabajando ahora (Sede Cervantes, con actividad hoy y sin Fin de Jornada),
-    en la matriz que están haciendo en este momento. <b>Últ. cajón</b> = Tiempo Toma del último cajón cerrado en esa matriz.
+    en la matriz que están haciendo en este momento. <b>En cajón</b> = minutos que llevan en el cajón en curso (desde que arrancaron el cajón actual; incluye tiempos muertos).
+    <b>Últ. cajón</b> = Tiempo Toma del último cajón cerrado en esa matriz.
     <b>Prom. hoy</b> / <b>Prom. ayer</b> = promedio de Tiempo Toma del operario en esa matriz ese día (ayer = día calendario anterior; vacío si ayer no produjo en esa matriz).
     Color: <span style="color:#16a34a;font-weight:700;">verde</span> = más rápido que el T. Histórico,
     <span style="color:#dc2626;font-weight:700;">rojo</span> = más lento.
@@ -136,6 +137,19 @@
       const p = iso.split('-');
       return p.length === 3 ? (p[2] + '/' + p[1]) : iso;
     }
+    function fmtMin(iso) {
+      if (!iso) return '—';
+      const t = new Date(iso).getTime();
+      if (isNaN(t)) return '—';
+      const min = Math.floor((Date.now() - t) / 60000);
+      return (min < 0 ? 0 : min) + ' min';
+    }
+    function updateTimers() {
+      document.querySelectorAll('.timer[data-inicio]').forEach(el => {
+        el.textContent = fmtMin(el.getAttribute('data-inicio'));
+      });
+    }
+
     function claseToma(valor, tHist) {
       if (valor == null || !isFinite(valor) || !tHist || tHist <= 0) return 'neutro';
       return valor <= tHist ? 'bien' : 'mal';
@@ -167,6 +181,7 @@
         let pendingTM = null;
         let lastAction = null;
         let fjEvent = null;
+        let cajonInicioTs = null; // ts_event de la ultima E o C = arranque del cajon en curso
 
         empRegs.forEach(r => {
           const op = r.opcion;
@@ -174,9 +189,9 @@
           if (op === 'FJ') { fjEvent = r; pendingTM = null; return; }
           if (op === 'E') {
             currentMatriz = r.texto || r.matriz || null;
-            lastAction = r; pendingTM = null;
+            lastAction = r; pendingTM = null; cajonInicioTs = r.ts_event;
           } else if (op === 'C') {
-            lastAction = { ...r, opcion: 'C' }; pendingTM = null;
+            lastAction = { ...r, opcion: 'C' }; pendingTM = null; cajonInicioTs = r.ts_event;
           } else if (!NON_DOWNTIME.has(op)) {
             if (pendingTM && pendingTM.opcion === op) pendingTM = null;
             else if (!pendingTM) pendingTM = r;
@@ -195,7 +210,8 @@
           legajo: leg,
           nombre: emp.Empleado,
           matriz: matNum,
-          estado: pendingTM ? 'tm' : 'prod'
+          estado: pendingTM ? 'tm' : 'prod',
+          cajonInicio: cajonInicioTs
         });
       });
 
@@ -293,6 +309,7 @@
           return {
             legajo: leg, nombre: a.nombre, estado: a.estado,
             matriz: a.matriz, matrizNombre: matricesMap[a.matriz] || '',
+            cajonInicio: a.cajonInicio,
             ultimo: ultimo ? ultimo.toma : null,
             promHoy, promAnt, diaAntFecha, tHist
           };
@@ -312,6 +329,7 @@
       let html = '<table><thead><tr>' +
         '<th>Operario</th>' +
         '<th>Matriz actual</th>' +
+        '<th class="num">En cajón</th>' +
         '<th class="num">Últ. cajón</th>' +
         '<th class="num">Prom. hoy</th>' +
         '<th class="num">Prom. ayer</th>' +
@@ -329,6 +347,9 @@
           '<td><span class="op-nombre">' + esc(f.nombre) + '</span>' + estadoBadge + '</td>' +
           '<td><span class="matriz-num">' + esc(f.matriz) + '</span>' +
             '<span class="matriz-nombre">' + esc(f.matrizNombre) + '</span></td>' +
+          '<td class="num">' + (f.cajonInicio
+              ? '<span class="timer" data-inicio="' + esc(f.cajonInicio) + '">' + fmtMin(f.cajonInicio) + '</span>'
+              : '<span class="dash">—</span>') + '</td>' +
           '<td class="num">' + celdaToma(f.ultimo, f.tHist) + '</td>' +
           '<td class="num">' + celdaToma(f.promHoy, f.tHist) + '</td>' +
           '<td class="num">' + celdaToma(f.promAnt, f.tHist) + antHead + '</td>' +
@@ -346,7 +367,8 @@
     }
 
     refresh();
-    setInterval(refresh, 30000); // auto-refresh cada 30s
+    setInterval(refresh, 30000);      // auto-refresh datos cada 30s
+    setInterval(updateTimers, 15000); // refrescar cronometro "En cajón" cada 15s
   })();
   </script>
 </body>

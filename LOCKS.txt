@@ -3,6 +3,7 @@
 (vacío)
 
 [HISTORIAL]
+2026-09-02 - Produccion/premiacion.html: nueva columna "En cajón" = minutos que el operario lleva en el cajón en curso (desde el ts_event de la ultima E/C, incluye tiempos muertos). Se refresca cada 15s. loekemeyer (claude-remote).
 2026-09-02 - Produccion/premiacion.html: auto-refresh bajado de 60s a 30s. loekemeyer (claude-remote).
 2026-09-02 - Produccion/premiacion.html: "Prom. ayer" ahora usa ayer calendario literal (hoy-1 dia) en vez del ultimo dia con produccion. Si el operario no produjo ayer en esa matriz, queda vacio (—). loekemeyer (claude-remote).
 2026-09-02 - Produccion/premiacion.html: se saco la linea "Legajo N" de la celda de operario y la columna "Prom. dia ant." se renombro a "Prom. ayer" (encabezado + nota al pie). El calculo no cambia: ayer = ultimo dia con produccion antes de hoy, con label DD/MM. loekemeyer (claude-remote).
