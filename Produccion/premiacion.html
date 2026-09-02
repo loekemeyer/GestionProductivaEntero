@@ -105,7 +105,7 @@
   <p class="foot-note">
     Sólo se listan operarios que están trabajando ahora (Sede Cervantes, con actividad hoy y sin Fin de Jornada),
     en la matriz que están haciendo en este momento. <b>Últ. cajón</b> = Tiempo Toma del último cajón cerrado en esa matriz.
-    <b>Prom. hoy</b> / <b>Prom. día anterior</b> = promedio de Tiempo Toma del operario en esa matriz ese día.
+    <b>Prom. hoy</b> / <b>Prom. ayer</b> = promedio de Tiempo Toma del operario en esa matriz ese día (ayer = último día con producción antes de hoy, se muestra la fecha).
     Color: <span style="color:#16a34a;font-weight:700;">verde</span> = más rápido que el T. Histórico,
     <span style="color:#dc2626;font-weight:700;">rojo</span> = más lento.
   </p>
@@ -314,7 +314,7 @@
         '<th>Matriz actual</th>' +
         '<th class="num">Últ. cajón</th>' +
         '<th class="num">Prom. hoy</th>' +
-        '<th class="num">Prom. día ant.</th>' +
+        '<th class="num">Prom. ayer</th>' +
         '<th class="num">T. Hist.</th>' +
         '</tr></thead><tbody>';
 
@@ -326,8 +326,7 @@
           ? '<span class="sub">' + fechaCorta(f.diaAntFecha) + '</span>'
           : '';
         html += '<tr>' +
-          '<td><span class="op-nombre">' + esc(f.nombre) + '</span>' + estadoBadge +
-            '<span class="op-legajo">Legajo ' + esc(f.legajo) + '</span></td>' +
+          '<td><span class="op-nombre">' + esc(f.nombre) + '</span>' + estadoBadge + '</td>' +
           '<td><span class="matriz-num">' + esc(f.matriz) + '</span>' +
             '<span class="matriz-nombre">' + esc(f.matrizNombre) + '</span></td>' +
           '<td class="num">' + celdaToma(f.ultimo, f.tHist) + '</td>' +
