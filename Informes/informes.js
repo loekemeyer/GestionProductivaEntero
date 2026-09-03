@@ -235,7 +235,10 @@ btnGenerar.addEventListener("click", async () => {
 
   const desde = fechaDesde.value, hasta = fechaHasta.value;
   const esUnidades = currentVista === "unidades";
-  if (!esUnidades && (!desde || !hasta)) { alert("Selecciona rango de fechas"); return; }
+  const esFrecuencia = currentVista === "frecuencia";
+  // frecuencia y unidades cargan todo y filtran fecha adentro; no exigen el picker de arriba
+  const cargaTodo = esUnidades || esFrecuencia;
+  if (!cargaTodo && (!desde || !hasta)) { alert("Selecciona rango de fechas"); return; }
 
   // Reset subfiltros
   selectedEmpleados.clear();
@@ -268,8 +271,8 @@ btnGenerar.addEventListener("click", async () => {
     let rows = await fetchAll("db_n8n_espejo");
     console.log("Total registros cargados:", rows.length);
 
-    if (esUnidades) {
-      // Para unidades x matriz: cargar todo sin filtro de fecha, solo excluir eliminados y legajo 1
+    if (cargaTodo) {
+      // Para unidades / frecuencia x matriz: cargar todo sin filtro de fecha, solo excluir eliminados y legajo 1
       cachedRows = rows.filter(r => !r.Eliminar && String(r.Legajo || "").trim() !== "1");
     } else {
       const desdeD = new Date(desde + "T00:00:00-03:00");
@@ -290,7 +293,7 @@ btnGenerar.addEventListener("click", async () => {
     matCache.forEach(m => matMap.set(String(m.N_Matriz || "").trim(), m));
 
     // Mostrar subfiltros (mensajes: solo chips de empleados, sin tipo/filtroMatriz)
-    subfiltros.classList.toggle("hidden", esUnidades);
+    subfiltros.classList.toggle("hidden", cargaTodo);
     filtroMatrizWrap.classList.toggle("hidden", currentVista !== "matriz");
     const tipoWrap = document.getElementById("tipoMatrizWrap");
     if (tipoWrap) tipoWrap.style.display = esMensajes ? "none" : "";
@@ -308,6 +311,15 @@ function aplicarSubfiltros() {
   const selLegs = [...selectedEmpleados];
   let rows = [...cachedRows];
   const esMensajes = currentVista === "mensajes";
+
+  // Frecuencia: informe global de matrices por veces usadas. No filtra por empleado
+  // (interesa el uso de la matriz, no quien la uso), filtra por fecha adentro.
+  if (currentVista === "frecuencia") {
+    renderFrecuenciaMatriz(cachedRows, matMap);
+    statusEl.textContent = `${cachedRows.length} registros analizados`;
+    showExportBtns();
+    return;
+  }
 
   if (selLegs.length > 0) {
     const legSet = new Set(selLegs);
@@ -1169,6 +1181,123 @@ function renderUnidadesMatriz(rows, matMap) {
 
   generarTabla();
   inputDias.addEventListener("input", generarTabla);
+}
+
+/* ================= VISTA: MATRICES x FRECUENCIA ================= */
+// Informe de matrices por veces usadas en un rango (default: ultimos 3 meses).
+// Columnas: Cod | Matriz | Veces Usada | Cant. Dias | Unidades. Orden: veces desc.
+function renderFrecuenciaMatriz(rows, matMap) {
+  // Solo registros que son matriz (no TMs). Se cuenta cada cajon como un uso.
+  const matRows = rows.filter(r => esMatriz(r.Matriz));
+
+  // Rango por defecto: primer dia del mes 3 meses antes del actual -> hoy.
+  const hoy = new Date();
+  const desdeDef = new Date(hoy.getFullYear(), hoy.getMonth() - 3, 1);
+  function toISO(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  let html = `<div class="informe-wrap">
+    <div class="informe-title">Matrices por Frecuencia de Uso</div>
+    <div style="margin:10px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <label style="font-weight:600">Periodo:</label>
+      <input type="text" id="inputFechaFrec" placeholder="Seleccionar rango..." style="width:240px;height:32px;border:1px solid #ccc;border-radius:6px;padding:0 8px;font-size:13px" />
+      <span style="color:#888;font-size:12px">(default: ultimos 3 meses completos + lo que va del mes)</span>
+    </div>
+    <div id="tablaFrecWrap"></div>
+  </div>`;
+  resultEl.innerHTML = html;
+
+  const inputFecha = document.getElementById("inputFechaFrec");
+  const wrap = document.getElementById("tablaFrecWrap");
+
+  let fDesde = toISO(desdeDef);
+  let fHasta = toISO(hoy);
+
+  function generarTabla() {
+    const filtradas = matRows.filter(r => {
+      const fecha = String(r.Fecha || "").substring(0, 10);
+      return fecha && fecha >= fDesde && fecha <= fHasta;
+    });
+
+    // Agrupar por matriz: veces (cajones), dias (fechas unicas), unidades.
+    const porMatriz = new Map();
+    filtradas.forEach(r => {
+      const mat = String(r.Matriz || "").trim();
+      if (!porMatriz.has(mat)) porMatriz.set(mat, { veces: 0, uni: 0, dias: new Set() });
+      const m = porMatriz.get(mat);
+      m.veces++;
+      m.uni += n(r.Uni);
+      const fecha = String(r.Fecha || "").substring(0, 10);
+      if (fecha) m.dias.add(fecha);
+    });
+
+    // Orden por veces usadas desc (desempate por unidades desc).
+    const sorted = [...porMatriz.entries()].sort((a, b) =>
+      b[1].veces - a[1].veces || b[1].uni - a[1].uni);
+
+    let totVeces = 0, totUni = 0;
+    const diasGlobal = new Set();
+    const filas = sorted.map(([mat, data]) => {
+      const info = matMap.get(mat);
+      const nombre = info ? String(info.Matriz || "") : "";
+      totVeces += data.veces;
+      totUni += data.uni;
+      data.dias.forEach(d => diasGlobal.add(d));
+      return `<tr>
+        <td class="c">${esc(mat)}</td>
+        <td>${esc(nombre)}</td>
+        <td class="r b">${f(data.veces)}</td>
+        <td class="r">${f(data.dias.size)}</td>
+        <td class="r">${f(data.uni)}</td>
+      </tr>`;
+    }).join("");
+
+    exportTitleOverride = "Matrices x Frecuencia " + fDesde + " a " + fHasta;
+
+    wrap.innerHTML = `
+      <div style="margin-bottom:6px;color:#555;font-size:13px">
+        Periodo: ${fDesde} a ${fHasta} — ${sorted.length} matrices distintas
+      </div>
+      <div class="informe-scroll">
+        <table class="tbl" style="table-layout:auto;width:auto">
+          <thead>
+            <tr>
+              <th>Cod</th>
+              <th style="text-align:left">Matriz</th>
+              <th class="r">Veces Usada</th>
+              <th class="r">Cant. Dias</th>
+              <th class="r">Unidades</th>
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+          <tfoot>
+            <tr style="font-weight:bold;border-top:2px solid #333">
+              <td colspan="2">TOTAL</td>
+              <td class="r">${f(totVeces)}</td>
+              <td class="r">${f(diasGlobal.size)}</td>
+              <td class="r">${f(totUni)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+  }
+
+  flatpickr(inputFecha, {
+    mode: "range",
+    dateFormat: "Y-m-d",
+    locale: "es",
+    defaultDate: [fDesde, fHasta],
+    onChange: function(selectedDates) {
+      if (selectedDates.length === 2) {
+        fDesde = toISO(selectedDates[0]);
+        fHasta = toISO(selectedDates[1]);
+        generarTabla();
+      }
+    }
+  });
+
+  generarTabla();
 }
 
 /* ================= EXPORT PDF / EXCEL ================= */
