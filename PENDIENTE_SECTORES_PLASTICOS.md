@@ -123,4 +123,20 @@ el mismo lado del map:
 `enriquecerLineasOC` en `StockFlejes/recepcion.html` traducia el codigo del PDF a
 `nuevo_codigo` y buscaba SOLO por ese valor, asi que en Plasticos y Cajas no
 matcheaba nunca. Ahora prueba ambos lados (nuevo primero, para no alterar Flejes).
-Queda pendiente decidir si se unifica el formato de `Cod_ISIS` entre tablas.
+RESUELTO 2026-09-04 para Plasticos: `Partes_Plasticas.Cod_ISIS` se renombro a
+`Cod_ISIS_LK` y se agrego `Cod_ISIS_CH`, siguiendo el modelo de `Cajas`. Se
+cargaron 64 filas desde la hoja `Pedido VACIO` usando el **Nuevo Codigo** (4
+digitos), que es el que maneja la planilla del operario. Backup de los valores
+previos en `Partes_Plasticas_bkp_codisis_20260904`.
+
+Estado: 57 filas con `Cod_ISIS_LK`, 35 con `Cod_ISIS_CH`, 12 sin ninguno de los
+dos (no figuran en el Excel: KP1, PA4, PA5, PB4, PB5, PB8A, PB8B, PB9, PC5, PEP5,
+PEP6, PIP4) y 1 (`PB3`) que conserva el codigo interno viejo de 7 digitos porque
+tampoco esta en el Excel. `buscarIsis` tolera los dos formatos.
+
+Los codigos ISIS NO son unicos: el mismo codigo cubre varios sectores (0626 en
+PA10/PA13/PA15/PA18, 1876 en PEP4/PEP4A/PEP4B, 3346 en CP15/PC15A/PC15B, etc.).
+No poner una constraint UNIQUE sobre esas columnas.
+
+Queda pendiente decidir si se unifica el formato entre las demas tablas: `Flejes`
+guarda el Nuevo Codigo (4 digitos) y `Cajas` el codigo interno (7 digitos).

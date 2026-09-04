@@ -20,7 +20,7 @@ let enviosTallPorSector = new Map();
 let comprasPorSector = new Map();
 let sectoresPorTallerista = new Map(); // tallerista → Set de sectores plásticos
 let relevamientosData = []; // relevamiento_cervantes.relevamientos para Plasticos
-let plasticoStockPorCodISIS = new Map(); // Cod_ISIS → {plastico_id, relevamiento_id, ...}
+let plasticoStockPorSector = new Map(); // Sector → {plastico_id, relevamiento_id, ...}
 let relevStockMapVirgilioPlast = new Map(); // Sector → stock_relev_bolsa del ultimo relev Virgilio
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
@@ -93,15 +93,16 @@ async function init() {
     if (plasRes.error) throw plasRes.error;
     plasticosData = plasRes.data || [];
 
-    // Mapear Cod_ISIS → Partes_Plasticas_Stock_Planta para obtener relevamiento_id y creado_en
-    plasticoStockPorCodISIS.clear();
+    // Mapear Sector → Partes_Plasticas_Stock_Planta para obtener relevamiento_id y creado_en.
+    // Antes se indexaba por Cod_ISIS, que quedaba vacio en la mayoria de las filas.
+    plasticoStockPorSector.clear();
     const resCajStockPlanta = await sb.from("Partes_Plasticas_Stock_Planta").select("*").eq("planta", "Cervantes");
     for (const sp of (resCajStockPlanta.data || [])) {
       const p = plasticosData.find(x => x.id === sp.plastico_id);
       if (p) {
-        const codISIS = String(p["Cod_ISIS"] || "").trim();
-        if (codISIS) {
-          plasticoStockPorCodISIS.set(codISIS, sp);
+        const sector = String(p["Sector"] || "").trim();
+        if (sector) {
+          plasticoStockPorSector.set(sector, sp);
         }
       }
     }

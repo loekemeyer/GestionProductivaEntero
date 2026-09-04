@@ -463,7 +463,7 @@ function esDecimal(unidad) {
 const TABLAS = {
   Flejes:    { tabla: "Flejes",           colCod: "N Fleje",  colDesc: "Descripción",           colIsis: "Cod_ISIS", colMedida: "Medida mm", colSector: "Sector", colProv: "Proveedor" },
   Cajas:     { tabla: "Cajas",            colCod: "N_Caja",   colDesc: "Sector",                colIsis: "Cod_ISIS_LK", colMedida: "Medidas", colSector: "Sector", colProv: null },
-  Plasticos: { tabla: "Partes_Plasticas", colCod: "Sector",   colDesc: "Descripcion",           colIsis: "Cod_ISIS", colSector: "Sector", colProv: "Proveedor" },
+  Plasticos: { tabla: "Partes_Plasticas", colCod: "Sector",   colDesc: "Descripcion",           colIsis: ["Cod_ISIS_LK","Cod_ISIS_CH"], colSector: "Sector", colProv: "Proveedor" },
   Cartones:  { tabla: "Despiece x Articulo", colCod: "COD",   colDesc: "Descripcion de partes", colProv: null, filtro: { col: "Rubro", val: "Cartones" } },
   // Remaches: especial - une Remaches SC + Remaches SP. Manejado por separado en cargarRemaches().
   Remaches:  { especial: "remaches" },
@@ -572,6 +572,16 @@ function updateReady() {
 }
 
 // ===== Cargar artículos =====
+// colIsis puede ser una columna ("Cod_ISIS") o varias (["Cod_ISIS_LK","Cod_ISIS_CH"]):
+// Partes_Plasticas guarda el codigo de cada empresa por separado, igual que Cajas.
+// Devuelve [principal, alternativo] ya limpios, sin vacios.
+function leerIsis(row, colIsis) {
+  if (!colIsis) return ["", ""];
+  const cols = Array.isArray(colIsis) ? colIsis : [colIsis];
+  const vals = cols.map(c => String(row[c] ?? "").trim()).filter(Boolean);
+  return [vals[0] || "", vals[1] || ""];
+}
+
 btnContinuar.addEventListener("click", async () => {
   btnContinuar.disabled = true;
   statusMsg.textContent = "Cargando artículos...";
@@ -598,7 +608,8 @@ btnContinuar.addEventListener("click", async () => {
       data = (res.data || []).map(r => ({
         cod: String(r[cfg.colCod] ?? "").trim(),
         desc: String(r[cfg.colDesc] ?? "").trim(),
-        isis: cfg.colIsis ? String(r[cfg.colIsis] ?? "").trim() : "",
+        isis: leerIsis(r, cfg.colIsis)[0],
+        isisAlt: leerIsis(r, cfg.colIsis)[1],
         medida: cfg.colMedida ? String(r[cfg.colMedida] ?? "").trim() : "",
         sector: cfg.colSector ? String(r[cfg.colSector] ?? "").trim() : "",
         uniXPaq: r["Uni_x_Paq"] ?? r["Un_x_Paq"] ?? ""
@@ -615,6 +626,7 @@ btnContinuar.addEventListener("click", async () => {
       codigo: String(r.cod).trim(),
       descripcion: String(r.desc ?? "").trim(),
       isis: String(r.isis ?? "").trim(),
+      isisAlt: String(r.isisAlt ?? "").trim(),
       medida: String(r.medida ?? "").trim(),
       sector: String(r.sector ?? "").trim(),
       uniXPaq: Number(String(r.uniXPaq ?? "").replace(",", ".")) || 0,
@@ -822,7 +834,7 @@ function filterItems() {
   } else {
     const q = searchInput.value.toLowerCase();
     filteredItems = items.filter(it => {
-      const text = (it.codigo + " " + it.descripcion + " " + it.isis + " " + it.medida + " " + it.sector).toLowerCase();
+      const text = (it.codigo + " " + it.descripcion + " " + it.isis + " " + it.isisAlt + " " + it.medida + " " + it.sector).toLowerCase();
       return text.includes(q);
     });
   }
@@ -1577,9 +1589,13 @@ async function refrescarOCsDelProveedor(rubro, proveedor) {
 
 // Devuelve la OC pendiente asociada a un item (matchea por Cod_ISIS o por codigo).
 function getOCForItem(item) {
-  const kIsis = item.isis ? normCodigo(item.isis) : "";
-  const kCod  = item.codigo ? normCodigo(item.codigo) : "";
-  return (kIsis && ocByCodigo.get(kIsis)) || (kCod && ocByCodigo.get(kCod)) || null;
+  // Se prueban los dos codigos ISIS (LK y CH) ademas del codigo interno del item.
+  for (const k of [item.isis, item.isisAlt, item.codigo]) {
+    if (!k) continue;
+    const hit = ocByCodigo.get(normCodigo(k));
+    if (hit) return hit;
+  }
+  return null;
 }
 
 /* ---------- Actualizar cantidad_recibida despues de recibir ---------- */
@@ -1999,11 +2015,17 @@ async function enriquecerConCatalogo(parsed, empresa = "LK") {
       }
     });
   } else if (rubro === "Plasticos") {
-    const { data } = await sb.from("Partes_Plasticas").select('"Cod_ISIS","Descripcion","Sector"').in("Cod_ISIS", nuevos_codes);
-    const byIsis = new Map((data || []).map(r => [String(r.Cod_ISIS), r]));
+    // Partes_Plasticas guarda el codigo por empresa (Cod_ISIS_LK / Cod_ISIS_CH); se indexan ambos.
+    const { data } = await sb.from("Partes_Plasticas").select('"Cod_ISIS_LK","Cod_ISIS_CH","Descripcion","Sector"');
+    const byIsis = new Map();
+    (data || []).forEach(r => {
+      for (const c of [r.Cod_ISIS_LK, r.Cod_ISIS_CH]) {
+        if (c != null && String(c).trim() && !byIsis.has(String(c))) byIsis.set(String(c), r);
+      }
+    });
     cods_pdf.forEach(c => {
       const t = trad.get(c); const r = buscarIsis(byIsis, t);
-      if (r) mapaCod.set(c, { codigo: String(r.Cod_ISIS || t.nuevo), descripcion: String(r.Descripcion || ""), sector: String(r.Sector || "") });
+      if (r) mapaCod.set(c, { codigo: String(r.Sector || t.nuevo), descripcion: String(r.Descripcion || ""), sector: String(r.Sector || "") });
     });
   } else if (rubro === "Cartones") {
     // Cartones tiene 2 caminos:
