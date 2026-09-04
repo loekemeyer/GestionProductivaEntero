@@ -427,7 +427,13 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const PROVEEDORES = {
   Flejes: ["Basconia","Aperam","Hermac","Brawin","Altrak","Szapiro","EstaMetal","JL Metales","Alami"],
   Cajas: ["Corrugadora"],
-  Plasticos: ["Pat Bet Plast","Rodar","Telleria","Maspoli","Pintos","Martin Faccolo","JL Matriceria","Capuchon Mariposa","Base Afila","M. Pelador","Terrero","Mangos Abrelata","Regatones","Bujes Abrelatas","Mango Ergon.","Mangos NM","Packaging y Serv","Sesega","Barbeja"],
+  // Plasticos: proveedores REALES (fuente: hoja "Pedido VACIO" del Conteo de Plasticos).
+  // La lista vieja mezclaba matrices/insumos (Regatones, Base Afila, Mango Ergon., Mangos
+  // Abrelata, Capuchon Mariposa, Bujes Abrelatas, M. Pelador, Mangos NM) con proveedores:
+  // 17 de 19 botones no matcheaban ningun valor de Partes_Plasticas.Proveedor.
+  // "Rodar" era el titulo del bloque de Rafael Pettofrezza (mismo proveedor); "Esther" paso
+  // a Pettofrezza. "Ing. Barbetta Alberto" queda afuera hasta que existan PIEA/PIEB.
+  Plasticos: ["Pat Bet Plast","Rafael Pettofrezza","Telleria","Maspoli","Pintos","JL Matriceria","Martin Facciolo","Packaging y Servicios","CC Galvanoquimica"],
   Cartones: ["Grafica Pol"],
   Remaches: ["Bella Vista","Dilmax","Electronica Mandelli","Imel"],
   Bombillas: ["Por definir"]
@@ -439,7 +445,7 @@ const UNIDADES = {
   Flejes:    { _default: "Kg" },
   Cajas:     { _default: "Cajas" },
   Cartones:  { _default: "Uni" },
-  Plasticos: { _default: "Uni", "Martin Faccolo": "Kg", "Sesega": "Kg", "Barbeja": "Uni" },
+  Plasticos: { _default: "Uni", "Martin Facciolo": "Kg" },
   Remaches:  { _default: "Kg", "Dilmax": "Litros" },
   Bombillas: { _default: "Uni" }
 };
@@ -457,7 +463,7 @@ function esDecimal(unidad) {
 const TABLAS = {
   Flejes:    { tabla: "Flejes",           colCod: "N Fleje",  colDesc: "Descripción",           colIsis: "Cod_ISIS", colMedida: "Medida mm", colSector: "Sector", colProv: "Proveedor" },
   Cajas:     { tabla: "Cajas",            colCod: "N_Caja",   colDesc: "Sector",                colIsis: "Cod_ISIS_LK", colMedida: "Medidas", colSector: "Sector", colProv: null },
-  Plasticos: { tabla: "Partes_Plasticas", colCod: "Cod_ISIS", colDesc: "Descripcion",           colIsis: "Cod_ISIS", colSector: "Sector", colProv: "Proveedor" },
+  Plasticos: { tabla: "Partes_Plasticas", colCod: "Sector",   colDesc: "Descripcion",           colIsis: "Cod_ISIS", colSector: "Sector", colProv: "Proveedor" },
   Cartones:  { tabla: "Despiece x Articulo", colCod: "COD",   colDesc: "Descripcion de partes", colProv: null, filtro: { col: "Rubro", val: "Cartones" } },
   // Remaches: especial - une Remaches SC + Remaches SP. Manejado por separado en cargarRemaches().
   Remaches:  { especial: "remaches" },
@@ -489,14 +495,8 @@ function normCodigo(c) { return padCodigo(c).toUpperCase(); }
 // Inverso proveedor -> rubro (para saber a que rubro pertenece una OC dado su proveedor).
 const PROV_TO_RUBRO = (() => {
   const m = new Map();
-  for (const [rubro, provs] of Object.entries({
-    Flejes: ["Basconia","Aperam","Hermac","Brawin","Altrak","Szapiro","EstaMetal","JL Metales","Alami"],
-    Cajas: ["Corrugadora"],
-    Plasticos: ["Pat Bet Plast","Rodar","Telleria","Maspoli","Pintos","Martin Faccolo","JL Matriceria","Capuchon Mariposa","Base Afila","M. Pelador","Terrero","Mangos Abrelata","Regatones","Bujes Abrelatas","Mango Ergon.","Mangos NM","Packaging y Serv","Sesega","Barbeja"],
-    Cartones: ["Grafica Pol"],
-    Remaches: ["Bella Vista","Dilmax","Electronica Mandelli","Imel"],
-    Bombillas: ["Por definir"]
-  })) provs.forEach(p => m.set(p.toLowerCase(), rubro));
+  // Se deriva de PROVEEDORES. Antes la lista estaba copiada aca y se desincronizaba.
+  for (const [rubro, provs] of Object.entries(PROVEEDORES)) provs.forEach(p => m.set(p.toLowerCase(), rubro));
   return m;
 })();
 

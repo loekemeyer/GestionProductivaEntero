@@ -17,7 +17,7 @@ let sectorMap = new Map();
 let entregasPorSector = new Map();
 let enviosPSPorSector = new Map();
 let enviosTallPorSector = new Map();
-let comprasPorCodISIS = new Map();
+let comprasPorSector = new Map();
 let sectoresPorTallerista = new Map(); // tallerista → Set de sectores plásticos
 let relevamientosData = []; // relevamiento_cervantes.relevamientos para Plasticos
 let plasticoStockPorCodISIS = new Map(); // Cod_ISIS → {plastico_id, relevamiento_id, ...}
@@ -173,27 +173,29 @@ async function init() {
       m.detalle.push({ tall: e["Tallerista"], fecha: e["Dia-mes"], kg: n(e["KG"]), cajones: n(e["Cajones"]), uni: n(e["Unidades"]) });
     }
 
-    // Compras: Recepcion_Insumos rubro=Plasticos, key=Cod_ISIS, suma cantidad.
-    // FILTRO CLAVE: solo cuenta recepciones POSTERIORES al ultimo relev del Cod_ISIS
+    // Compras: Recepcion_Insumos rubro=Plasticos, key=Sector, suma cantidad.
+    // La recepcion (StockFlejes/recepcion.html) guarda codigo=Sector: Cod_ISIS esta vacio en
+    // 49 de las 75 filas de Partes_Plasticas y no sirve como clave.
+    // FILTRO CLAVE: solo cuenta recepciones POSTERIORES al ultimo relev del sector
     // (Partes_Plasticas_Stock_Planta.stock_inicial_updated_at, planta=Cervantes). Sino se doble contabiliza.
     const stockIniTsByCod = new Map();
-    const plasticoIdToCodISIS = new Map();
+    const plasticoIdToSector = new Map();
     for (const p of plasticosData) {
-      plasticoIdToCodISIS.set(p.id, String(p["Cod_ISIS"] || "").trim());
+      plasticoIdToSector.set(p.id, String(p["Sector"] || "").trim());
     }
     for (const sp of (resStockPlanta.data || [])) {
-      const c = plasticoIdToCodISIS.get(sp.plastico_id);
+      const c = plasticoIdToSector.get(sp.plastico_id);
       if (c && sp.stock_inicial_updated_at) stockIniTsByCod.set(c, sp.stock_inicial_updated_at);
     }
-    comprasPorCodISIS = new Map();
+    comprasPorSector = new Map();
     for (const r of recepcionInsumos) {
       if (String(r.rubro || "").trim() !== "Plasticos") continue;
       const cod = String(r.codigo || "").trim();
       if (!cod) continue;
       const ts = stockIniTsByCod.get(cod);
       if (ts && String(r.fecha) < String(ts).slice(0,10)) continue;
-      if (!comprasPorCodISIS.has(cod)) comprasPorCodISIS.set(cod, { cantidad: 0, detalle: [] });
-      const m = comprasPorCodISIS.get(cod);
+      if (!comprasPorSector.has(cod)) comprasPorSector.set(cod, { cantidad: 0, detalle: [] });
+      const m = comprasPorSector.get(cod);
       m.cantidad += n(r.cantidad);
       m.detalle.push({ proveedor: r.proveedor, fecha: r.fecha, cantidad: n(r.cantidad), remito: r.remito });
     }
@@ -249,8 +251,7 @@ function procesarRows() {
     const ent = entregasPorSector.get(sector) || { kg: 0, detalle: [] };
     const envPS = enviosPSPorSector.get(sector) || { kg: 0, detalle: [] };
     const envTall = enviosTallPorSector.get(sector) || { kg: 0, detalle: [] };
-    const codISIS = String(p["Cod_ISIS"] || "").trim();
-    const compras = comprasPorCodISIS.get(codISIS) || { cantidad: 0, detalle: [] };
+    const compras = comprasPorSector.get(sector) || { cantidad: 0, detalle: [] };
 
     const kgxUni = n(p["Kg_x_Uni"]);
     const uniBolsa = n(p["Uni_x_Bolsa"]);
