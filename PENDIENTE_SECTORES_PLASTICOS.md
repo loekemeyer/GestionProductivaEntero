@@ -80,11 +80,17 @@ decidir que pasa con "Mango Pelador LK 586 C/S".
 
 RESUELTO 2026-09-04: `PIEA` y `PIEB` (Ing. Barbetta Alberto) se dieron de alta en
 `Partes_Plasticas` (ids 125 y 126) tomando descripcion y Uni_x_Bolsa de
-`SectorPlasticos` y Pedido_Min de la hoja `Pedido VACIO`. `Cod_ISIS` quedo NULL:
-los codigos del Excel (LK 0017 / 2017, CH 0617 / 0627) no tienen entrada en
-`Codigos_ISIS_Map`, y desde el cambio de clave a Sector ya no hace falta.
+`SectorPlasticos` y Pedido_Min de la hoja `Pedido VACIO`. `Cod_ISIS` quedo en
+`1100` (PIEA) y `6100` (PIEB), que es el `codigo_interno` de `Codigos_ISIS_Map`
+para LK 0017 y LK 2017 — la misma convencion que el resto de la tabla.
 `Cons_Mensual` quedo en 0 — el Excel dice 0,3 pero la columna es integer.
 Con eso el proveedor entro a la botonera de Recepcion.
+
+Ojo: la fila LK `2017` del map tiene descripcion "Rueda Recta 945*48*70", que son
+las medidas de PIEA, no de PIEB. Se asigno igual a PIEB porque el Excel es
+explicito (PIEB = LK 2017 / CH 0627) y la fila CH `0627` del map dice
+"Rueda Recta 710*48*50.8", que coincide con PIEB. La descripcion del map LK esta
+desactualizada; no se toco.
 
 ## Por que no se hizo ahora
 
@@ -102,3 +108,19 @@ aparte, con backup y revision modulo por modulo.
 
 Tabla `Partes_Plasticas_bkp_proveedor_20260904` (75 filas: id, Sector,
 Descripcion, Proveedor previos al cambio de proveedores del 2026-09-04).
+
+## Nota: direccion del match contra `Codigos_ISIS_Map`
+
+Detectado 2026-09-04 al importar OCs en PDF. Las tablas de rubro no guardan todas
+el mismo lado del map:
+
+| Tabla | Columna | Formato | Lado del map |
+|---|---|---|---|
+| `Flejes` | `Cod_ISIS` | 4 digitos | `nuevo_codigo` |
+| `Partes_Plasticas` | `Cod_ISIS` | 7 digitos | `codigo_interno` |
+| `Cajas` | `Cod_ISIS_LK` | 7 digitos | `codigo_interno` |
+
+`enriquecerLineasOC` en `StockFlejes/recepcion.html` traducia el codigo del PDF a
+`nuevo_codigo` y buscaba SOLO por ese valor, asi que en Plasticos y Cajas no
+matcheaba nunca. Ahora prueba ambos lados (nuevo primero, para no alterar Flejes).
+Queda pendiente decidir si se unifica el formato de `Cod_ISIS` entre tablas.

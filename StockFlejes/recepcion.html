@@ -1950,22 +1950,30 @@ async function enriquecerConCatalogo(parsed, empresa = "LK") {
   const isisMapRes = orClause
     ? await sb.from("Codigos_ISIS_Map").select("codigo_interno,nuevo_codigo,descripcion,rubro").eq("empresa", empresaFiltro).or(orClause)
     : { data: [] };
-  const trad = new Map();     // cod_pdf -> { nuevo, descripcion_map, rubro_map }
+  const trad = new Map();     // cod_pdf -> { nuevo, codigos[], descripcion_map, rubro_map }
   (isisMapRes.data || []).forEach(r => {
     for (const c of [r.codigo_interno, r.nuevo_codigo]) {
       if (c != null && cods_pdf.includes(String(c))) {
         // preferir el registro cuyo codigo_interno matchea (mas explicito)
         if (!trad.has(String(c)) || String(c) === r.codigo_interno) {
-          trad.set(String(c), { nuevo: String(r.nuevo_codigo || c), descripcion_map: r.descripcion, rubro_map: r.rubro });
+          // Las tablas de rubro NO guardan todas el mismo lado del map: Flejes.Cod_ISIS usa
+          // el nuevo_codigo (4 digitos) pero Partes_Plasticas.Cod_ISIS y Cajas.Cod_ISIS_LK
+          // usan el codigo_interno (7 digitos). Por eso se prueban los dos, en ese orden
+          // (nuevo primero para no cambiar el comportamiento de Flejes), y el propio codigo
+          // del PDF como ultimo recurso.
+          const codigos = [...new Set([r.nuevo_codigo, r.codigo_interno, c].filter(x => x != null).map(String))];
+          trad.set(String(c), { nuevo: String(r.nuevo_codigo || c), codigos, descripcion_map: r.descripcion, rubro_map: r.rubro });
         }
       }
     }
   });
   // Fallback: si no hubo match, asumir que ya es el nuevo.
-  cods_pdf.forEach(c => { if (!trad.has(c)) trad.set(c, { nuevo: c }); });
+  cods_pdf.forEach(c => { if (!trad.has(c)) trad.set(c, { nuevo: c, codigos: [c] }); });
 
-  // Nuevos codigos que vamos a buscar en la tabla del rubro
-  const nuevos_codes = [...new Set([...trad.values()].map(v => v.nuevo))];
+  // Candidatos que vamos a buscar en la tabla del rubro (ambos lados del map)
+  const nuevos_codes = [...new Set([].concat(...[...trad.values()].map(v => v.codigos)))];
+  // Devuelve la fila del catalogo que matchee cualquiera de los codigos candidatos.
+  const buscarIsis = (byIsis, t) => { for (const k of (t.codigos || [t.nuevo])) { const r = byIsis.get(String(k)); if (r) return r; } return undefined; };
 
   // PASO 2: Buscar en la tabla del rubro por Cod_ISIS = nuevo_codigo.
   let mapaCod = new Map();     // cod_pdf -> { codigo (el que va a Ordenes_Compra.codigo), descripcion, sector }
@@ -1973,7 +1981,7 @@ async function enriquecerConCatalogo(parsed, empresa = "LK") {
     const { data } = await sb.from("Flejes").select('"N Fleje","Cod_ISIS","Descripción","Medida mm","Sector"').in("Cod_ISIS", nuevos_codes);
     const byIsis = new Map((data || []).map(r => [String(r.Cod_ISIS), r]));
     cods_pdf.forEach(c => {
-      const t = trad.get(c); const r = byIsis.get(String(t.nuevo));
+      const t = trad.get(c); const r = buscarIsis(byIsis, t);
       if (r) mapaCod.set(c, { codigo: String(r.Cod_ISIS || t.nuevo), descripcion: String(r["Descripción"] || "").trim() + (r["Medida mm"] ? " (" + r["Medida mm"] + ")" : ""), sector: String(r.Sector || "") });
     });
   } else if (rubro === "Cajas") {
@@ -1984,7 +1992,7 @@ async function enriquecerConCatalogo(parsed, empresa = "LK") {
         if (c == null) continue;
         cods_pdf.forEach(pdf => {
           const t = trad.get(pdf);
-          if (String(c) === String(t.nuevo) && !mapaCod.has(pdf)) {
+          if ((t.codigos || [t.nuevo]).includes(String(c)) && !mapaCod.has(pdf)) {
             mapaCod.set(pdf, { codigo: String(c), descripcion: [r.Sector, r.Medidas].filter(Boolean).join(" · "), sector: String(r.Sector || "") });
           }
         });
@@ -1994,7 +2002,7 @@ async function enriquecerConCatalogo(parsed, empresa = "LK") {
     const { data } = await sb.from("Partes_Plasticas").select('"Cod_ISIS","Descripcion","Sector"').in("Cod_ISIS", nuevos_codes);
     const byIsis = new Map((data || []).map(r => [String(r.Cod_ISIS), r]));
     cods_pdf.forEach(c => {
-      const t = trad.get(c); const r = byIsis.get(String(t.nuevo));
+      const t = trad.get(c); const r = buscarIsis(byIsis, t);
       if (r) mapaCod.set(c, { codigo: String(r.Cod_ISIS || t.nuevo), descripcion: String(r.Descripcion || ""), sector: String(r.Sector || "") });
     });
   } else if (rubro === "Cartones") {
@@ -2004,7 +2012,7 @@ async function enriquecerConCatalogo(parsed, empresa = "LK") {
     const scRes = await sb.from("Sector Carton").select('"Sector","Cod_ISIS","Descripcion"').in("Cod_ISIS", nuevos_codes);
     const byIsis = new Map((scRes.data || []).map(r => [String(r.Cod_ISIS), r]));
     cods_pdf.forEach(c => {
-      const t = trad.get(c); const r = byIsis.get(String(t.nuevo));
+      const t = trad.get(c); const r = buscarIsis(byIsis, t);
       if (r) mapaCod.set(c, { codigo: String(r.Cod_ISIS || t.nuevo), descripcion: String(r.Descripcion || ""), sector: String(r.Sector || "") });
     });
     // Fallback a Despiece x Articulo (Cartones) por COD padded
@@ -2026,14 +2034,14 @@ async function enriquecerConCatalogo(parsed, empresa = "LK") {
     (sc || []).forEach(r => byIsis.set(String(r.Cod_ISIS), { cod: r.SC, desc: r["Descripción"], sector: r.SC }));
     (sp || []).forEach(r => { if (!byIsis.has(String(r.Cod_ISIS))) byIsis.set(String(r.Cod_ISIS), { cod: r.SP, desc: r["Descripción"], sector: r.SP }); });
     cods_pdf.forEach(c => {
-      const t = trad.get(c); const r = byIsis.get(String(t.nuevo));
+      const t = trad.get(c); const r = buscarIsis(byIsis, t);
       if (r) mapaCod.set(c, { codigo: String(r.cod || t.nuevo), descripcion: String(r.desc || ""), sector: String(r.sector || "") });
     });
   } else if (rubro === "Bombillas") {
     const { data } = await sb.from("Sector Bombilla").select('"Sector","Cod_ISIS","Descripcion"').in("Cod_ISIS", nuevos_codes);
     const byIsis = new Map((data || []).map(r => [String(r.Cod_ISIS), r]));
     cods_pdf.forEach(c => {
-      const t = trad.get(c); const r = byIsis.get(String(t.nuevo));
+      const t = trad.get(c); const r = buscarIsis(byIsis, t);
       if (r) mapaCod.set(c, { codigo: String(r.Cod_ISIS || t.nuevo), descripcion: String(r.Descripcion || ""), sector: String(r.Sector || "") });
     });
   }
