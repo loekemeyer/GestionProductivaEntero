@@ -466,7 +466,9 @@ function esDecimal(unidad) {
 const TABLAS = {
   Flejes:    { tabla: "Flejes",           colCod: "N Fleje",  colDesc: "Descripción",           colIsis: "Cod_ISIS", colMedida: "Medida mm", colSector: "Sector", colProv: "Proveedor" },
   Cajas:     { tabla: "Cajas",            colCod: "N_Caja",   colDesc: "Sector",                colIsis: "Cod_ISIS_LK", colMedida: "Medidas", colSector: "Sector", colProv: null },
-  Plasticos: { tabla: "Partes_Plasticas", colCod: "Sector",   colDesc: "Descripcion",           colIsis: ["Cod_ISIS_LK","Cod_ISIS_CH"], colSector: "Sector", colProv: "Proveedor" },
+  // filtroNo: excluye los articulos discontinuados. Siguen en la tabla para el historico de
+  // stock, pero no se compran mas, asi que no tienen que aparecer para recepcionar.
+  Plasticos: { tabla: "Partes_Plasticas", colCod: "Sector",   colDesc: "Descripcion",           colIsis: ["Cod_ISIS_LK","Cod_ISIS_CH"], colSector: "Sector", colProv: "Proveedor", filtroNo: { col: "Discontinuado", val: true } },
   Cartones:  { tabla: "Despiece x Articulo", colCod: "COD",   colDesc: "Descripcion de partes", colProv: null, filtro: { col: "Rubro", val: "Cartones" } },
   // Remaches: especial - une Remaches SC + Remaches SP. Manejado por separado en cargarRemaches().
   Remaches:  { especial: "remaches" },
@@ -606,6 +608,7 @@ btnContinuar.addEventListener("click", async () => {
       let query = sb.from(cfg.tabla).select("*");
       if (cfg.colProv && provSel) query = query.eq(cfg.colProv, provSel);
       if (cfg.filtro) query = query.eq(cfg.filtro.col, cfg.filtro.val);
+      if (cfg.filtroNo) query = query.neq(cfg.filtroNo.col, cfg.filtroNo.val);
       const res = await query.order(cfg.colCod, { ascending: true });
       if (res.error) throw res.error;
       data = (res.data || []).map(r => ({
@@ -2024,7 +2027,7 @@ async function enriquecerConCatalogo(parsed, empresa = "LK") {
     });
   } else if (rubro === "Plasticos") {
     // Partes_Plasticas guarda el codigo por empresa (Cod_ISIS_LK / Cod_ISIS_CH); se indexan ambos.
-    const { data } = await sb.from("Partes_Plasticas").select('"Cod_ISIS_LK","Cod_ISIS_CH","Descripcion","Sector"');
+    const { data } = await sb.from("Partes_Plasticas").select('"Cod_ISIS_LK","Cod_ISIS_CH","Descripcion","Sector"').neq("Discontinuado", true);
     const byIsis = new Map();
     (data || []).forEach(r => {
       for (const c of [r.Cod_ISIS_LK, r.Cod_ISIS_CH]) {
