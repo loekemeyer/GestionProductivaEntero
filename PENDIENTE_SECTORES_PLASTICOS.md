@@ -76,12 +76,15 @@ decidir que pasa con "Mango Pelador LK 586 C/S".
     PEST2   Insertos Pisa Papas
     PGRJ12  Ñoquera                     (existe como GRJ12, sin prefijo P)
     PGRJ12B Ñoquera Redonda             (existe como GRJ12B, sin prefijo P)
-    PIEA    Rueda Recta 50A36.20 945*48*70
-    PIEB    Rueda Recta 710*48*50.8
     PC3     Mangos Corta Queso
 
-`PIEA`/`PIEB` son de **Ing. Barbetta Alberto**. Mientras no existan, ese proveedor
-no puede aparecer en la botonera de Recepcion (por eso quedo fuera de la lista).
+RESUELTO 2026-09-04: `PIEA` y `PIEB` (Ing. Barbetta Alberto) se dieron de alta en
+`Partes_Plasticas` (ids 125 y 126) tomando descripcion y Uni_x_Bolsa de
+`SectorPlasticos` y Pedido_Min de la hoja `Pedido VACIO`. `Cod_ISIS` quedo NULL:
+los codigos del Excel (LK 0017 / 2017, CH 0617 / 0627) no tienen entrada en
+`Codigos_ISIS_Map`, y desde el cambio de clave a Sector ya no hace falta.
+`Cons_Mensual` quedo en 0 — el Excel dice 0,3 pero la columna es integer.
+Con eso el proveedor entro a la botonera de Recepcion.
 
 ## Por que no se hizo ahora
 
