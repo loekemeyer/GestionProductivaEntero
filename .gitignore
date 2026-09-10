@@ -27,3 +27,20 @@ temp/
 
 # Permitir estructura Excel de referencia si existe
 !Tablas_Madre_y_Dependencias.xls
+
+# --- Secretos y copias locales (agregado 2026-09-04 tras la alerta de GitGuardian) ---
+# El allowlist de permisos de Claude Code guarda los comandos aprobados TAL CUAL, y ahi
+# terminan pegados curl con claves adentro. Eso fue lo que filtro la service_role.
+# settings.local.json es el archivo por maquina donde vive ese allowlist: nunca se versiona.
+.claude/settings.local.json
+**/.claude/settings.local.json
+.claude/worktrees/
+**/.claude/worktrees/
+
+# OJO: .claude/settings.json de la raiz SI se versiona a proposito (tiene los hooks
+# compartidos del equipo). Antes de commitearlo, revisar que no haya quedado ninguna
+# clave pegada en permissions.allow.
+
+# Copias locales de la carpeta compartida. La copia "Gestion Productiva (N)" entro al
+# repo por error y arrastro una service_role key de Supabase.
+Gestion Productiva (*)/

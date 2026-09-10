@@ -143,7 +143,7 @@ const TABLAS_POR_RUBRO = {
   Cajas:     { tabla: "Cajas",               colCod: "N_Caja",   colDesc: "Cod_ISIS_LK",          colProv: null },
   // colCod es Sector, no Cod_ISIS_LK: el codigo ISIS esta vacio en muchas filas y el filtro
   // de abajo descarta toda fila sin codigo. Sector esta completo y es unico.
-  Plasticos: { tabla: "Partes_Plasticas",    colCod: "Sector",   colDesc: "Descripcion",          colProv: "Proveedor" },
+  Plasticos: { tabla: "Partes_Plasticas",    colCod: "Sector",   colDesc: "Descripcion",          colProv: "Proveedor", filtroNo: { col: "Discontinuado", val: true } },
   Cartones:  { tabla: "Despiece x Articulo", colCod: "COD",      colDesc: "Descripcion de partes", colProv: null, filtro: { col: "Rubro", val: "Cartones" } }
 };
 
@@ -381,6 +381,7 @@ async function abrirModalRecepcion() {
   let q = sb.from(cfg.tabla).select('*');
   if (cfg.colProv && provSel) q = q.eq(cfg.colProv, provSel);
   if (cfg.filtro) q = q.eq(cfg.filtro.col, cfg.filtro.val);
+  if (cfg.filtroNo) q = q.neq(cfg.filtroNo.col, cfg.filtroNo.val);
   const { data, error } = await q.order(cfg.colCod, { ascending: true });
   if (error) { setStatus('Error: ' + error.message, 'bad'); return; }
   const seen = new Set();

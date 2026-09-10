@@ -59,7 +59,19 @@ sola transaccion o via sectores temporales para no violar unicidad a mitad de ca
 (ids 102/103/44/46). El proveedor ya quedo bien en los 4 — es Rafael Pettofrezza
 en ambos casos — asi que esto NO afecta a Recepcion, solo a la trazabilidad.
 
-### 3. PEP5 ocupado
+### 3. PB8 / PB8A (corregido en los codigos, falta el sector)
+
+El Pedido fila 35 dice `PB8 = "Mango Sacacorcho Plast (581)"` (LK 3826 / CH 1186), y
+el Conteo fila 29 llama `PB8` a "Mgo Sacac Plast" — o sea el MANGO. En
+`Partes_Plasticas` ese articulo vive en `PB8A`, y `PB8` lo ocupa "Cpo Sacacorcho
+Plast" (el CUERPO), que no figura en la hoja Pedido.
+
+Los codigos ya se corrigieron el 2026-09-04: `PB8A` quedo con 3826/1186 y `PB8` con
+ambos en NULL. Falta decidir el sector: al renumerar, `PB8A` deberia pasar a `PB8`, y
+hay que ver que se hace con "Cpo Sacacorcho Plast" (aparece como "Cuerpo Sacacorcho
+Plastico 523" en la hoja `Stock CD` f173/f174, asi que es una pieza real).
+
+### 4. PEP5 ocupado
 
 - Correcto: `PEP5` = "Mang. Mad. Cuchi Untar" (proveedor Pintos).
 - `Partes_Plasticas`: `PEP5` = "Mango Pelador LK 586 C/S" (id 118), y mete
@@ -69,6 +81,25 @@ en ambos casos — asi que esto NO afecta a Recepcion, solo a la trazabilidad.
 Decision tomada: se asigno Pintos a `PLL5` (donde vive hoy el articulo real) y
 `PEP5` quedo en Pat Bet Plast. Al renumerar hay que fusionar PLL5 -> PEP5 y
 decidir que pasa con "Mango Pelador LK 586 C/S".
+
+## Asignaciones de codigo hechas por criterio, no por texto literal
+
+De las 64 filas con codigo cargado desde el Excel, 44 matchearon por descripcion
+exacta y 20 por equivalencia de redaccion. De esas 20, 14 tienen el mismo sector en
+la BD y en el Excel (solo cambia como esta escrito: "Mangos Lk" vs "Mangos f 10 lk",
+"Corta Queso" vs "Cilindro Corta Queso", etc.) y son de bajo riesgo.
+
+Las otras 6 asignan un mismo articulo del Excel a mas de una fila de la BD, o cruzan
+de sector. Una ya se corrigio (PB8). Quedan por revisar:
+
+| Filas BD | Reciben el codigo de | Codigo | Duda |
+|---|---|---|---|
+| `PC15A` + `PC15B` | Excel `PC15` | 3346 / 1126 | el Excel tiene una sola fila con LK **y** CH; quizas PC15A deberia llevar solo el LK y PC15B solo el CH |
+| `PEP4` + `PEP4A` + `PEP4B` | Excel `PEP4A` | 1876 / 0526 | PEP4A y PEP4B si estan en el Excel (ambas con 1876/0526). `PEP4` "Afila Caladas" a secas NO esta |
+| `PEP2` + `PEP3` | Excel `PEP2` | 1846 | `PEP3` "c/Serig" no esta en el Excel |
+| `PLL5` | Excel `PEP5` | 1766 / 0586 | ver punto 4 (PEP5 ocupado) |
+
+Ademas `CP15` ("Cpo Doble Aleta Plast") duplica a `PC15A` con el mismo codigo.
 
 ## Sectores del Conteo que NO existen en `Partes_Plasticas`
 
