@@ -9,7 +9,7 @@ const SUPABASE_URL = 'https://hrxfctzncixxqmpfhskv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const CACHE_KEY = 'virgilio_data_v6_web';
+const CACHE_KEY = 'virgilio_data_v7_web';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const FERIADOS_API_URL = 'https://api.argentinadatos.com/v1/feriados';
 const FERIADOS_CACHE_KEY = 'virgilio_feriados_v1';
@@ -84,50 +84,58 @@ async function fetchEmpleados() {
   })).filter(o => o.legajo);
 }
 
-async function fetchPpp() {
+// Paginado generico. Si una fuente falla (tabla ausente, permisos), devuelve []
+// y el resto sigue funcionando: antes un solo error dejaba TODOS los Mt3 en cero.
+async function fetchPaginado(tabla, cols) {
   const SIZE = 1000;
-
-  const allEntregados = [];
+  const all = [];
   let from = 0;
   while (true) {
-    const { data, error } = await sb
-      .from('PPP_Pedidos_Entregados')
-      .select('tanda,mt3')
-      .range(from, from + SIZE - 1);
-    if (error) throw new Error('PPP_Pedidos_Entregados: ' + error.message);
+    const { data, error } = await sb.from(tabla).select(cols).range(from, from + SIZE - 1);
+    if (error) {
+      console.warn(`PPP: ${tabla} no disponible (${error.message}) - se sigue sin esa fuente`);
+      return [];
+    }
     if (!data || data.length === 0) break;
-    allEntregados.push(...data);
+    all.push(...data);
     if (data.length < SIZE) break;
     from += SIZE;
   }
+  return all;
+}
 
-  const allProgDiaria = [];
-  from = 0;
-  while (true) {
-    const { data, error } = await sb
-      .from('PPP_Programacion_Diaria')
-      .select('tanda,m3,razon_social')
-      .range(from, from + SIZE - 1);
-    if (error) throw new Error('PPP_Programacion_Diaria: ' + error.message);
-    if (!data || data.length === 0) break;
-    allProgDiaria.push(...data);
-    if (data.length < SIZE) break;
-    from += SIZE;
-  }
+// De donde sale el Mt3:
+//   Mt3 FC (real, sin asterisco) -> vista_ppp_pedidos_entregados (todas sus filas tienen facturado_at)
+//   Mt3 estimado (con asterisco) -> PPP_Web_Programacion (programacion viva) y, para las tandas
+//                                   que no esten ahi, PPP_Programacion_Diaria.
+async function fetchPpp() {
+  const [entregados, webProg, progDiaria] = await Promise.all([
+    fetchPaginado('vista_ppp_pedidos_entregados', 'tanda,m3,razon_social'),
+    fetchPaginado('PPP_Web_Programacion', 'tanda,m3,razon_social'),
+    fetchPaginado('PPP_Programacion_Diaria', 'tanda,m3,razon_social')
+  ]);
 
-  const ppp = allEntregados.map(r => ({
-    tanda: String(r.tanda == null ? '' : r.tanda).trim(),
-    mt3: Number(r.mt3) || 0,
-    mt3fc: 0,
-    razon: ''
+  const norm = v => String(v == null ? '' : v).trim().toUpperCase();
+
+  const ppp = entregados.map(r => ({
+    tanda: norm(r.tanda),
+    mt3: 0,
+    mt3fc: Number(r.m3) || 0,
+    razon: String(r.razon_social || '').trim()
   })).filter(p => p.tanda);
 
-  const pppProgDiaria = allProgDiaria.map(r => ({
-    tanda: String(r.tanda == null ? '' : r.tanda).trim(),
+  const aEstimado = r => ({
+    tanda: norm(r.tanda),
     mt3: Number(r.m3) || 0,
     mt3fc: 0,
     razon: String(r.razon_social || '').trim()
-  })).filter(p => p.tanda);
+  });
+
+  const pppProgDiaria = webProg.map(aEstimado).filter(p => p.tanda);
+  const yaEnWeb = new Set(pppProgDiaria.map(p => p.tanda));
+  progDiaria.map(aEstimado).forEach(p => {
+    if (p.tanda && !yaEnWeb.has(p.tanda)) pppProgDiaria.push(p);
+  });
 
   return { ppp, pppProgDiaria };
 }
