@@ -11,6 +11,21 @@ código, comentarios ni mensajes de commit).
 - **`desactiva caveman`** = responder solo el **próximo mensaje** normal/completo, y después **volver solo** a caveman.
 - **`caveman desactivacion total`** = apagar caveman por completo (queda desactivado hasta que se reactive).
 
+## Formato de documentos imprimibles (PDF / Word)
+
+**Aplica a todo entregable para imprimir: PDF, Word, informes, planillas de taller.**
+
+- **Letra minima 14 pt** (tamano Word). Ningun texto por debajo: ni notas al pie, ni
+  pies de pagina, ni aclaraciones. Si no entra, se agrega una hoja.
+- **Titulo 16 pt.**
+- **Titulos y subtitulos en negrita.**
+- **Sin sombreados** (ni fondos de celda, ni filas cebra, ni cajas de color).
+- **Sin espacios entre columnas**: tablas con grilla, celdas pegadas una al lado de la
+  otra. Nada de columnas separadas solo por aire.
+- **Ajustar texto** (wrap) dentro de la celda: el texto largo baja de linea, no se corta
+  ni desborda.
+- No estirar bloques ni dejar columnas vacias solo para llenar el ancho.
+
 ## Perfiles de Usuario (LEER AL INICIO)
 
 **Al arrancar cada sesión, leer `PERFILES.md` para saber con quién estás trabajando.**
