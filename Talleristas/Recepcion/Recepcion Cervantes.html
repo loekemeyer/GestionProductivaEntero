@@ -1089,19 +1089,26 @@
     return items.reduce((acc, it) => acc + (Number(it.cajas) || 0), 0);
   }
 
+  // El input de Kg acepta coma o punto como separador decimal, pero Number("0,26")
+  // devuelve NaN: eso hacia que el item se filtrara (y saltara "Completa al menos una
+  // caja (> 0)") o que se guardara Kg_GRJ = 0. Normalizar coma -> punto siempre.
+  function parseKg(v){
+    const n = parseFloat(String(v == null ? "" : v).replace(",", "."));
+    return Number.isFinite(n) ? n : 0;
+  }
+
   function filterItemsToSend(items){
     const esCarlos = tallerista === "CARLOS";
     return items.filter(it => {
       if (esCarlos){
-        const kg = Number(it.kg);
+        const kg = parseKg(it.kg);
         const uni = Number(it.unidades);
-        const kgValido = it.kg !== "" && !Number.isNaN(kg) && kg > 0;
+        const kgValido = it.kg !== "" && kg > 0;
         const uniValido = it.unidades !== "" && !Number.isNaN(uni) && uni > 0;
         return kgValido || uniValido;
       }
       if (esGrjRealKg(it.codigo)){
-        const n = Number(it.kg);
-        return it.kg !== "" && !Number.isNaN(n) && n > 0;
+        return it.kg !== "" && parseKg(it.kg) > 0;
       }
       // Transformaciones 1:1 (M6/M8) y normales: validan por cajas
       const n = Number(it.cajas);
@@ -1258,7 +1265,7 @@
           "Cod": String(it.codigo || "").trim(),
           "Cajas": Number(it.unidades) || 0,
           "Fecha": fechaSeleccionada,
-          "Kg_GRJ": Number(it.kg) || 0,
+          "Kg_GRJ": parseKg(it.kg),
           "Cod_GRJ": String(it.codigo || "").trim()
         }));
         const { error: sbErr } = await sb.from(ENTREGAS_TABLE).insert(registrosCarlos);
@@ -1292,7 +1299,7 @@
         if (grjItems.length){
           const registrosGrj = [];
           grjItems.forEach(it => {
-            const kg    = Number(it.kg) || 0;
+            const kg    = parseKg(it.kg);
             const units = Number(it.cajasGrj) || 0;
             (GRJ_COMPONENTES[it.codigo] || []).forEach(comp => {
               registrosGrj.push({
@@ -1343,7 +1350,7 @@
       const scItems = grjItems.filter(it => SC_SECTORES.has(it.codigo));
       if (scItems.length){
         for (const it of scItems){
-          const kg = Number(it.kg) || 0;
+          const kg = parseKg(it.kg);
           if (kg <= 0) continue;
           const { data: scData } = await sb
             .from("SC Kg")
