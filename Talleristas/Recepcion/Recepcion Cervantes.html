@@ -840,8 +840,9 @@
 
       kg.addEventListener("input", () => {
         if (esCarlosInput || esGrj){
-          // Permitir coma o punto como separador decimal (se normaliza a punto al parsear).
-          kg.value = kg.value.replace(/[^\d.,]/g, "").replace(/([.,].*)[.,]/g, "$1");
+          // La coma se convierte a punto EN VIVO (el operario puede tipear cualquiera de
+          // las dos). Se descarta todo lo que no sea digito y se deja un solo separador.
+          kg.value = kg.value.replace(/[^\d.,]/g, "").replace(/,/g, ".").replace(/(\..*)\./g, "$1");
         } else {
           kg.value = kg.value.replace(/\D/g, "");
         }
@@ -1216,8 +1217,22 @@
     const items = filterItemsToSend(rawItems);
 
     if (items.length === 0){
+      // Distinguir "no cargaste nada" de "cargaste algo que el filtro descarta"
+      // (tipico: GRJ con Cajas pero sin Kg). Antes ambos casos daban el mismo cartel
+      // y el operario veia la grilla llena sin entender que faltaba.
+      const incompletas = rawItems.filter(it =>
+        (it.cajas || it.cajasGrj || it.kg || it.unidades) &&
+        !items.includes(it)
+      );
       modalMsg.className = "status bad";
-      modalMsg.textContent = "Completá al menos una caja (> 0).";
+      if (incompletas.length){
+        const cods = incompletas.map(it => it.codigo).filter(Boolean).join(", ");
+        modalMsg.textContent = tallerista === "CARLOS"
+          ? `Falta el Kg (o las unidades) en: ${cods}.`
+          : `Falta el Kg en: ${cods}. Los GRJ necesitan Kg además de las Cajas.`;
+      } else {
+        modalMsg.textContent = "Completá al menos una caja (> 0).";
+      }
       return;
     }
 
