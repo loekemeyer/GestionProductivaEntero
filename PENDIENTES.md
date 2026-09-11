@@ -40,3 +40,20 @@ cartón a Oscar (= Yabrán)**, que lo **enblista** → recién ahí es producto 
 - 506 = **12 u/caja · caja 29** (confirmado). Despiece `GRJ7` corregido a `Uni_x_Caja=12`.
 - El `uni_x_caja` se usará en el **encartonado** (cuando se modele), NO en la entrega del
   tallerista (el garage entrega suelto).
+
+## Sacafuente gastronómico / ergonómico — flejes y rutas (2026-09-11)
+Estado del corte de la **pza chica sacafuente gastronómico** (Mat 152, "Corte Pza Chica Sacaf Gast"):
+- **Fleje 6** (`Mgo Plano Marip / Perfora 3 en 1`, 18,5 x 1,9, FB3, Basconia) = fleje **actual/definitivo**.
+- **Fleje 69** (`Sacapizzero Pza Chica`, 18.5 x 2.5, FD2, Hermac) = fleje **anterior**. Se encontraron
+  **252 kg** en stock y se produce con él **momentáneamente** hasta consumirlos.
+- `Causa-Efecto` quedó con **las dos** filas apuntando a `Mat 152`: `Fleje 6 → Mat 152` (era `Fleje 17`,
+  corregida) y `Fleje 69 → Mat 152` (nueva). Sigue vigente `Fleje 69 → Z6` (Mat 364, pizzero).
+- **Al agotarse los 252 kg de Fleje 69: borrar la fila `Fleje 69 → Mat 152`** (dejar solo Fleje 6).
+- Opcional: la `Descripción` del Fleje 6 en `Flejes` no menciona "Pza Chica Sacaf Gast" — evaluar
+  agregarlo (no se tocó).
+
+**Pendiente: ruta del Fleje 17 (sacafuente ERGONÓMICO).**
+`Fleje 17` (`Pieza Chica Sacaf`, 95 x 1,4, FF4, Basconia) es del **ergonómico**, no del gastronómico.
+Hoy quedó **sin ruta** en `Causa-Efecto`. No existe ninguna matriz de sacafuente ergonómico
+(las matrices 239/378/380 "ergonómico" son de **pelador**). Falta que el usuario indique el
+**N° de matriz de corte** y la cadena de sectores para dar de alta la ruta.
