@@ -38,8 +38,10 @@ returning id;
 update planify.tasks set done = true, updated_at = now() where id = <id>;
 ```
 
-Avisar en el chat el `id` al crearla y al cerrarla. No crear tareas para preguntas o consultas
-que se responden en el momento; sólo para pedidos que implican hacer algo.
+Avisar en el chat el **nombre** de la tarea al crearla y al cerrarla, NO el número de id
+(ej. *"Te registré la tarea «Schema auditoría de errores por repo»"*, no *"tarea 3118"*). El id
+se usa sólo para el SQL de cierre; a la persona no le dice nada. No crear tareas para preguntas
+o consultas que se responden en el momento; sólo para pedidos que implican hacer algo.
 
 4. **Cierre por criterio propio, no sólo por "listo".** Claude evalúa si el objetivo del
    pedido se cumplió (lo entregado funciona, está commiteado/aplicado, y no quedó ninguna
