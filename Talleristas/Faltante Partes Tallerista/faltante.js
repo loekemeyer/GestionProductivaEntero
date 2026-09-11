@@ -114,7 +114,7 @@ function clasePct(pct){
 //      PDF (default 100% si no aparece — cubierto), min = %LlenoVirg.
 
 const SUPA_URL = "https://hrxfctzncixxqmpfhskv.supabase.co";
-const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs";
+const SUPA_KEY = "sb_publishable_BqpAgZH6ty-9wft10_YMhw_0rcIPuWT";
 
 // Mapeo Lin del PDF → sufijo del ARTICULO en Despiece x Articulo.
 // Confirmado por usuario 2026-05-21: CH→CH, LK→LK, LOk→Loke.

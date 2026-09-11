@@ -26,7 +26,7 @@ End Sub
 Public Sub SincronizarEntregas()
 
     Const SUPABASE_URL As String = "https://hrxfctzncixxqmpfhskv.supabase.co"
-    Const SUPABASE_KEY As String = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeGZjdHpuY2l4eHFtcGZoc2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MjQyNjEsImV4cCI6MjA4ODMwMDI2MX0.4L6wguch8UZGhC2VpzrWcCjJGUV-IkYsl9JoCWrOLUs"
+    Const SUPABASE_KEY As String = "sb_publishable_BqpAgZH6ty-9wft10_YMhw_0rcIPuWT"
     Const TABLA As String = "Entregas Tallerista Virgilio"
     Const HOJA As String = "ENTREGAS"
 
