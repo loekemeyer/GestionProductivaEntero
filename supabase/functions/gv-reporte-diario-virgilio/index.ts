@@ -103,11 +103,26 @@ const isoARestando = (iso: string, dias: number): string => {
 };
 
 // ---------------------------------------------------------------------------
-// Numeros: coma decimal y cero mostrado como "-" (pedido de Elias).
+// Formato de celdas. El cero siempre se muestra como "-" (pedido de Elias).
 // ---------------------------------------------------------------------------
+
+// Ratio M3 x Hs: NO es un tiempo, es metros cubicos por hora. Va con coma decimal.
 function celda(v: number, dec = 2): string {
   if (!v || !isFinite(v) || Math.abs(v) < 5e-3) return "-";
   return v.toFixed(dec).replace(".", ",");
+}
+
+// Columnas de Hs: tiempo trabajado, en H:MM (o HH:MM si llega a dos digitos de hora).
+// La hora no se rellena con cero a la izquierda: una jornada es de 9 hs, asi que en la
+// practica casi siempre sale H:MM, y HH:MM aparece solo si alguien pasa las 10 hs.
+// Se redondea al minuto; si el redondeo da 60 minutos, sube la hora.
+function celdaHs(v: number): string {
+  if (!v || !isFinite(v) || v <= 0) return "-";
+  let h = Math.floor(v);
+  let m = Math.round((v - h) * 60);
+  if (m === 60) { h++; m = 0; }
+  if (h === 0 && m === 0) return "-";
+  return `${h}:${String(m).padStart(2, "0")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +294,7 @@ function construirPdf(titulo: string, filas: Fila[]) {
   filas.forEach((f) => {
     [f.nombre, celda(f.m3Pick), celda(f.m3Arm)].forEach((v, i) =>
       doc.text(v, medioCol(cortesA, i), medioFila(y, hFila), { align: "center" }));
-    [celda(f.hsPick), celda(f.hsArm), celda(f.mov)].forEach((v, i) =>
+    [celdaHs(f.hsPick), celdaHs(f.hsArm), celdaHs(f.mov)].forEach((v, i) =>
       doc.text(v, medioCol(cortesB, i), medioFila(y, hFila), { align: "center" }));
     y += hFila;
   });
@@ -300,7 +315,7 @@ function construirPdf(titulo: string, filas: Fila[]) {
   doc.rect(xB, yCuerpo, anchoB, y - yCuerpo);
 
   doc.setFontSize(9); doc.setFont("helvetica", "normal");
-  doc.text("Horas en decimal. Mov = todo lo que no es Picking ni Armado (Carga Camion, Control",
+  doc.text("Horas en HH:MM. Mov = todo lo que no es Picking ni Armado (Carga Camion, Control",
            xA, y + 7);
   doc.text("Remitos, Recepciones, Gondola, Conteo, Timbre, Bano, Almuerzo, Limpieza y Permiso).",
            xA, y + 11);
