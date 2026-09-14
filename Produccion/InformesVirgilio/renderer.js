@@ -9,7 +9,7 @@ const SUPABASE_URL = 'https://hrxfctzncixxqmpfhskv.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_BqpAgZH6ty-9wft10_YMhw_0rcIPuWT';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const CACHE_KEY = 'virgilio_data_v7_web';
+const CACHE_KEY = 'virgilio_data_v8_web';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const FERIADOS_API_URL = 'https://api.argentinadatos.com/v1/feriados';
 const FERIADOS_CACHE_KEY = 'virgilio_feriados_v1';
@@ -71,12 +71,15 @@ async function fetchAllProduccion() {
   });
 }
 
+// Sin filtro de Sede ni de Activo: esto SOLO resuelve legajo -> nombre.
+// Quien entra al reporte lo decide Registros_Produccion_Virgilio, no la ficha del empleado.
+// Con .eq('Sede','V') quedaban sin nombre los que trabajan en Virgilio con otra sede
+// asignada (277 Jhonny Cartaya, que hace todo el picking, y 94 Isidro Tevez): salian
+// como "Legajo 277" / "Legajo 94". Son 69 filas en total, no hace falta paginar.
 async function fetchEmpleados() {
   const { data, error } = await sb
     .from('Empleados')
-    .select('Legajo, Empleado')
-    .eq('Sede', 'V')
-    .eq('Activo', 'SI');
+    .select('Legajo, Empleado');
   if (error) throw new Error('Supabase empleados: ' + error.message);
   return (data || []).map(r => ({
     legajo: String(r.Legajo || '').trim(),
@@ -107,12 +110,16 @@ async function fetchPaginado(tabla, cols) {
 // De donde sale el Mt3:
 //   Mt3 FC (real, sin asterisco) -> vista_ppp_pedidos_entregados (todas sus filas tienen facturado_at)
 //   Mt3 estimado (con asterisco) -> PPP_Web_Programacion (programacion viva) y, para las tandas
-//                                   que no esten ahi, PPP_Programacion_Diaria.
+//                                   que no esten ahi, GV_PPP_Programacion_Diaria.
+// OJO: la tabla se llama GV_PPP_Programacion_Diaria. Antes se pedia PPP_Programacion_Diaria,
+// que NO existe: fetchPaginado devolvia [] en silencio y esa fuente era codigo muerto.
+// Medido el 14/09: 4 de las 6 tandas del dia (D67F, D67G, D67J, D67L) tienen su m3 solo ahi,
+// asi que el armado de Franco Ortiz mostraba 0,026 en vez de 1,369.
 async function fetchPpp() {
   const [entregados, webProg, progDiaria] = await Promise.all([
     fetchPaginado('vista_ppp_pedidos_entregados', 'tanda,m3,razon_social'),
     fetchPaginado('PPP_Web_Programacion', 'tanda,m3,razon_social'),
-    fetchPaginado('PPP_Programacion_Diaria', 'tanda,m3,razon_social')
+    fetchPaginado('GV_PPP_Programacion_Diaria', 'tanda,m3,razon_social')
   ]);
 
   const norm = v => String(v == null ? '' : v).trim().toUpperCase();
