@@ -38,7 +38,7 @@ como funcionan los crons `gv-ppp-web-tandas-diarias`, `gv-geocodificar` y
 | Valor | Que es | Como viaja |
 |---|---|---|
 | service_role | Autentica al que llama | Header `Authorization: Bearer <service_role>`. La funcion se deploya con **`verify_jwt = true`**, asi que valida Supabase antes de que corra una linea de codigo. El cron lo saca de `lecturacvs.app_secrets`. |
-| `wa_token` | Token de Meta para mandar el mensaje | En el body. `lecturacvs.app_secrets`, el mismo token que usa la funcion de Damian. |
+| `wa_token` | Token de Meta para mandar el mensaje | En el body. Sale de `lecturacvs.app_secrets` con `k='RECRUIT_WA_TOKEN'` (confirmado por Elias: es el mismo token de Meta que usa la funcion de Damian, aunque la clave se llame RECRUIT por el flujo para el que se cargo primero). |
 
 El schema `lecturacvs` **no** esta expuesto a PostgREST, asi que la funcion no puede leer
 `app_secrets` por su cuenta: por eso los valores los resuelve el SQL del cron.
@@ -73,7 +73,8 @@ que no se escape un envio mientras se configura.
 
 ## El cron
 
-No crearlo hasta que la plantilla este aprobada por Meta y la prueba salga bien.
+Probado el 14/09: `{"fecha":"2026-09-08"}` al numero de prueba devolvio
+`enviados: 1, ok: true, intentos: 1` sobre 1854 eventos y 4 operarios.
 
 ```sql
 select cron.schedule(
@@ -97,7 +98,7 @@ select cron.schedule(
                                                     where k = 'SUPABASE_SERVICE_ROLE_KEY')),
         body    := jsonb_build_object(
                      'wa_token', (select v from lecturacvs.app_secrets
-                                  where k = '<la clave que guarda el token de Meta>'),
+                                  where k = 'RECRUIT_WA_TOKEN'),
                      'test',     false)
       );
     end if;
