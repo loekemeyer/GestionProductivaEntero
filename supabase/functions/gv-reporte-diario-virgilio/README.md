@@ -54,13 +54,8 @@ solo en Supabase, pero esta funcion esta versionada en un repositorio **publico*
 commiteado ahi queda en el historial de git para siempre, y eso no se arregla borrandolo
 despues (ver la seccion de claves de Supabase en el `CLAUDE.md` de la raiz).
 
-La funcion se deploya con `verify_jwt: false` porque `pg_cron` la llama sin header
-`Authorization`. Por eso valida con `SEND_WA_TOKEN`: sin eso, cualquiera con la URL podria
-dispararle un WhatsApp a Juan. La de Damian no tiene esa proteccion.
-
-El schema `lecturacvs` **no** esta expuesto a PostgREST, asi que la funcion no puede leer
-`app_secrets` por su cuenta: el secreto se resuelve en el SQL del cron y viaja en el body,
-igual que en los crons `planify_*` y `gv-*` de este mismo proyecto.
+Comparado con la de Damian, que va con `verify_jwt: false` y sin ninguna validacion: hoy
+cualquiera que sepa su URL puede dispararle un WhatsApp. Esta no.
 
 ## Como se invoca
 
