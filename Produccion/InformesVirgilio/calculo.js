@@ -3,7 +3,10 @@
  */
 
 const CONFIG = {
-  legajosTest: ['999', '9999'],
+  // Legajos que registran eventos pero NO son produccion real, asi que no entran al reporte:
+  //   '0'   -> figura en Empleados como "Thomas Loke(TESTING)"
+  //   '600' -> el legajo que se usa para las entrevistas
+  legajosTest: ['0', '600', '999', '9999'],
   jornadaHs: 9,
   jornadaInicioHora: 8,    // 08:00
   jornadaFinHora: 17,      // 17:00
