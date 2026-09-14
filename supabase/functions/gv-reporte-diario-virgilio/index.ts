@@ -393,14 +393,29 @@ Deno.serve(async (req: Request) => {
     const doc = construirPdf(`Logistica Virgilio - ${fechaLinda}`, filas);
 
     const archivo = `virgilio_${fecha}_${Date.now()}.pdf`;
+    const bytes = new Uint8Array(doc.output("arraybuffer"));
     const { error: errUp } = await sb.storage.from(BUCKET)
-      .upload(archivo, doc.output("arraybuffer"), { contentType: "application/pdf", upsert: true });
+      .upload(archivo, bytes, { contentType: "application/pdf", upsert: true });
     if (errUp) throw new Error("subiendo el PDF: " + errUp.message);
     const pdfUrl = sb.storage.from(BUCKET).getPublicUrl(archivo).data.publicUrl;
 
     if (soloPdf) {
-      return responder({ solo_pdf: true, fecha, operarios: filas.length, pdfUrl,
-                         legajosExcluidos: CONFIG.legajosTest });
+      // Ademas del link de Storage, el PDF vuelve en base64 y las filas ya formateadas.
+      // El link no siempre se puede abrir desde donde se revisa el reporte; con el base64
+      // el archivo se reconstruye tal cual, sin depender de la red ni de que el objeto
+      // siga en el bucket (el cron limpiar-reportes-viejos los borra a los 3 dias).
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return responder({
+        solo_pdf: true, fecha, operarios: filas.length, pdfUrl,
+        pdf_bytes: bytes.length, pdf_base64: btoa(bin),
+        legajosExcluidos: CONFIG.legajosTest,
+        filas: filas.map((f) => ({
+          nombre: f.nombre,
+          m3Pick: celda(f.m3Pick), m3Arm: celda(f.m3Arm),
+          hsPick: celdaHs(f.hsPick), hsArm: celdaHs(f.hsArm), mov: celdaHs(f.mov),
+        })),
+      });
     }
 
     // --- WhatsApp ---
