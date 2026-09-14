@@ -57,3 +57,29 @@ Estado del corte de la **pza chica sacafuente gastronómico** (Mat 152, "Corte P
 Hoy quedó **sin ruta** en `Causa-Efecto`. No existe ninguna matriz de sacafuente ergonómico
 (las matrices 239/378/380 "ergonómico" son de **pelador**). Falta que el usuario indique el
 **N° de matriz de corte** y la cadena de sectores para dar de alta la ruta.
+
+## Migrar el front de "E. Madre LK/CH" a proyeccion_madre (2026-09-14)
+El 2026-09-13 se **borraron** las tablas `public."E. Madre LK"` y `public."E. Madre CH"`
+(backups en `zz_backups.GV_Backup_E_Madre_*_20260913`). La fuente viva de la proyección es
+**`proyeccion_madre.proy_uni_mes`** desde el 2026-09-02, y los nombres salieron a
+`GV_Articulo_Nombre_Historico` + `vista_nombres_articulos`.
+
+El front de este repo las seguía leyendo en **10 módulos** y la API contestaba `404 PGRST205`.
+Efecto visible: **Envio Talleristas no mostraba ninguna parte** (`cargarConsumos()` hace `throw`
+y el `catch` de `buscar()` hacía `return` sin avisar).
+
+**Parche puesto (transitorio):** migración `e_madre_lk_ch_vistas_de_compatibilidad_20260914`
+crea `"E. Madre LK"` y `"E. Madre CH"` como **vistas** con las mismas columnas
+(`Cod`, `Desc`, `E. Madre`) sobre `proyeccion_madre` + los nombres históricos. Respeta el reparto
+de la migración `20260902190020`: el número único (LK+Chef) va en **LK** y **CH queda en 0**, así
+los módulos que combinan las dos (suma / máximo / LK-primero) dan todos el mismo valor.
+
+**Lo que falta:** que estos módulos lean `proyeccion_madre` directo y después **borrar las dos
+vistas puente**:
+`Talleristas/Envios/EnviosTall.js`, `Talleristas/Control Tall/ControlTall.js`,
+`Compras/cajas.html`, `StockFlejes/stock-flejes.js`, `StockFlejes/cartones.js`,
+`StockFlejes/cajas.js`, `Despiece/Despiece.js`, `Inicio/index.html`, `StockSP/StockSP.js`,
+`Prov Serv/Envios/EnviosPS.js`.
+
+**Lección:** el front de este repo no es visible desde Supabase. Antes de borrar una tabla que
+la app lee, hay que grepear el repo (`grep -rn 'E. Madre' --include=*.js --include=*.html`).
