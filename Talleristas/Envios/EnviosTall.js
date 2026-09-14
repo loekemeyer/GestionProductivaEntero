@@ -368,6 +368,14 @@ async function cargarTalleristas(){
 
   if (error){
     console.error("Error al cargar talleristas:", error);
+    // Si esto falla la pantalla quedaba vacia sin decir nada (paso el 2026-09-14: la vista
+    // v_piezas_por_tallerista_resumen no tenia SELECT para anon). Mostrar el motivo.
+    resultEl.innerHTML = `
+      <div class="articulo">
+        <div class="articulo-header">No se pudo cargar la lista de talleristas</div>
+        <div class="empty-state">${escapeHtml(error.message || String(error))}</div>
+      </div>
+    `;
     return;
   }
 
@@ -962,6 +970,13 @@ async function buscar(nombreParam){
 
   if (error){
     console.error("Error al buscar:", error);
+    // Idem cargarTalleristas: sin esto el error se comia la pantalla y parecia "no hay partes".
+    resultEl.innerHTML = `
+      <div class="articulo">
+        <div class="articulo-header">${escapeHtml(nombre)}</div>
+        <div class="empty-state">No se pudieron leer las partes: ${escapeHtml(error.message || String(error))}</div>
+      </div>
+    `;
     return;
   }
 
