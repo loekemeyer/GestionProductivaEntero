@@ -190,7 +190,11 @@ async function traerPpp(sb: any) {
 // PDF. Formato del Excel de Damian: contenido centrado en horizontal y vertical,
 // titulo 16 y contenido 14, borde exterior y encabezados gruesos, interior fino.
 // ---------------------------------------------------------------------------
-type Fila = { nombre: string; pickR: number; pickH: number; armR: number; armH: number; mov: number };
+type Fila = {
+  nombre: string;
+  m3Pick: number; m3Arm: number;      // bloque "M3 x Hs"
+  hsPick: number; hsArm: number; mov: number;   // bloque "Hs"
+};
 
 const GRUESO = 0.6;
 const FINO = 0.15;
@@ -198,13 +202,15 @@ const FINO = 0.15;
 function construirPdf(titulo: string, filas: Fila[]) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const margen = 15;
-  const anchos = [55, 25, 22, 25, 22, 22];          // suma 171mm, entra en los 180 utiles
-  const ancho = anchos.reduce((a, b) => a + b, 0);
+
+  // Dos bloques separados por un hueco, como la columna angosta del Excel.
+  // Bloque 1: Empleado + M3 x Hs (Pick, Arm).  Bloque 2: Hs (Pick, Arm, Mov).
+  const anchosA = [50, 24, 24];
+  const anchosB = [24, 24, 24];
+  const HUECO = 4;
+  const anchoA = anchosA.reduce((a, b) => a + b, 0);
+  const anchoB = anchosB.reduce((a, b) => a + b, 0);
   const hEnc = 9;
-  // Virgilio nunca paso de 7 operarios en un dia, pero si algun dia crece, la fila se
-  // achica sola en vez de derramarse fuera de la hoja (A4: 267mm utiles de alto).
-  const disponible = 297 - margen * 2 - 14 - hEnc * 2 - 12;
-  const hFila = Math.max(6, Math.min(10, disponible / Math.max(filas.length, 1)));
 
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(16); doc.setFont("helvetica", "bold");
@@ -218,56 +224,73 @@ function construirPdf(titulo: string, filas: Fila[]) {
     return doc;
   }
 
-  const x0 = margen;
-  const bordes: number[] = [x0];
-  anchos.forEach((w) => bordes.push(bordes[bordes.length - 1] + w));
-  const centro = (i: number) => bordes[i] + anchos[i] / 2;
-  // 14pt ~ 4.94mm de alto: media altura de mayuscula son ~1.7mm para centrar vertical
-  const medio = (yTop: number, h: number) => yTop + h / 2 + 1.7;
+  // Virgilio nunca paso de 7 operarios en un dia; si algun dia crece, la fila se achica
+  // sola en vez de derramarse fuera de la hoja (A4: 297mm de alto).
+  const disponible = 297 - margen * 2 - 14 - hEnc * 2 - 12;
+  const hFila = Math.max(6, Math.min(10, disponible / filas.length));
 
-  // --- Encabezados (dos filas) ---
+  const xA = margen;
+  const xB = xA + anchoA + HUECO;
+  const cortesA: number[] = [xA]; anchosA.forEach((w) => cortesA.push(cortesA[cortesA.length - 1] + w));
+  const cortesB: number[] = [xB]; anchosB.forEach((w) => cortesB.push(cortesB[cortesB.length - 1] + w));
+  const medioCol = (c: number[], i: number) => (c[i] + c[i + 1]) / 2;
+  // 14pt ~ 4.94mm: media altura de mayuscula son ~1.7mm para centrar en vertical
+  const medioFila = (yTop: number, h: number) => yTop + h / 2 + 1.7;
+
+  // --- Encabezados ---
   doc.setFontSize(14); doc.setFont("helvetica", "bold");
-  doc.text("Empleado", centro(0), medio(y, hEnc * 2), { align: "center" });
-  doc.text("Picking", (bordes[1] + bordes[3]) / 2, medio(y, hEnc), { align: "center" });
-  doc.text("Armado", (bordes[3] + bordes[5]) / 2, medio(y, hEnc), { align: "center" });
-  doc.text("Mov", centro(5), medio(y, hEnc * 2), { align: "center" });
-  doc.text("M3 x Hs", centro(1), medio(y + hEnc, hEnc), { align: "center" });
-  doc.text("HS", centro(2), medio(y + hEnc, hEnc), { align: "center" });
-  doc.text("M3 x Hs", centro(3), medio(y + hEnc, hEnc), { align: "center" });
-  doc.text("Hs", centro(4), medio(y + hEnc, hEnc), { align: "center" });
+  doc.text("Empleado", medioCol(cortesA, 0), medioFila(y, hEnc * 2), { align: "center" });
+  doc.text("M3 x Hs", (cortesA[1] + cortesA[3]) / 2, medioFila(y, hEnc), { align: "center" });
+  doc.text("Pick", medioCol(cortesA, 1), medioFila(y + hEnc, hEnc), { align: "center" });
+  doc.text("Arm", medioCol(cortesA, 2), medioFila(y + hEnc, hEnc), { align: "center" });
 
-  // Todo el bloque de encabezados va con borde grueso
+  doc.text("Hs", (cortesB[0] + cortesB[3]) / 2, medioFila(y, hEnc), { align: "center" });
+  ["Pick", "Arm", "Mov"].forEach((t, i) =>
+    doc.text(t, medioCol(cortesB, i), medioFila(y + hEnc, hEnc), { align: "center" }));
+
+  // Los encabezados van con borde grueso, en los dos bloques
   doc.setDrawColor(0, 0, 0); doc.setLineWidth(GRUESO);
-  doc.rect(x0, y, ancho, hEnc * 2);
-  doc.line(bordes[1], y + hEnc, bordes[5], y + hEnc);        // separa las dos filas
-  [1, 3, 5].forEach((i) => doc.line(bordes[i], y, bordes[i], y + hEnc * 2));
-  [2, 4].forEach((i) => doc.line(bordes[i], y + hEnc, bordes[i], y + hEnc * 2));
+  doc.rect(xA, y, anchoA, hEnc * 2);
+  doc.line(cortesA[1], y + hEnc, cortesA[3], y + hEnc);
+  doc.line(cortesA[1], y, cortesA[1], y + hEnc * 2);
+  doc.line(cortesA[2], y + hEnc, cortesA[2], y + hEnc * 2);
+
+  doc.rect(xB, y, anchoB, hEnc * 2);
+  doc.line(cortesB[0], y + hEnc, cortesB[3], y + hEnc);
+  [1, 2].forEach((i) => doc.line(cortesB[i], y + hEnc, cortesB[i], y + hEnc * 2));
   y += hEnc * 2;
 
   // --- Cuerpo ---
   const yCuerpo = y;
   doc.setFont("helvetica", "normal");
   filas.forEach((f) => {
-    const valores = [f.nombre, celda(f.pickR), celda(f.pickH), celda(f.armR), celda(f.armH), celda(f.mov)];
-    valores.forEach((v, i) => doc.text(v, centro(i), medio(y, hFila), { align: "center" }));
+    [f.nombre, celda(f.m3Pick), celda(f.m3Arm)].forEach((v, i) =>
+      doc.text(v, medioCol(cortesA, i), medioFila(y, hFila), { align: "center" }));
+    [celda(f.hsPick), celda(f.hsArm), celda(f.mov)].forEach((v, i) =>
+      doc.text(v, medioCol(cortesB, i), medioFila(y, hFila), { align: "center" }));
     y += hFila;
   });
 
   // Lineas internas finas
   doc.setLineWidth(FINO);
   for (let i = 1; i < filas.length; i++) {
-    doc.line(x0, yCuerpo + i * hFila, x0 + ancho, yCuerpo + i * hFila);
+    const yy = yCuerpo + i * hFila;
+    doc.line(xA, yy, xA + anchoA, yy);
+    doc.line(xB, yy, xB + anchoB, yy);
   }
-  for (let i = 1; i < bordes.length - 1; i++) {
-    doc.line(bordes[i], yCuerpo, bordes[i], y);
-  }
+  [1, 2].forEach((i) => doc.line(cortesA[i], yCuerpo, cortesA[i], y));
+  [1, 2].forEach((i) => doc.line(cortesB[i], yCuerpo, cortesB[i], y));
+
   // Borde exterior grueso
   doc.setLineWidth(GRUESO);
-  doc.rect(x0, yCuerpo, ancho, y - yCuerpo);
+  doc.rect(xA, yCuerpo, anchoA, y - yCuerpo);
+  doc.rect(xB, yCuerpo, anchoB, y - yCuerpo);
 
   doc.setFontSize(9); doc.setFont("helvetica", "normal");
-  doc.text("Horas en decimal. Mov = tiempos muertos (Bano, Almuerzo, Limpieza, Permiso).",
-           x0, y + 8);
+  doc.text("Horas en decimal. Mov = todo lo que no es Picking ni Armado (Carga Camion, Control",
+           xA, y + 7);
+  doc.text("Remitos, Recepciones, Gondola, Conteo, Timbre, Bano, Almuerzo, Limpieza y Permiso).",
+           xA, y + 11);
   return doc;
 }
 
@@ -313,14 +336,26 @@ Deno.serve(async (req: Request) => {
     const filas: Fila[] = (r.porPersona || [])
       .map((p: any) => ({
         nombre: empMap.get(String(p.legajo).trim()) || `Legajo ${p.legajo}`,
-        pickR: p.pickHs > 0 ? p.pickMt3 / p.pickHs : 0,
-        pickH: p.pickHs,
-        armR: p.armHs > 0 ? p.armMt3 / p.armHs : 0,
-        armH: p.armHs,
-        mov: p.muertoHs,
+        m3Pick: p.pickHs > 0 ? p.pickMt3 / p.pickHs : 0,
+        m3Arm: p.armHs > 0 ? p.armMt3 / p.armHs : 0,
+        hsPick: p.pickHs,
+        hsArm: p.armHs,
+        // Mov = todo lo que no es picking ni armado: carga de camion, control de remitos,
+        // recepciones, gondola, conteo, timbre y los tiempos muertos.
+        //
+        // Se saca restando del TOTAL. calculo.js reparte el dia con LIFO, o sea que cada
+        // instante se le imputa a UNA sola tarea (la ultima abierta), asi que la suma de
+        // todos los netos es igual al TOTAL y esta resta da exactamente el resto.
+        // Verificado el 11/09 rubro por rubro: Moncayo 2,58 Control Remitos + 1,37 Recep.
+        // Mercaderia + 0,47 Almuerzo + 0,15 Carga Camion = 4,57 = totHs - pick - arm.
+        //
+        // NO usar (opHs - pick - arm) + muertoHs: opHs es una UNION de intervalos y
+        // muertoHs son netos LIFO, asi que mezclarlos cuenta dos veces lo que se solapa.
+        // Ese camino le sumaba 0,47 hs de mas a Moncayo ese mismo dia.
+        mov: Math.max(0, p.totHs - p.pickHs - p.armHs),
       }))
       // Mayor carga de trabajo arriba; entre los que no hicieron picking ni armado, por Mov
-      .sort((a: Fila, b: Fila) => (b.pickH + b.armH) - (a.pickH + a.armH) || b.mov - a.mov);
+      .sort((a: Fila, b: Fila) => (b.hsPick + b.hsArm) - (a.hsPick + a.hsArm) || b.mov - a.mov);
 
     const fechaLinda = fecha.split("-").reverse().join("/");
     const doc = construirPdf(`Logistica Virgilio - ${fechaLinda}`, filas);
