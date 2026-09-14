@@ -13,18 +13,21 @@
 // De esa forma el PDF y la pantalla no pueden dar distinto. Si alguien edita calculo.js,
 // hay que redeployar esta funcion o los numeros se separan. Ver README.md de esta carpeta.
 //
-// NO necesita que se le carguen secrets. Los dos valores que usa ya existen en
-// lecturacvs.app_secrets y los resuelve el SQL del que la llama, igual que hacen los
-// crons gv-ppp-web-tandas-diarias, gv-geocodificar y gv-sync-padron-direcciones:
-//   token     -> se compara contra SUPABASE_SERVICE_ROLE_KEY, que Supabase inyecta sola
-//   wa_token  -> el token de Meta, el mismo que usa la funcion de Damian
+// NO necesita que se le carguen secrets.
 //
-// Invocacion:
-//   { "token": "...", "wa_token": "..." }                 -> hoy, a los numeros de prueba
-//   { "token": "...", "fecha": "2026-09-11", ... }        -> un dia anterior, a prueba
-//   { "token": "...", "test": false, ... }                -> hoy, a Juan
-//   { "token": "...", "solo_pdf": true }                  -> sube el PDF y no manda nada
-//                                                            (en este modo wa_token sobra)
+// Autenticacion: se deploya con verify_jwt = true, asi que el gateway de Supabase exige un
+// JWT valido del proyecto en el header `Authorization: Bearer <service_role>`. El cron lo
+// saca de lecturacvs.app_secrets, igual que ya hacen gv-ppp-web-tandas-diarias,
+// gv-geocodificar y gv-sync-padron-direcciones.
+//
+// Token de Meta: viaja en el body como `wa_token`, tambien resuelto por el SQL del cron
+// desde app_secrets. Es el mismo token que usa la funcion de Damian.
+//
+// Invocacion (siempre con el header Authorization):
+//   { "wa_token": "..." }                      -> hoy, a los numeros de prueba
+//   { "wa_token": "...", "fecha": "2026-09-08" } -> un dia anterior, a prueba
+//   { "wa_token": "...", "test": false }       -> hoy, a Juan
+//   { "solo_pdf": true }                       -> sube el PDF y no manda nada
 //
 // OJO: manda a Juan SOLO con "test": false explicito. El default es el numero de prueba.
 
@@ -314,24 +317,26 @@ Deno.serve(async (req: Request) => {
   try {
     let body: any = {};
     try { body = await req.json(); } catch { /* sin body */ }
-    const url = new URL(req.url);
-    const token = body?.token || url.searchParams.get("token") || "";
     const esTest = body?.test !== false;            // manda a Juan SOLO con test:false explicito
     const soloPdf = body?.solo_pdf === true;
     const fecha = body?.fecha || hoyAR();
 
     if (!SUPABASE_SERVICE_KEY) return responder({ error: "falta SUPABASE_SERVICE_ROLE_KEY" }, 500);
 
-    // La funcion es publica (verify_jwt en false, porque pg_cron la llama sin Authorization),
-    // asi que se valida con un token compartido que viaja en el body.
+    // AUTENTICACION: la hace Supabase, no esta funcion.
     //
-    // NO hace falta cargarle ningun secret nuevo: el schema lecturacvs no esta expuesto a
-    // PostgREST, asi que el valor se resuelve en el SQL del cron y se manda, igual que ya
-    // hacen gv-ppp-web-tandas-diarias, gv-geocodificar y gv-sync-padron-direcciones.
-    // Por defecto se compara contra SUPABASE_SERVICE_ROLE_KEY, que Supabase inyecta sola;
-    // si algun dia se prefiere un secret aparte, basta con cargar SEND_WA_TOKEN.
-    const esperado = Deno.env.get("SEND_WA_TOKEN") || SUPABASE_SERVICE_KEY;
-    if (token !== esperado) return responder({ error: "token invalido" }, 401);
+    // Se deploya con verify_jwt = true, asi que el gateway exige un JWT valido del proyecto
+    // en el header Authorization y rechaza todo lo demas antes de que corra una linea de
+    // aca. El que llama manda `Authorization: Bearer <service_role>`, que es exactamente lo
+    // que ya hacen los crons gv-ppp-web-tandas-diarias, gv-geocodificar y
+    // gv-sync-padron-direcciones de este mismo proyecto.
+    //
+    // Se intento antes comparar un token contra SUPABASE_SERVICE_ROLE_KEY o contra
+    // SEND_WA_TOKEN, y NINGUNO de los dos coincidia con lo que Supabase inyecta en la
+    // funcion (dio 401 con los dos valores guardados en lecturacvs.app_secrets). Comparar
+    // a mano contra una clave que no se controla es fragil; verify_jwt no tiene ese problema.
+    //
+    // `token` sigue aceptandose en el body por compatibilidad, pero ya no decide nada.
 
     const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 

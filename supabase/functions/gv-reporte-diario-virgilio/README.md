@@ -35,17 +35,19 @@ Los dos valores que usa ya existen en la base y los resuelve el SQL del que la l
 como funcionan los crons `gv-ppp-web-tandas-diarias`, `gv-geocodificar` y
 `gv-sync-padron-direcciones` de este mismo proyecto.
 
-| Valor | Que es | De donde sale |
+| Valor | Que es | Como viaja |
 |---|---|---|
-| `token` | Autentica al que llama | Se compara contra `SUPABASE_SERVICE_ROLE_KEY`, que Supabase inyecta sola en la funcion. El cron lo saca de `lecturacvs.app_secrets`. |
-| `wa_token` | Token de Meta para mandar el mensaje | `lecturacvs.app_secrets`. Es el mismo token que usa la funcion de Damian. |
+| service_role | Autentica al que llama | Header `Authorization: Bearer <service_role>`. La funcion se deploya con **`verify_jwt = true`**, asi que valida Supabase antes de que corra una linea de codigo. El cron lo saca de `lecturacvs.app_secrets`. |
+| `wa_token` | Token de Meta para mandar el mensaje | En el body. `lecturacvs.app_secrets`, el mismo token que usa la funcion de Damian. |
 
 El schema `lecturacvs` **no** esta expuesto a PostgREST, asi que la funcion no puede leer
-`app_secrets` por su cuenta: por eso los valores viajan en el body.
+`app_secrets` por su cuenta: por eso los valores los resuelve el SQL del cron.
 
-Si algun dia se prefiere tenerlos como secrets de la funcion, se cargan `SEND_WA_TOKEN` y
-`WA_TOKEN` en Edge Functions -> Secrets y esos ganan; el cron entonces ya no necesita
-mandarlos.
+**Por que verify_jwt y no un token propio:** se probo comparar un token del body contra
+`SUPABASE_SERVICE_ROLE_KEY` y contra `SEND_WA_TOKEN`, y ninguno de los dos valores guardados
+en `app_secrets` coincidia con lo que Supabase inyecta en la funcion (401 con los dos).
+Comparar a mano contra una clave que no se controla es fragil; `verify_jwt` no tiene ese
+problema y ademas es el mecanismo que ya usan los demas crons `gv-*`.
 
 **Por que el token de Meta no va hardcodeado como en la de Damian:** el codigo de ella vive
 solo en Supabase, pero esta funcion esta versionada en un repositorio **publico**. Un token
@@ -62,12 +64,13 @@ igual que en los crons `planify_*` y `gv-*` de este mismo proyecto.
 
 ## Como se invoca
 
+Siempre con el header `Authorization: Bearer <service_role>`.
+
 ```jsonc
-{ "token": "...", "wa_token": "..." }                 // hoy, al numero de PRUEBA
-{ "token": "...", "wa_token": "...",
-  "fecha": "2026-09-11" }                             // un dia anterior, al de PRUEBA
-{ "token": "...", "solo_pdf": true }                  // sube el PDF y no manda nada
-{ "token": "...", "wa_token": "...", "test": false }  // hoy, a JUAN
+{ "wa_token": "..." }                        // hoy, al numero de PRUEBA
+{ "wa_token": "...", "fecha": "2026-09-08" } // un dia anterior, al de PRUEBA
+{ "solo_pdf": true }                         // sube el PDF y no manda nada
+{ "wa_token": "...", "test": false }         // hoy, a JUAN
 ```
 
 **Manda a Juan solo con `"test": false` explicito.** El default es el numero de prueba, para
@@ -93,10 +96,11 @@ select cron.schedule(
     if cnt > 0 then
       perform net.http_post(
         url     := 'https://hrxfctzncixxqmpfhskv.supabase.co/functions/v1/gv-reporte-diario-virgilio',
-        headers := '{"Content-Type":"application/json"}'::jsonb,
+        headers := jsonb_build_object(
+                     'Content-Type',  'application/json',
+                     'Authorization', 'Bearer ' || (select v from lecturacvs.app_secrets
+                                                    where k = 'SUPABASE_SERVICE_ROLE_KEY')),
         body    := jsonb_build_object(
-                     'token',    (select v from lecturacvs.app_secrets
-                                  where k = 'SUPABASE_SERVICE_ROLE_KEY'),
                      'wa_token', (select v from lecturacvs.app_secrets
                                   where k = '<la clave que guarda el token de Meta>'),
                      'test',     false)
