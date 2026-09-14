@@ -35,10 +35,20 @@ Se cargan en Supabase: Edge Functions -> Secrets.
 
 | Secret | Para que | De donde sacarlo |
 |---|---|---|
+| `WA_TOKEN` | Token de Meta para mandar el mensaje | **El mismo de la funcion de Damian**, que lo tiene hardcodeado en su `index.ts`. Se copia de ahi tal cual. |
 | `SEND_WA_TOKEN` | Autentica a quien llama la funcion | Mismo valor que `lecturacvs.app_secrets` con `k='SEND_WA_TOKEN'` |
-| `WA_TOKEN` | Token de Meta para mandar el mensaje | El que ya usa la funcion de Damian |
 
 `SUPABASE_SERVICE_ROLE_KEY` lo inyecta Supabase solo, no hay que cargarlo.
+
+Los secrets de Edge Functions son **del proyecto entero**, no de cada funcion: se cargan una
+sola vez y los ve cualquier funcion del proyecto. Si alguna vez se rota el token de Meta,
+conviene mover tambien a la de Damian a `WA_TOKEN` y borrarle el valor hardcodeado, asi hay
+un solo lugar donde cambiarlo.
+
+**Por que aca no va hardcodeado como en la de Damian:** el codigo de ella vive solo en
+Supabase, pero esta funcion esta versionada en un repositorio **publico**. Un token de Meta
+commiteado ahi queda en el historial de git para siempre, y eso no se arregla borrandolo
+despues (ver la seccion de claves de Supabase en el `CLAUDE.md` de la raiz).
 
 La funcion se deploya con `verify_jwt: false` porque `pg_cron` la llama sin header
 `Authorization`. Por eso valida con `SEND_WA_TOKEN`: sin eso, cualquiera con la URL podria
