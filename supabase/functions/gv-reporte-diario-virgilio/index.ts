@@ -196,8 +196,10 @@ type Fila = {
   hsPick: number; hsArm: number; mov: number;   // bloque "Hs"
 };
 
-const GRUESO = 0.6;
-const FINO = 0.15;
+// Grosor de linea, en mm. La relacion importa mas que el valor: con 0,6 contra 0,15
+// el marco exterior no se distinguia del interior. 0,9 contra 0,18 es 5 a 1 y se ve.
+const GRUESO = 0.9;   // marco exterior de las tablas y de los encabezados (2,5pt)
+const FINO = 0.18;    // divisiones internas (0,5pt)
 
 function construirPdf(titulo: string, filas: Fila[]) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
