@@ -13,11 +13,18 @@
 // De esa forma el PDF y la pantalla no pueden dar distinto. Si alguien edita calculo.js,
 // hay que redeployar esta funcion o los numeros se separan. Ver README.md de esta carpeta.
 //
+// NO necesita que se le carguen secrets. Los dos valores que usa ya existen en
+// lecturacvs.app_secrets y los resuelve el SQL del que la llama, igual que hacen los
+// crons gv-ppp-web-tandas-diarias, gv-geocodificar y gv-sync-padron-direcciones:
+//   token     -> se compara contra SUPABASE_SERVICE_ROLE_KEY, que Supabase inyecta sola
+//   wa_token  -> el token de Meta, el mismo que usa la funcion de Damian
+//
 // Invocacion:
-//   { "token": "<SEND_WA_TOKEN>" }                        -> hoy, a los numeros de prueba
-//   { "token": "...", "fecha": "2026-09-11" }             -> un dia anterior, a prueba
-//   { "token": "...", "test": false }                     -> hoy, a Juan
-//   { "token": "...", "solo_pdf": true }                  -> genera y sube el PDF, no manda nada
+//   { "token": "...", "wa_token": "..." }                 -> hoy, a los numeros de prueba
+//   { "token": "...", "fecha": "2026-09-11", ... }        -> un dia anterior, a prueba
+//   { "token": "...", "test": false, ... }                -> hoy, a Juan
+//   { "token": "...", "solo_pdf": true }                  -> sube el PDF y no manda nada
+//                                                            (en este modo wa_token sobra)
 //
 // OJO: manda a Juan SOLO con "test": false explicito. El default es el numero de prueba.
 
@@ -316,12 +323,14 @@ Deno.serve(async (req: Request) => {
     if (!SUPABASE_SERVICE_KEY) return responder({ error: "falta SUPABASE_SERVICE_ROLE_KEY" }, 500);
 
     // La funcion es publica (verify_jwt en false, porque pg_cron la llama sin Authorization),
-    // asi que se valida con un token compartido. El schema lecturacvs NO esta expuesto a
-    // PostgREST, asi que la funcion NO puede leer app_secrets: el secreto se resuelve en el
-    // SQL del cron y viaja en el body, igual que en los crons planify_* y gv-* de este mismo
-    // proyecto. Aca solo se compara contra el secret de la funcion.
-    const esperado = Deno.env.get("SEND_WA_TOKEN") || "";
-    if (!esperado) return responder({ error: "falta el secret SEND_WA_TOKEN de la funcion" }, 500);
+    // asi que se valida con un token compartido que viaja en el body.
+    //
+    // NO hace falta cargarle ningun secret nuevo: el schema lecturacvs no esta expuesto a
+    // PostgREST, asi que el valor se resuelve en el SQL del cron y se manda, igual que ya
+    // hacen gv-ppp-web-tandas-diarias, gv-geocodificar y gv-sync-padron-direcciones.
+    // Por defecto se compara contra SUPABASE_SERVICE_ROLE_KEY, que Supabase inyecta sola;
+    // si algun dia se prefiere un secret aparte, basta con cargar SEND_WA_TOKEN.
+    const esperado = Deno.env.get("SEND_WA_TOKEN") || SUPABASE_SERVICE_KEY;
     if (token !== esperado) return responder({ error: "token invalido" }, 401);
 
     const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -376,10 +385,14 @@ Deno.serve(async (req: Request) => {
 
     // --- WhatsApp ---
     const numeros = esTest ? DESTINATARIOS_TEST : DESTINATARIOS_PROD;
-    const waToken = Deno.env.get("WA_TOKEN") || "";
+    // Token de Meta: tampoco se guarda aca. Lo manda el que llama, sacandolo de
+    // lecturacvs.app_secrets en el SQL del cron. Si algun dia se carga como secret de la
+    // funcion (WA_TOKEN), ese gana y el cron ya no necesita mandarlo.
+    const waToken = Deno.env.get("WA_TOKEN") || String(body?.wa_token || "");
     if (!waToken) {
       // El PDF ya quedo subido, asi que se devuelve el link igual: la corrida no se pierde.
-      return responder({ error: "falta el secret WA_TOKEN de la funcion", pdfUrl }, 500);
+      return responder({ error: "falta el token de Meta (body.wa_token o secret WA_TOKEN)",
+                         pdfUrl }, 500);
     }
 
     const waUrl = `https://graph.facebook.com/v21.0/${WA_PHONE_ID}/messages`;

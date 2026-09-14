@@ -29,24 +29,26 @@ para que el PDF y la pantalla de Informes Virgilio no puedan dar distinto.
 > **Si alguien edita `calculo.js`, hay que redeployar esta funcion.** Si no, el PDF que
 > recibe Juan y lo que se ve en pantalla se separan sin que nadie se entere.
 
-## Secrets que necesita
+## Secrets: no hay que cargar ninguno
 
-Se cargan en Supabase: Edge Functions -> Secrets.
+Los dos valores que usa ya existen en la base y los resuelve el SQL del que la llama, que es
+como funcionan los crons `gv-ppp-web-tandas-diarias`, `gv-geocodificar` y
+`gv-sync-padron-direcciones` de este mismo proyecto.
 
-| Secret | Para que | De donde sacarlo |
+| Valor | Que es | De donde sale |
 |---|---|---|
-| `WA_TOKEN` | Token de Meta para mandar el mensaje | **El mismo de la funcion de Damian**, que lo tiene hardcodeado en su `index.ts`. Se copia de ahi tal cual. |
-| `SEND_WA_TOKEN` | Autentica a quien llama la funcion | Mismo valor que `lecturacvs.app_secrets` con `k='SEND_WA_TOKEN'` |
+| `token` | Autentica al que llama | Se compara contra `SUPABASE_SERVICE_ROLE_KEY`, que Supabase inyecta sola en la funcion. El cron lo saca de `lecturacvs.app_secrets`. |
+| `wa_token` | Token de Meta para mandar el mensaje | `lecturacvs.app_secrets`. Es el mismo token que usa la funcion de Damian. |
 
-`SUPABASE_SERVICE_ROLE_KEY` lo inyecta Supabase solo, no hay que cargarlo.
+El schema `lecturacvs` **no** esta expuesto a PostgREST, asi que la funcion no puede leer
+`app_secrets` por su cuenta: por eso los valores viajan en el body.
 
-Los secrets de Edge Functions son **del proyecto entero**, no de cada funcion: se cargan una
-sola vez y los ve cualquier funcion del proyecto. Si alguna vez se rota el token de Meta,
-conviene mover tambien a la de Damian a `WA_TOKEN` y borrarle el valor hardcodeado, asi hay
-un solo lugar donde cambiarlo.
+Si algun dia se prefiere tenerlos como secrets de la funcion, se cargan `SEND_WA_TOKEN` y
+`WA_TOKEN` en Edge Functions -> Secrets y esos ganan; el cron entonces ya no necesita
+mandarlos.
 
-**Por que aca no va hardcodeado como en la de Damian:** el codigo de ella vive solo en
-Supabase, pero esta funcion esta versionada en un repositorio **publico**. Un token de Meta
+**Por que el token de Meta no va hardcodeado como en la de Damian:** el codigo de ella vive
+solo en Supabase, pero esta funcion esta versionada en un repositorio **publico**. Un token
 commiteado ahi queda en el historial de git para siempre, y eso no se arregla borrandolo
 despues (ver la seccion de claves de Supabase en el `CLAUDE.md` de la raiz).
 
@@ -61,10 +63,11 @@ igual que en los crons `planify_*` y `gv-*` de este mismo proyecto.
 ## Como se invoca
 
 ```jsonc
-{ "token": "<SEND_WA_TOKEN>" }                       // hoy, al numero de PRUEBA
-{ "token": "...", "fecha": "2026-09-11" }            // un dia anterior, al de PRUEBA
-{ "token": "...", "solo_pdf": true }                 // genera y sube el PDF, no manda nada
-{ "token": "...", "test": false }                    // hoy, a JUAN
+{ "token": "...", "wa_token": "..." }                 // hoy, al numero de PRUEBA
+{ "token": "...", "wa_token": "...",
+  "fecha": "2026-09-11" }                             // un dia anterior, al de PRUEBA
+{ "token": "...", "solo_pdf": true }                  // sube el PDF y no manda nada
+{ "token": "...", "wa_token": "...", "test": false }  // hoy, a JUAN
 ```
 
 **Manda a Juan solo con `"test": false` explicito.** El default es el numero de prueba, para
@@ -92,8 +95,11 @@ select cron.schedule(
         url     := 'https://hrxfctzncixxqmpfhskv.supabase.co/functions/v1/gv-reporte-diario-virgilio',
         headers := '{"Content-Type":"application/json"}'::jsonb,
         body    := jsonb_build_object(
-                     'token', (select v from lecturacvs.app_secrets where k = 'SEND_WA_TOKEN'),
-                     'test', false)
+                     'token',    (select v from lecturacvs.app_secrets
+                                  where k = 'SUPABASE_SERVICE_ROLE_KEY'),
+                     'wa_token', (select v from lecturacvs.app_secrets
+                                  where k = '<la clave que guarda el token de Meta>'),
+                     'test',     false)
       );
     end if;
   end
