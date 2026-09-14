@@ -207,8 +207,9 @@ function construirPdf(titulo: string, filas: Fila[]) {
 
   // Dos bloques separados por un hueco, como la columna angosta del Excel.
   // Bloque 1: Empleado + M3 x Hs (Pick, Arm).  Bloque 2: Hs (Pick, Arm, Mov).
-  const anchosA = [50, 24, 24];
-  const anchosB = [24, 24, 24];
+  // Las celdas de numero entran justo 4 digitos ("0,63"): 18mm a 14pt.
+  const anchosA = [46, 18, 18];
+  const anchosB = [18, 18, 18];
   const HUECO = 4;
   const anchoA = anchosA.reduce((a, b) => a + b, 0);
   const anchoB = anchosB.reduce((a, b) => a + b, 0);
