@@ -29,6 +29,8 @@
 //   { "wa_token": "...", "fecha": "2026-09-08" } -> un dia anterior, a prueba
 //   { "wa_token": "...", "test": false }       -> hoy, a Juan
 //   { "solo_pdf": true }                       -> sube el PDF y no manda nada
+//   { "solo_pdf": true, "desde": "2026-09-08", "hasta": "2026-09-14" }  -> un rango
+//   { "diag": true, "desde": "...", "hasta": "..." }  -> auditoria de m3 por tanda, sin PDF
 //
 // OJO: manda a Juan SOLO con "test": false explicito. El default es el numero de prueba.
 
@@ -146,10 +148,11 @@ async function paginar(sb: any, tabla: string, cols: string, filtrar?: (q: any) 
   return todo;
 }
 
-async function traerProduccion(sb: any, fecha: string) {
+async function traerProduccion(sb: any, desdeIso: string, hasta: string) {
   // Se traen dias previos porque un par puede abrirse un dia y cerrarse al siguiente
   // habil; calculo.js despues recorta los segmentos al rango pedido.
-  const desde = isoARestando(fecha, DIAS_HACIA_ATRAS);
+  const desde = isoARestando(desdeIso, DIAS_HACIA_ATRAS);
+  const fecha = hasta;
   const filas = await paginar(
     sb, "Registros_Produccion_Virgilio",
     "legajo, opcion, descripcion, texto, ts_cliente, ts_inicio",
@@ -195,18 +198,19 @@ async function traerPpp(sb: any) {
     seguro("GV_PPP_Programacion_Diaria"),   // ojo: lleva prefijo GV_, la otra no existe
   ]);
 
+  // `origen` es solo para el modo diag: calculo.js ignora los campos que no conoce.
   const ppp = entregados.map((r: any) => ({
     tanda: norm(r.tanda), mt3: 0, mt3fc: Number(r.m3) || 0,
-    razon: String(r.razon_social || "").trim(),
+    razon: String(r.razon_social || "").trim(), origen: "facturado",
   })).filter((p: any) => p.tanda);
 
-  const aEst = (r: any) => ({
+  const aEst = (origen: string) => (r: any) => ({
     tanda: norm(r.tanda), mt3: Number(r.m3) || 0, mt3fc: 0,
-    razon: String(r.razon_social || "").trim(),
+    razon: String(r.razon_social || "").trim(), origen,
   });
-  const pppProgDiaria = webProg.map(aEst).filter((p: any) => p.tanda);
+  const pppProgDiaria = webProg.map(aEst("web")).filter((p: any) => p.tanda);
   const yaEsta = new Set(pppProgDiaria.map((p: any) => p.tanda));
-  progDiaria.map(aEst).forEach((p: any) => {
+  progDiaria.map(aEst("diaria")).forEach((p: any) => {
     if (p.tanda && !yaEsta.has(p.tanda)) pppProgDiaria.push(p);
   });
   return { ppp, pppProgDiaria };
@@ -219,6 +223,7 @@ async function traerPpp(sb: any) {
 type Fila = {
   nombre: string;
   m3Pick: number; m3Arm: number;      // bloque "M3 x Hs"
+  dias: number;                       // solo se dibuja si el reporte abarca varios dias
   hsPick: number; hsArm: number; mov: number; sinReg: number;   // bloque "Hs"
 };
 
@@ -227,7 +232,7 @@ type Fila = {
 const GRUESO = 0.9;   // marco exterior de las tablas y de los encabezados (2,5pt)
 const FINO = 0.18;    // divisiones internas (0,5pt)
 
-function construirPdf(titulo: string, filas: Fila[]) {
+function construirPdf(titulo: string, filas: Fila[], variosDias = false) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const margen = 15;
 
@@ -236,8 +241,14 @@ function construirPdf(titulo: string, filas: Fila[]) {
   // Las celdas de numero entran justo 4 digitos ("0,63"): 18mm a 14pt.
   // "S/Reg." a 14pt mide 15,1mm, asi que tambien entra en los 18mm de columna.
   // Ancho total: 46+18+18 + 4 + 18*4 = 158mm, contra los 180mm utiles de un A4.
+  //
+  // Cuando el reporte abarca VARIOS dias se antepone una columna "Dias" de 14mm
+  // (172mm de ancho total, sigue entrando). Sin ella la tabla no se puede leer: cada
+  // fila cierra en 9:00 por dia trabajado, y cada uno trabajo una cantidad distinta.
+  // El PDF de un solo dia -que es el que manda el cron- queda exactamente igual que antes.
   const anchosA = [46, 18, 18];
-  const anchosB = [18, 18, 18, 18];
+  const anchosB = variosDias ? [14, 18, 18, 18, 18] : [18, 18, 18, 18];
+  const nB = anchosB.length;
   const HUECO = 4;
   const anchoA = anchosA.reduce((a, b) => a + b, 0);
   const anchoB = anchosB.reduce((a, b) => a + b, 0);
@@ -275,9 +286,10 @@ function construirPdf(titulo: string, filas: Fila[]) {
   doc.text("Pick", medioCol(cortesA, 1), medioFila(y + hEnc, hEnc), { align: "center" });
   doc.text("Arm", medioCol(cortesA, 2), medioFila(y + hEnc, hEnc), { align: "center" });
 
-  doc.text("Hs", (cortesB[0] + cortesB[4]) / 2, medioFila(y, hEnc), { align: "center" });
-  ["Pick", "Arm", "Mov", "S/Reg."].forEach((t, i) =>
-    doc.text(t, medioCol(cortesB, i), medioFila(y + hEnc, hEnc), { align: "center" }));
+  doc.text("Hs", (cortesB[0] + cortesB[nB]) / 2, medioFila(y, hEnc), { align: "center" });
+  (variosDias ? ["Dias", "Pick", "Arm", "Mov", "S/Reg."] : ["Pick", "Arm", "Mov", "S/Reg."])
+    .forEach((t, i) =>
+      doc.text(t, medioCol(cortesB, i), medioFila(y + hEnc, hEnc), { align: "center" }));
 
   // Los encabezados van con borde grueso, en los dos bloques
   doc.setDrawColor(0, 0, 0); doc.setLineWidth(GRUESO);
@@ -287,8 +299,8 @@ function construirPdf(titulo: string, filas: Fila[]) {
   doc.line(cortesA[2], y + hEnc, cortesA[2], y + hEnc * 2);
 
   doc.rect(xB, y, anchoB, hEnc * 2);
-  doc.line(cortesB[0], y + hEnc, cortesB[4], y + hEnc);
-  [1, 2, 3].forEach((i) => doc.line(cortesB[i], y + hEnc, cortesB[i], y + hEnc * 2));
+  doc.line(cortesB[0], y + hEnc, cortesB[nB], y + hEnc);
+  for (let i = 1; i < nB; i++) doc.line(cortesB[i], y + hEnc, cortesB[i], y + hEnc * 2);
   y += hEnc * 2;
 
   // --- Cuerpo ---
@@ -297,7 +309,9 @@ function construirPdf(titulo: string, filas: Fila[]) {
   filas.forEach((f) => {
     [f.nombre, celda(f.m3Pick), celda(f.m3Arm)].forEach((v, i) =>
       doc.text(v, medioCol(cortesA, i), medioFila(y, hFila), { align: "center" }));
-    [celdaHs(f.hsPick), celdaHs(f.hsArm), celdaHs(f.mov), celdaHs(f.sinReg)].forEach((v, i) =>
+    const colsB = [celdaHs(f.hsPick), celdaHs(f.hsArm), celdaHs(f.mov), celdaHs(f.sinReg)];
+    if (variosDias) colsB.unshift(String(f.dias));
+    colsB.forEach((v, i) =>
       doc.text(v, medioCol(cortesB, i), medioFila(y, hFila), { align: "center" }));
     y += hFila;
   });
@@ -310,7 +324,7 @@ function construirPdf(titulo: string, filas: Fila[]) {
     doc.line(xB, yy, xB + anchoB, yy);
   }
   [1, 2].forEach((i) => doc.line(cortesA[i], yCuerpo, cortesA[i], y));
-  [1, 2, 3].forEach((i) => doc.line(cortesB[i], yCuerpo, cortesB[i], y));
+  for (let i = 1; i < nB; i++) doc.line(cortesB[i], yCuerpo, cortesB[i], y);
 
   // Borde exterior grueso
   doc.setLineWidth(GRUESO);
@@ -324,7 +338,9 @@ function construirPdf(titulo: string, filas: Fila[]) {
            xA, y + 11);
   doc.text("S/Reg. = lo que no quedo registrado dentro de la jornada de 08:00 a 17:00.",
            xA, y + 15);
-  doc.text("Pick + Arm + Mov + S/Reg. = 9:00 en todas las filas.", xA, y + 19);
+  doc.text(variosDias
+    ? "Pick + Arm + Mov + S/Reg. = 9:00 por cada dia trabajado (columna Dias)."
+    : "Pick + Arm + Mov + S/Reg. = 9:00 en todas las filas.", xA, y + 19);
   return doc;
 }
 
@@ -340,7 +356,12 @@ Deno.serve(async (req: Request) => {
     try { body = await req.json(); } catch { /* sin body */ }
     const esTest = body?.test !== false;            // manda a Juan SOLO con test:false explicito
     const soloPdf = body?.solo_pdf === true;
+    const soloDiag = body?.diag === true;           // auditoria de m3 por tanda, sin PDF
+    // Un solo dia (lo que manda el cron) o un rango. `fecha` sigue andando igual que antes.
     const fecha = body?.fecha || hoyAR();
+    const desde = body?.desde || fecha;
+    const hasta = body?.hasta || (body?.desde ? hoyAR() : fecha);
+    const variosDias = desde !== hasta;
 
     if (!SUPABASE_SERVICE_KEY) return responder({ error: "falta SUPABASE_SERVICE_ROLE_KEY" }, 500);
 
@@ -363,13 +384,59 @@ Deno.serve(async (req: Request) => {
 
     // --- Datos ---
     const [produccion, empMap, pppRes] = await Promise.all([
-      traerProduccion(sb, fecha), traerEmpleados(sb), traerPpp(sb),
+      traerProduccion(sb, desde, hasta), traerEmpleados(sb), traerPpp(sb),
     ]);
 
     const r = procesar(
       { produccion, ppp: pppRes.ppp, pppProgDiaria: pppRes.pppProgDiaria },
-      fecha, fecha,
+      desde, hasta,
     );
+
+    // --- Auditoria de m3 por tanda (solo con "diag": true) ---------------------
+    // Pregunta que contesta: de las tandas que la gente efectivamente trabajo en el
+    // rango, cuales NO tienen m3 en ninguna de las tres fuentes. Esas son las que
+    // hacen bajar el ratio M3 x Hs sin que se note, porque las horas si se cuentan.
+    //
+    // NO reimplementa getMt3 de calculo.js: es una busqueda de presencia sobre los
+    // MISMOS arrays que se le pasaron a procesar(), que es justo lo que se pregunta.
+    if (soloDiag) {
+      const porTanda = new Map<string, any>();
+      (r.reportes || []).forEach((rep: any) => {
+        ([["pick", rep.pickPairs], ["arm", rep.armPairs], ["cc", rep.ccPairs]] as any[])
+          .forEach(([tipo, pares]) => (pares || []).forEach((par: any) => {
+            if (!par.tanda) return;
+            const t = porTanda.get(par.tanda) ||
+              { tanda: par.tanda, hs: 0, tipos: new Set<string>(), dias: new Set<string>(),
+                legajos: new Set<string>() };
+            t.hs += par.hs; t.tipos.add(tipo); t.dias.add(rep.fecha); t.legajos.add(rep.legajo);
+            porTanda.set(par.tanda, t);
+          }));
+      });
+      const fuentes = [...pppRes.ppp, ...pppRes.pppProgDiaria];
+      const detalle = [...porTanda.values()].map((t: any) => {
+        const hits = fuentes.filter((p: any) => p.tanda === t.tanda);
+        const m3 = hits.reduce((x: number, p: any) => x + (p.mt3fc || p.mt3 || 0), 0);
+        return {
+          tanda: t.tanda, hs: +t.hs.toFixed(3),
+          tipos: [...t.tipos].join("+"), dias: [...t.dias].join(" "),
+          legajos: [...t.legajos].join(","),
+          m3: +m3.toFixed(3),
+          origen: [...new Set(hits.map((p: any) => p.origen))].join("+") || "-",
+          razon: hits.length ? hits[0].razon : "",
+        };
+      }).sort((a, b) => (a.m3 === 0 ? 0 : 1) - (b.m3 === 0 ? 0 : 1) || b.hs - a.hs);
+      const perdidas = detalle.filter((d) => d.m3 === 0);
+      return responder({
+        diag: true, desde, hasta,
+        tandas: detalle.length,
+        conM3: detalle.length - perdidas.length,
+        sinM3: perdidas.length,
+        hsTotal: +detalle.reduce((x, d) => x + d.hs, 0).toFixed(2),
+        hsSinM3: +perdidas.reduce((x, d) => x + d.hs, 0).toFixed(2),
+        m3Total: +detalle.reduce((x, d) => x + d.m3, 0).toFixed(3),
+        detalle,
+      });
+    }
 
     const filas: Fila[] = (r.porPersona || [])
       .map((p: any) => ({
@@ -402,15 +469,23 @@ Deno.serve(async (req: Request) => {
         //
         // Como Mov es el resto del total, la fila cierra sola:
         //   Pick + Arm + Mov + S/Reg. = jornadaHs = 9:00, siempre.
-        sinReg: Math.max(0, CONFIG.jornadaHs - p.totHs),
+        // Con un rango son 9 hs por cada dia en que la persona registro algo. Los dias
+        // que no aparecio no se le cuentan: esto mide el hueco de los dias que trabajo,
+        // no las ausencias.
+        dias: p.dias || 1,
+        sinReg: Math.max(0, CONFIG.jornadaHs * (p.dias || 1) - p.totHs),
       }))
       // Mayor carga de trabajo arriba; entre los que no hicieron picking ni armado, por Mov
       .sort((a: Fila, b: Fila) => (b.hsPick + b.hsArm) - (a.hsPick + a.hsArm) || b.mov - a.mov);
 
-    const fechaLinda = fecha.split("-").reverse().join("/");
-    const doc = construirPdf(`Logistica Virgilio - ${fechaLinda}`, filas);
+    const corto = (iso: string) => iso.slice(8, 10) + "/" + iso.slice(5, 7);
+    const fechaLinda = hasta.split("-").reverse().join("/");
+    const titulo = variosDias
+      ? `Logistica Virgilio - ${corto(desde)} al ${corto(hasta)}/${hasta.slice(0, 4)}`
+      : `Logistica Virgilio - ${fechaLinda}`;
+    const doc = construirPdf(titulo, filas, variosDias);
 
-    const archivo = `virgilio_${fecha}_${Date.now()}.pdf`;
+    const archivo = `virgilio_${variosDias ? desde + "_a_" + hasta : fecha}_${Date.now()}.pdf`;
     const bytes = new Uint8Array(doc.output("arraybuffer"));
     const { error: errUp } = await sb.storage.from(BUCKET)
       .upload(archivo, bytes, { contentType: "application/pdf", upsert: true });
@@ -425,11 +500,11 @@ Deno.serve(async (req: Request) => {
       let bin = "";
       for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
       return responder({
-        solo_pdf: true, fecha, operarios: filas.length, pdfUrl,
+        solo_pdf: true, fecha, desde, hasta, operarios: filas.length, pdfUrl,
         pdf_bytes: bytes.length, pdf_base64: btoa(bin),
         legajosExcluidos: CONFIG.legajosTest,
         filas: filas.map((f) => ({
-          nombre: f.nombre,
+          nombre: f.nombre, dias: f.dias,
           m3Pick: celda(f.m3Pick), m3Arm: celda(f.m3Arm),
           hsPick: celdaHs(f.hsPick), hsArm: celdaHs(f.hsArm), mov: celdaHs(f.mov),
           sinReg: celdaHs(f.sinReg),

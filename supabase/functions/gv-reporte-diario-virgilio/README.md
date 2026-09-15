@@ -82,6 +82,15 @@ Siempre con el header `Authorization: Bearer <service_role>`.
 { "wa_token": "...", "fecha": "2026-09-08" } // un dia anterior, al de PRUEBA
 { "solo_pdf": true }                         // sube el PDF y no manda nada
 { "wa_token": "...", "test": false }         // hoy, a JUAN
+
+// Rango de fechas. Con mas de un dia el PDF antepone una columna "Dias" y cada fila
+// cierra en 9:00 POR DIA TRABAJADO. El PDF de un solo dia queda igual que siempre.
+{ "solo_pdf": true, "desde": "2026-09-08", "hasta": "2026-09-14" }
+
+// Auditoria de m3: devuelve, tanda por tanda, las horas trabajadas y si esa tanda
+// tiene m3 en alguna de las tres fuentes. Las de m3 = 0 son las que hunden el ratio
+// M3 x Hs sin que se vea, porque las horas si se cuentan. No arma ni sube ningun PDF.
+{ "diag": true, "desde": "2026-09-08", "hasta": "2026-09-14" }
 ```
 
 **Manda a Juan solo con `"test": false` explicito.** El default es el numero de prueba, para
