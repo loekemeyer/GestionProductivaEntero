@@ -348,6 +348,33 @@ TABLAS DERIVADAS (se sincronizan solas, NUNCA modificar directo):
 
 **⚠️ NUNCA vaciar (DELETE masivo / TRUNCATE) tablas madre.** Las tablas madre contienen datos maestros que alimentan tablas derivadas via triggers. Vaciarlas rompe toda la cadena de sincronizacion. Tablas madre protegidas: `SP Kg`, `SC Kg`, `SectorPlasticos`, `Matrices`, `Articulos Virgilio X Tallerista`, `Partes x PS`. Si el usuario pide vaciar alguna, ADVERTIR el impacto antes de ejecutar.
 
+**⚠️ TODA COPIA DE RESPALDO NACE SIN RLS.** `CREATE TABLE AS` y `SELECT INTO` **no heredan**
+Row Level Security de la tabla de origen: la copia queda con `relrowsecurity = false` aunque la
+madre este protegida, y los `GRANT` del schema le siguen aplicando, asi que `anon` hereda
+SELECT/INSERT/UPDATE/DELETE. Postgres no avisa. **Prender RLS en el MISMO paso en que se crea la
+copia**, no despues:
+
+```sql
+create table <schema>.<copia> as select * from <schema>.<madre>;
+alter table <schema>.<copia> enable row level security;  -- sin politicas = deny-all para anon
+```
+
+Sin politicas, RLS habilitada deja la tabla accesible solo para `service_role`, que es exactamente
+lo que se quiere en un respaldo. **Caso real (2026-09-14):** `planify.bkp_items_mayo_20260914`,
+respaldo de la liquidacion de sueldos de mayo hecho —bien— antes de tocarla, quedo con 56 sueldos
+completos (legajo, nombre, `sueldo_bolsillo`, banco, aportes) legibles y borrables por cualquiera
+con la clave publishable, durante 24 horas. El respaldo estuvo bien; lo que falto fue el `alter`.
+
+Para barrer copias abiertas en un proyecto:
+
+```sql
+select n.nspname, c.relname
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where c.relkind = 'r' and c.relrowsecurity = false
+   and has_table_privilege('anon', c.oid, 'SELECT')
+   and n.nspname not in ('pg_catalog','information_schema','pg_toast');
+```
+
 Orden de busqueda de `resolver_pesos_por_sector`: SP Kg → SC Kg → SectorPlasticos → Flejes → Remaches SP → Remaches SC (LIMIT 1, el primero que encuentre gana).
 
 ### Cadena de Talleristas
