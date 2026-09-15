@@ -625,12 +625,21 @@ Deno.serve(async (req: Request) => {
 
     // --- WhatsApp ---
     const numeros = esTest ? DESTINATARIOS_TEST : DESTINATARIOS_PROD;
-    // Token de Meta: no se guarda aca. Orden de resolucion: secret de la funcion, body del
-    // que llama, y por ultimo lecturacvs.server_secrets. Con el tercero el que invoca ya no
-    // necesita llevar el token encima, que era la parte fragil.
-    const waToken = Deno.env.get("WA_TOKEN")
+    // Token de Meta: no se guarda aca. Manda lecturacvs.server_secrets, y el secret de la
+    // funcion queda ULTIMO a proposito.
+    //
+    // El orden era al reves y costo un incidente: el 15/09/2026, al rotar el token en Meta y
+    // revocar el viejo, esta funcion siguio agarrando el WA_TOKEN cargado como secret -que
+    // ya estaba muerto- porque Deno.env.get() le ganaba a la base. Resultado: "Authentication
+    // Error" y cero enviados, mientras reporte-diario-rendimiento, que solo mira la base,
+    // seguia andando. Un secret de la funcion es invisible desde SQL: no hay forma de
+    // auditarlo ni de saber que esta pisando a la fuente buena.
+    //
+    // Con este orden la rotacion es una sola fila en server_secrets y nada mas.
+    const waToken = (await leerSecret(sb, "REPORTES_WA_TOKEN", ""))
       || String(body?.wa_token || "")
-      || await leerSecret(sb, "REPORTES_WA_TOKEN", "");
+      || Deno.env.get("WA_TOKEN")
+      || "";
     if (!waToken) {
       // El PDF ya quedo subido, asi que se devuelve el link igual: la corrida no se pierde.
       return responder({ error: "falta el token de Meta (body.wa_token, secret WA_TOKEN o "
