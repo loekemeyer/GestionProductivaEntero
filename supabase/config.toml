@@ -1,0 +1,7 @@
+project_id = "hrxfctzncixxqmpfhskv"
+
+# verify_jwt por funcion. OJO: verify_jwt = true NO es autenticacion: la clave
+# sb_publishable_ que llevan todas las paginas la pasa. Cada funcion que devuelva
+# datos de personas tiene que validar ADEMAS su propio token (ver el index.ts).
+[functions.gv-reporte-diario-virgilio]
+verify_jwt = true

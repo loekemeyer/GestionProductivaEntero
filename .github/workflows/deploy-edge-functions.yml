@@ -1,0 +1,55 @@
+name: Deploy Edge Functions
+
+# Las Edge Functions de este proyecto se venian deployando a mano desde el Dashboard.
+# Resultado: 11 de ellas quedaron SIN fuente en ningun repo, y cambiarle dos lineas a
+# una de 70 KB era reescribir el archivo entero a mano. Este workflow corta con eso:
+# lo que esta en supabase/functions/ es la verdad y se publica solo.
+#
+# Requiere el secret SUPABASE_ACCESS_TOKEN del repo
+# (Supabase -> Account -> Access Tokens -> Generate new token).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+      - 'supabase/config.toml'
+      - '.github/workflows/deploy-edge-functions.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_REF: hrxfctzncixxqmpfhskv
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Antes de publicar nada: que la copia de calculo.js no haya divergido de la pagina.
+      - name: calculo.js de la funcion == calculo.js de la pagina
+        run: ./scripts/sync-calculo-virgilio.sh --check
+
+      - name: Falta el token de Supabase
+        if: ${{ env.SUPABASE_ACCESS_TOKEN == '' }}
+        run: |
+          echo "::warning::No hay SUPABASE_ACCESS_TOKEN cargado en los secrets del repo."
+          echo "::warning::Se valido el codigo pero NO se deployo nada."
+          echo "Cargalo en Settings -> Secrets and variables -> Actions -> New repository secret."
+          exit 0
+
+      - uses: supabase/setup-cli@v1
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' }}
+        with:
+          version: latest
+
+      - name: Deploy
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          for dir in supabase/functions/*/; do
+            slug="$(basename "$dir")"
+            echo "::group::$slug"
+            supabase functions deploy "$slug" --project-ref "$PROJECT_REF"
+            echo "::endgroup::"
+          done
