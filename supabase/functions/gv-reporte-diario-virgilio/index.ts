@@ -6,13 +6,24 @@
 // de Cervantes) y el formato del PDF (el Excel que paso Damian: Picking, Armado, Mov y
 // S/Reg., las horas de la jornada que nadie registro).
 //
-// LOS NUMEROS SALEN DE calculo.js, COPIADO AL DEPLOY.
-// El archivo Produccion/InformesVirgilio/calculo.js se sube como segundo archivo de esta
-// funcion tal cual esta, con UNA sola linea agregada al final:
-//     export { procesar, CONFIG };
-// (el archivo del repo es un <script> comun del navegador y no puede llevar `export`).
-// De esa forma el PDF y la pantalla no pueden dar distinto. Si alguien edita calculo.js,
-// hay que redeployar esta funcion o los numeros se separan. Ver README.md de esta carpeta.
+// LOS NUMEROS SALEN DE calculo.js, IMPORTADO DEL REPO POR URL FIJADA A UN COMMIT.
+// La fuente unica es Produccion/InformesVirgilio/calculo.js, el archivo que carga la
+// pagina. supabase/functions/gv-reporte-diario-virgilio/calculo.js es esa misma fuente mas
+// una linea (`export { procesar, CONFIG };`), generada por scripts/sync-calculo-virgilio.sh
+// (el archivo de la pagina es un <script> comun del navegador y no puede llevar `export`).
+//
+// COMO SE DEPLOYA ESTA FUNCION (sin CLI y sin token de Supabase).
+// Lo que se publica en Supabase no es este archivo: es un arranque de 3 lineas que hace
+//     import "https://raw.githubusercontent.com/<repo>/<SHA>/<esta carpeta>/index.ts";
+// El bundler de Deno se baja este archivo y el calculo.js de al lado -el import relativo
+// resuelve contra la misma URL- y los mete adentro del bundle. En runtime no depende de
+// GitHub: es la misma clase de dependencia que ya tiene con esm.sh por jspdf.
+// Medido el 15/09/2026 contra el bundler real.
+//
+// Con el SHA clavado la URL es inmutable: nadie cambia el codigo por debajo.
+//
+// PARA PUBLICAR UN CAMBIO: commitear, y redeployar el arranque con el SHA nuevo. Mientras
+// no se cambie ese SHA, en Supabase sigue corriendo la version vieja.
 //
 // NO necesita que se le carguen secrets: los lee de lecturacvs.server_secrets.
 //
