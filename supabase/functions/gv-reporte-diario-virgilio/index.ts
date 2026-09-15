@@ -3,7 +3,8 @@
 // Espejo de la edge function `reporte-diario-rendimiento` (la de Damian): arma un PDF,
 // lo sube al bucket `reportes` de Storage y lo manda como header tipo `document` de una
 // plantilla de WhatsApp Cloud API. Lo que cambia es la fuente de datos (Virgilio en vez
-// de Cervantes) y el formato del PDF (el Excel que paso Damian: Picking, Armado y Mov).
+// de Cervantes) y el formato del PDF (el Excel que paso Damian: Picking, Armado, Mov y
+// S/Reg., las horas de la jornada que nadie registro).
 //
 // LOS NUMEROS SALEN DE calculo.js, COPIADO AL DEPLOY.
 // El archivo Produccion/InformesVirgilio/calculo.js se sube como segundo archivo de esta
@@ -218,7 +219,7 @@ async function traerPpp(sb: any) {
 type Fila = {
   nombre: string;
   m3Pick: number; m3Arm: number;      // bloque "M3 x Hs"
-  hsPick: number; hsArm: number; mov: number;   // bloque "Hs"
+  hsPick: number; hsArm: number; mov: number; sinReg: number;   // bloque "Hs"
 };
 
 // Grosor de linea, en mm. La relacion importa mas que el valor: con 0,6 contra 0,15
@@ -231,10 +232,12 @@ function construirPdf(titulo: string, filas: Fila[]) {
   const margen = 15;
 
   // Dos bloques separados por un hueco, como la columna angosta del Excel.
-  // Bloque 1: Empleado + M3 x Hs (Pick, Arm).  Bloque 2: Hs (Pick, Arm, Mov).
+  // Bloque 1: Empleado + M3 x Hs (Pick, Arm).  Bloque 2: Hs (Pick, Arm, Mov, S/Reg.).
   // Las celdas de numero entran justo 4 digitos ("0,63"): 18mm a 14pt.
+  // "S/Reg." a 14pt mide 15,1mm, asi que tambien entra en los 18mm de columna.
+  // Ancho total: 46+18+18 + 4 + 18*4 = 158mm, contra los 180mm utiles de un A4.
   const anchosA = [46, 18, 18];
-  const anchosB = [18, 18, 18];
+  const anchosB = [18, 18, 18, 18];
   const HUECO = 4;
   const anchoA = anchosA.reduce((a, b) => a + b, 0);
   const anchoB = anchosB.reduce((a, b) => a + b, 0);
@@ -254,7 +257,7 @@ function construirPdf(titulo: string, filas: Fila[]) {
 
   // Virgilio nunca paso de 7 operarios en un dia; si algun dia crece, la fila se achica
   // sola en vez de derramarse fuera de la hoja (A4: 297mm de alto).
-  const disponible = 297 - margen * 2 - 14 - hEnc * 2 - 12;
+  const disponible = 297 - margen * 2 - 14 - hEnc * 2 - 22;   // 22 = las 4 lineas del pie
   const hFila = Math.max(6, Math.min(10, disponible / filas.length));
 
   const xA = margen;
@@ -272,8 +275,8 @@ function construirPdf(titulo: string, filas: Fila[]) {
   doc.text("Pick", medioCol(cortesA, 1), medioFila(y + hEnc, hEnc), { align: "center" });
   doc.text("Arm", medioCol(cortesA, 2), medioFila(y + hEnc, hEnc), { align: "center" });
 
-  doc.text("Hs", (cortesB[0] + cortesB[3]) / 2, medioFila(y, hEnc), { align: "center" });
-  ["Pick", "Arm", "Mov"].forEach((t, i) =>
+  doc.text("Hs", (cortesB[0] + cortesB[4]) / 2, medioFila(y, hEnc), { align: "center" });
+  ["Pick", "Arm", "Mov", "S/Reg."].forEach((t, i) =>
     doc.text(t, medioCol(cortesB, i), medioFila(y + hEnc, hEnc), { align: "center" }));
 
   // Los encabezados van con borde grueso, en los dos bloques
@@ -284,8 +287,8 @@ function construirPdf(titulo: string, filas: Fila[]) {
   doc.line(cortesA[2], y + hEnc, cortesA[2], y + hEnc * 2);
 
   doc.rect(xB, y, anchoB, hEnc * 2);
-  doc.line(cortesB[0], y + hEnc, cortesB[3], y + hEnc);
-  [1, 2].forEach((i) => doc.line(cortesB[i], y + hEnc, cortesB[i], y + hEnc * 2));
+  doc.line(cortesB[0], y + hEnc, cortesB[4], y + hEnc);
+  [1, 2, 3].forEach((i) => doc.line(cortesB[i], y + hEnc, cortesB[i], y + hEnc * 2));
   y += hEnc * 2;
 
   // --- Cuerpo ---
@@ -294,7 +297,7 @@ function construirPdf(titulo: string, filas: Fila[]) {
   filas.forEach((f) => {
     [f.nombre, celda(f.m3Pick), celda(f.m3Arm)].forEach((v, i) =>
       doc.text(v, medioCol(cortesA, i), medioFila(y, hFila), { align: "center" }));
-    [celdaHs(f.hsPick), celdaHs(f.hsArm), celdaHs(f.mov)].forEach((v, i) =>
+    [celdaHs(f.hsPick), celdaHs(f.hsArm), celdaHs(f.mov), celdaHs(f.sinReg)].forEach((v, i) =>
       doc.text(v, medioCol(cortesB, i), medioFila(y, hFila), { align: "center" }));
     y += hFila;
   });
@@ -307,7 +310,7 @@ function construirPdf(titulo: string, filas: Fila[]) {
     doc.line(xB, yy, xB + anchoB, yy);
   }
   [1, 2].forEach((i) => doc.line(cortesA[i], yCuerpo, cortesA[i], y));
-  [1, 2].forEach((i) => doc.line(cortesB[i], yCuerpo, cortesB[i], y));
+  [1, 2, 3].forEach((i) => doc.line(cortesB[i], yCuerpo, cortesB[i], y));
 
   // Borde exterior grueso
   doc.setLineWidth(GRUESO);
@@ -319,6 +322,9 @@ function construirPdf(titulo: string, filas: Fila[]) {
            xA, y + 7);
   doc.text("Remitos, Recepciones, Gondola, Conteo, Timbre, Bano, Almuerzo, Limpieza y Permiso).",
            xA, y + 11);
+  doc.text("S/Reg. = lo que no quedo registrado dentro de la jornada de 08:00 a 17:00.",
+           xA, y + 15);
+  doc.text("Pick + Arm + Mov + S/Reg. = 9:00 en todas las filas.", xA, y + 19);
   return doc;
 }
 
@@ -385,6 +391,18 @@ Deno.serve(async (req: Request) => {
         // muertoHs son netos LIFO, asi que mezclarlos cuenta dos veces lo que se solapa.
         // Ese camino le sumaba 0,47 hs de mas a Moncayo ese mismo dia.
         mov: Math.max(0, p.totHs - p.pickHs - p.armHs),
+        // S/Reg. = las horas de la jornada que NO quedaron registradas, contadas hasta
+        // las 17:00. calculo.js ya recorta todos los segmentos a la ventana 08:00-17:00
+        // (splitParPorJornada), asi que totHs nunca pasa de 9 y esta resta no da negativo
+        // aunque alguien se quede trabajando despues de hora.
+        //
+        // Entra TODO lo que deja hueco dentro de esa ventana: llegar tarde, irse
+        // temprano y los baches del medio. Moncayo el 11/09 apreto Fin de Jornada 13:28
+        // y no registro nada mas: sus 3:32 hasta las 17:00 caen aca.
+        //
+        // Como Mov es el resto del total, la fila cierra sola:
+        //   Pick + Arm + Mov + S/Reg. = jornadaHs = 9:00, siempre.
+        sinReg: Math.max(0, CONFIG.jornadaHs - p.totHs),
       }))
       // Mayor carga de trabajo arriba; entre los que no hicieron picking ni armado, por Mov
       .sort((a: Fila, b: Fila) => (b.hsPick + b.hsArm) - (a.hsPick + a.hsArm) || b.mov - a.mov);
@@ -414,6 +432,7 @@ Deno.serve(async (req: Request) => {
           nombre: f.nombre,
           m3Pick: celda(f.m3Pick), m3Arm: celda(f.m3Arm),
           hsPick: celdaHs(f.hsPick), hsArm: celdaHs(f.hsArm), mov: celdaHs(f.mov),
+          sinReg: celdaHs(f.sinReg),
         })),
       });
     }

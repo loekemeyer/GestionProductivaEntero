@@ -8,9 +8,25 @@ Storage y lo manda como header tipo `document` de una plantilla de WhatsApp Clou
 |---|---|---|
 | Edge function | `reporte-diario-rendimiento` | `gv-reporte-diario-virgilio` |
 | Datos | `db_n8n_espejo` (Cervantes) | `Registros_Produccion_Virgilio` |
-| Contenido | Rendimiento x Matriz | Picking, Armado y Mov por operario |
+| Contenido | Rendimiento x Matriz | Picking, Armado, Mov y S/Reg. por operario |
 | Plantilla | `reporte_diario_rend_x_matriz` | `informe_produccion_virgilio` |
 | Cron | `0 21 * * *` (18:00 ART) | `0 21 * * *` (18:00 ART) |
+
+## Las columnas del PDF
+
+| Columna | Que es |
+|---|---|
+| M3 x Hs Pick / Arm | Metros cubicos por hora. No es un tiempo: va con coma decimal. |
+| Hs Pick / Arm | Tiempo neto de picking y de armado. |
+| Hs Mov | Todo lo demas que SI quedo registrado: Carga Camion, Control Remitos, Recepciones, Gondola, Conteo, Timbre, Bano, Almuerzo, Limpieza y Permiso. Sale de `totHs - pickHs - armHs`. |
+| Hs S/Reg. | Lo que NO quedo registrado dentro de la jornada de 08:00 a 17:00: `CONFIG.jornadaHs - totHs`. Suma llegar tarde, irse temprano y los baches del medio, todo junto. |
+
+`calculo.js` recorta cada segmento a la ventana 08:00-17:00, asi que `totHs` nunca pasa de 9
+y S/Reg. no da negativo aunque alguien siga trabajando despues de hora. Y como Mov es el
+resto del total, **cada fila cierra en 9:00**: `Pick + Arm + Mov + S/Reg. = 9:00`. Eso hace
+de control: si una fila no da 9:00, hay un bug.
+
+Un cero siempre se muestra como `-`.
 
 ## De donde salen los numeros
 
