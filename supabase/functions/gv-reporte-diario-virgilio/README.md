@@ -19,7 +19,13 @@ Storage y lo manda como header tipo `document` de una plantilla de WhatsApp Clou
 | M3 x Hs Pick / Arm | Metros cubicos por hora. No es un tiempo: va con coma decimal. |
 | Hs Pick / Arm | Tiempo neto de picking y de armado. |
 | Hs Mov | Todo lo demas que SI quedo registrado: Carga Camion, Control Remitos, Recepciones, Gondola, Conteo, Timbre, Bano, Almuerzo, Limpieza y Permiso. Sale de `totHs - pickHs - armHs`. |
-| Hs S/Reg. | Lo que NO quedo registrado dentro de la jornada de 08:00 a 17:00: `CONFIG.jornadaHs - totHs`. Suma llegar tarde, irse temprano y los baches del medio, todo junto. |
+| Hs S/Reg. | Lo que NO quedo registrado dentro de la jornada de 08:00 a 17:00: `CONFIG.jornadaHs - totHs`. Suma llegar tarde, irse temprano y los baches del medio, todo junto. Con un rango son 9 hs por cada dia que la persona registro algo; los dias que no vino no se le cuentan. |
+| Dias | Solo en el bloque "Total del periodo". Dias en que la persona registro algo, no dias habiles del rango. |
+
+**Ojo con los M3 x Hs de los bloques por dia:** una tanda que se abre un dia y se cierra
+al siguiente lleva su m3 a los dos, porque `reportes` agrupa por (fecha, legajo) y ahi no
+hay forma de partir el volumen. `porPersona` -el bloque del total- si deduplica por tanda.
+Por eso los dias no suman el total, y el pie del PDF lo dice.
 
 `calculo.js` recorta cada segmento a la ventana 08:00-17:00, asi que `totHs` nunca pasa de 9
 y S/Reg. no da negativo aunque alguien siga trabajando despues de hora. Y como Mov es el
@@ -83,8 +89,11 @@ Siempre con el header `Authorization: Bearer <service_role>`.
 { "solo_pdf": true }                         // sube el PDF y no manda nada
 { "wa_token": "...", "test": false }         // hoy, a JUAN
 
-// Rango de fechas. Con mas de un dia el PDF antepone una columna "Dias" y cada fila
-// cierra en 9:00 POR DIA TRABAJADO. El PDF de un solo dia queda igual que siempre.
+// Rango de fechas. Con mas de un dia el PDF lleva UN BLOQUE POR DIA, uno abajo del
+// otro en la misma hoja (salta de pagina solo cuando el bloque entero no entra), y
+// cierra con un bloque "Total del periodo" que ahi si trae la columna Dias, porque
+// cada fila cierra en 9:00 por dia trabajado. El PDF de un solo dia queda igual que
+// siempre: un bloque sin subtitulo, con el alto de fila elastico de antes.
 { "solo_pdf": true, "desde": "2026-09-08", "hasta": "2026-09-14" }
 
 // Auditoria de m3: devuelve, tanda por tanda, las horas trabajadas y si esa tanda

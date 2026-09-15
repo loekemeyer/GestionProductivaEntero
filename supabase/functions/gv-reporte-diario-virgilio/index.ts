@@ -232,27 +232,39 @@ type Fila = {
 const GRUESO = 0.9;   // marco exterior de las tablas y de los encabezados (2,5pt)
 const FINO = 0.18;    // divisiones internas (0,5pt)
 
-function construirPdf(titulo: string, filas: Fila[], variosDias = false) {
+type Bloque = {
+  subtitulo: string;   // "" cuando el PDF tiene una sola tabla (el de un dia suelto)
+  filas: Fila[];
+  conDias: boolean;    // la columna Dias solo tiene sentido si la fila resume varios dias
+};
+
+// Alto fijo de fila cuando el PDF lleva varios bloques. Con el alto elastico del PDF de
+// un dia (hasta 10mm) entrarian dos dias por hoja y el informe de una semana saldria de
+// cinco carillas.
+const H_FILA_MULTI = 8;
+const H_SUBTITULO = 7;
+const H_PIE = 22;       // las 5 lineas de la nota al pie
+const ALTO_A4 = 297;
+
+function construirPdf(titulo: string, bloques: Bloque[]) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const margen = 15;
 
-  // Dos bloques separados por un hueco, como la columna angosta del Excel.
   // Bloque 1: Empleado + M3 x Hs (Pick, Arm).  Bloque 2: Hs (Pick, Arm, Mov, S/Reg.).
-  // Las celdas de numero entran justo 4 digitos ("0,63"): 18mm a 14pt.
-  // "S/Reg." a 14pt mide 15,1mm, asi que tambien entra en los 18mm de columna.
-  // Ancho total: 46+18+18 + 4 + 18*4 = 158mm, contra los 180mm utiles de un A4.
-  //
-  // Cuando el reporte abarca VARIOS dias se antepone una columna "Dias" de 14mm
-  // (172mm de ancho total, sigue entrando). Sin ella la tabla no se puede leer: cada
-  // fila cierra en 9:00 por dia trabajado, y cada uno trabajo una cantidad distinta.
-  // El PDF de un solo dia -que es el que manda el cron- queda exactamente igual que antes.
+  // Las celdas de numero entran justo 4 digitos ("0,63"): 18mm a 14pt, y "S/Reg." mide
+  // 15,1mm. Ancho total 46+18+18 + 4 + 18*4 = 158mm contra los 180mm utiles de un A4.
+  // Con la columna Dias (14mm) son 172mm, que siguen entrando.
   const anchosA = [46, 18, 18];
-  const anchosB = variosDias ? [14, 18, 18, 18, 18] : [18, 18, 18, 18];
-  const nB = anchosB.length;
   const HUECO = 4;
   const anchoA = anchosA.reduce((a, b) => a + b, 0);
-  const anchoB = anchosB.reduce((a, b) => a + b, 0);
   const hEnc = 9;
+  const xA = margen;
+  const xB = xA + anchoA + HUECO;
+  const cortesA: number[] = [xA];
+  anchosA.forEach((w) => cortesA.push(cortesA[cortesA.length - 1] + w));
+  const medioCol = (c: number[], i: number) => (c[i] + c[i + 1]) / 2;
+  // 14pt ~ 4.94mm: media altura de mayuscula son ~1.7mm para centrar en vertical
+  const medioFila = (yTop: number, h: number) => yTop + h / 2 + 1.7;
 
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(16); doc.setFont("helvetica", "bold");
@@ -260,77 +272,104 @@ function construirPdf(titulo: string, filas: Fila[], variosDias = false) {
 
   let y = margen + 14;
 
-  if (!filas.length) {
+  // El PDF de UN dia -el que manda el cron- es un solo bloque sin subtitulo, y mantiene
+  // el alto de fila elastico de siempre para que salga identico al de antes.
+  const unico = bloques.length === 1 && !bloques[0].subtitulo;
+  const hayFilas = bloques.some((b) => b.filas.length);
+
+  if (!hayFilas) {
     doc.setFontSize(14); doc.setFont("helvetica", "normal");
     doc.text("Sin registros de produccion para la fecha.", margen, y + 6);
     return doc;
   }
 
-  // Virgilio nunca paso de 7 operarios en un dia; si algun dia crece, la fila se achica
-  // sola en vez de derramarse fuera de la hoja (A4: 297mm de alto).
-  const disponible = 297 - margen * 2 - 14 - hEnc * 2 - 22;   // 22 = las 4 lineas del pie
-  const hFila = Math.max(6, Math.min(10, disponible / filas.length));
+  bloques.forEach((b) => {
+    if (!b.filas.length) return;
+    const anchosB = b.conDias ? [14, 18, 18, 18, 18] : [18, 18, 18, 18];
+    const nB = anchosB.length;
+    const anchoB = anchosB.reduce((a, c) => a + c, 0);
+    const cortesB: number[] = [xB];
+    anchosB.forEach((w) => cortesB.push(cortesB[cortesB.length - 1] + w));
 
-  const xA = margen;
-  const xB = xA + anchoA + HUECO;
-  const cortesA: number[] = [xA]; anchosA.forEach((w) => cortesA.push(cortesA[cortesA.length - 1] + w));
-  const cortesB: number[] = [xB]; anchosB.forEach((w) => cortesB.push(cortesB[cortesB.length - 1] + w));
-  const medioCol = (c: number[], i: number) => (c[i] + c[i + 1]) / 2;
-  // 14pt ~ 4.94mm: media altura de mayuscula son ~1.7mm para centrar en vertical
-  const medioFila = (yTop: number, h: number) => yTop + h / 2 + 1.7;
+    // Virgilio nunca paso de 7 operarios en un dia; si algun dia crece, la fila del PDF
+    // de un dia se achica sola en vez de derramarse fuera de la hoja.
+    const hFila = unico
+      ? Math.max(6, Math.min(10,
+          (ALTO_A4 - margen * 2 - 14 - hEnc * 2 - H_PIE) / b.filas.length))
+      : H_FILA_MULTI;
 
-  // --- Encabezados ---
-  doc.setFontSize(14); doc.setFont("helvetica", "bold");
-  doc.text("Empleado", medioCol(cortesA, 0), medioFila(y, hEnc * 2), { align: "center" });
-  doc.text("M3 x Hs", (cortesA[1] + cortesA[3]) / 2, medioFila(y, hEnc), { align: "center" });
-  doc.text("Pick", medioCol(cortesA, 1), medioFila(y + hEnc, hEnc), { align: "center" });
-  doc.text("Arm", medioCol(cortesA, 2), medioFila(y + hEnc, hEnc), { align: "center" });
+    const alto = (b.subtitulo ? H_SUBTITULO : 0) + hEnc * 2 + b.filas.length * hFila + 6;
+    // Salto de pagina SOLO si el bloque entero no entra en lo que queda de hoja: un dia
+    // por hoja desperdicia papel, y una tabla cortada al medio no se lee.
+    if (!unico && y > margen + 14 && y + alto > ALTO_A4 - margen) {
+      doc.addPage();
+      y = margen + 6;
+    }
 
-  doc.text("Hs", (cortesB[0] + cortesB[nB]) / 2, medioFila(y, hEnc), { align: "center" });
-  (variosDias ? ["Dias", "Pick", "Arm", "Mov", "S/Reg."] : ["Pick", "Arm", "Mov", "S/Reg."])
-    .forEach((t, i) =>
-      doc.text(t, medioCol(cortesB, i), medioFila(y + hEnc, hEnc), { align: "center" }));
+    if (b.subtitulo) {
+      doc.setFontSize(12); doc.setFont("helvetica", "bold");
+      doc.text(b.subtitulo, xA, y + 5);
+      y += H_SUBTITULO;
+    }
 
-  // Los encabezados van con borde grueso, en los dos bloques
-  doc.setDrawColor(0, 0, 0); doc.setLineWidth(GRUESO);
-  doc.rect(xA, y, anchoA, hEnc * 2);
-  doc.line(cortesA[1], y + hEnc, cortesA[3], y + hEnc);
-  doc.line(cortesA[1], y, cortesA[1], y + hEnc * 2);
-  doc.line(cortesA[2], y + hEnc, cortesA[2], y + hEnc * 2);
+    // --- Encabezados ---
+    doc.setFontSize(14); doc.setFont("helvetica", "bold");
+    doc.text("Empleado", medioCol(cortesA, 0), medioFila(y, hEnc * 2), { align: "center" });
+    doc.text("M3 x Hs", (cortesA[1] + cortesA[3]) / 2, medioFila(y, hEnc), { align: "center" });
+    doc.text("Pick", medioCol(cortesA, 1), medioFila(y + hEnc, hEnc), { align: "center" });
+    doc.text("Arm", medioCol(cortesA, 2), medioFila(y + hEnc, hEnc), { align: "center" });
 
-  doc.rect(xB, y, anchoB, hEnc * 2);
-  doc.line(cortesB[0], y + hEnc, cortesB[nB], y + hEnc);
-  for (let i = 1; i < nB; i++) doc.line(cortesB[i], y + hEnc, cortesB[i], y + hEnc * 2);
-  y += hEnc * 2;
+    doc.text("Hs", (cortesB[0] + cortesB[nB]) / 2, medioFila(y, hEnc), { align: "center" });
+    (b.conDias ? ["Dias", "Pick", "Arm", "Mov", "S/Reg."] : ["Pick", "Arm", "Mov", "S/Reg."])
+      .forEach((t, i) =>
+        doc.text(t, medioCol(cortesB, i), medioFila(y + hEnc, hEnc), { align: "center" }));
 
-  // --- Cuerpo ---
-  const yCuerpo = y;
-  doc.setFont("helvetica", "normal");
-  filas.forEach((f) => {
-    [f.nombre, celda(f.m3Pick), celda(f.m3Arm)].forEach((v, i) =>
-      doc.text(v, medioCol(cortesA, i), medioFila(y, hFila), { align: "center" }));
-    const colsB = [celdaHs(f.hsPick), celdaHs(f.hsArm), celdaHs(f.mov), celdaHs(f.sinReg)];
-    if (variosDias) colsB.unshift(String(f.dias));
-    colsB.forEach((v, i) =>
-      doc.text(v, medioCol(cortesB, i), medioFila(y, hFila), { align: "center" }));
-    y += hFila;
+    // Los encabezados van con borde grueso, en los dos bloques
+    doc.setDrawColor(0, 0, 0); doc.setLineWidth(GRUESO);
+    doc.rect(xA, y, anchoA, hEnc * 2);
+    doc.line(cortesA[1], y + hEnc, cortesA[3], y + hEnc);
+    doc.line(cortesA[1], y, cortesA[1], y + hEnc * 2);
+    doc.line(cortesA[2], y + hEnc, cortesA[2], y + hEnc * 2);
+
+    doc.rect(xB, y, anchoB, hEnc * 2);
+    doc.line(cortesB[0], y + hEnc, cortesB[nB], y + hEnc);
+    for (let i = 1; i < nB; i++) doc.line(cortesB[i], y + hEnc, cortesB[i], y + hEnc * 2);
+    y += hEnc * 2;
+
+    // --- Cuerpo ---
+    const yCuerpo = y;
+    doc.setFont("helvetica", "normal");
+    b.filas.forEach((f) => {
+      [f.nombre, celda(f.m3Pick), celda(f.m3Arm)].forEach((v, i) =>
+        doc.text(v, medioCol(cortesA, i), medioFila(y, hFila), { align: "center" }));
+      const colsB = [celdaHs(f.hsPick), celdaHs(f.hsArm), celdaHs(f.mov), celdaHs(f.sinReg)];
+      if (b.conDias) colsB.unshift(String(f.dias));
+      colsB.forEach((v, i) =>
+        doc.text(v, medioCol(cortesB, i), medioFila(y, hFila), { align: "center" }));
+      y += hFila;
+    });
+
+    // Lineas internas finas
+    doc.setLineWidth(FINO);
+    for (let i = 1; i < b.filas.length; i++) {
+      const yy = yCuerpo + i * hFila;
+      doc.line(xA, yy, xA + anchoA, yy);
+      doc.line(xB, yy, xB + anchoB, yy);
+    }
+    [1, 2].forEach((i) => doc.line(cortesA[i], yCuerpo, cortesA[i], y));
+    for (let i = 1; i < nB; i++) doc.line(cortesB[i], yCuerpo, cortesB[i], y);
+
+    // Borde exterior grueso
+    doc.setLineWidth(GRUESO);
+    doc.rect(xA, yCuerpo, anchoA, y - yCuerpo);
+    doc.rect(xB, yCuerpo, anchoB, y - yCuerpo);
+
+    y += 6;   // aire antes del dia siguiente
   });
 
-  // Lineas internas finas
-  doc.setLineWidth(FINO);
-  for (let i = 1; i < filas.length; i++) {
-    const yy = yCuerpo + i * hFila;
-    doc.line(xA, yy, xA + anchoA, yy);
-    doc.line(xB, yy, xB + anchoB, yy);
-  }
-  [1, 2].forEach((i) => doc.line(cortesA[i], yCuerpo, cortesA[i], y));
-  for (let i = 1; i < nB; i++) doc.line(cortesB[i], yCuerpo, cortesB[i], y);
-
-  // Borde exterior grueso
-  doc.setLineWidth(GRUESO);
-  doc.rect(xA, yCuerpo, anchoA, y - yCuerpo);
-  doc.rect(xB, yCuerpo, anchoB, y - yCuerpo);
-
+  // --- Nota al pie, una sola vez, abajo del ultimo bloque ---
+  y -= 6;
+  if (y + H_PIE > ALTO_A4 - margen) { doc.addPage(); y = margen + 6; }
   doc.setFontSize(9); doc.setFont("helvetica", "normal");
   doc.text("Horas en HH:MM. Mov = todo lo que no es Picking ni Armado (Carga Camion, Control",
            xA, y + 7);
@@ -338,9 +377,13 @@ function construirPdf(titulo: string, filas: Fila[], variosDias = false) {
            xA, y + 11);
   doc.text("S/Reg. = lo que no quedo registrado dentro de la jornada de 08:00 a 17:00.",
            xA, y + 15);
-  doc.text(variosDias
+  doc.text(bloques.some((b) => b.conDias)
     ? "Pick + Arm + Mov + S/Reg. = 9:00 por cada dia trabajado (columna Dias)."
     : "Pick + Arm + Mov + S/Reg. = 9:00 en todas las filas.", xA, y + 19);
+  if (bloques.length > 1) {
+    doc.text("Una tanda que cruza dos dias lleva su m3 a los dos, asi que los M3 x Hs de los dias "
+             + "no suman el del total.", xA, y + 23);
+  }
   return doc;
 }
 
@@ -438,52 +481,74 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const filas: Fila[] = (r.porPersona || [])
-      .map((p: any) => ({
-        nombre: empMap.get(String(p.legajo).trim()) || `Legajo ${p.legajo}`,
-        m3Pick: p.pickHs > 0 ? p.pickMt3 / p.pickHs : 0,
-        m3Arm: p.armHs > 0 ? p.armMt3 / p.armHs : 0,
-        hsPick: p.pickHs,
-        hsArm: p.armHs,
-        // Mov = todo lo que no es picking ni armado: carga de camion, control de remitos,
-        // recepciones, gondola, conteo, timbre y los tiempos muertos.
-        //
-        // Se saca restando del TOTAL. calculo.js reparte el dia con LIFO, o sea que cada
-        // instante se le imputa a UNA sola tarea (la ultima abierta), asi que la suma de
-        // todos los netos es igual al TOTAL y esta resta da exactamente el resto.
-        // Verificado el 11/09 rubro por rubro: Moncayo 2,58 Control Remitos + 1,37 Recep.
-        // Mercaderia + 0,47 Almuerzo + 0,15 Carga Camion = 4,57 = totHs - pick - arm.
-        //
-        // NO usar (opHs - pick - arm) + muertoHs: opHs es una UNION de intervalos y
-        // muertoHs son netos LIFO, asi que mezclarlos cuenta dos veces lo que se solapa.
-        // Ese camino le sumaba 0,47 hs de mas a Moncayo ese mismo dia.
-        mov: Math.max(0, p.totHs - p.pickHs - p.armHs),
-        // S/Reg. = las horas de la jornada que NO quedaron registradas, contadas hasta
-        // las 17:00. calculo.js ya recorta todos los segmentos a la ventana 08:00-17:00
-        // (splitParPorJornada), asi que totHs nunca pasa de 9 y esta resta no da negativo
-        // aunque alguien se quede trabajando despues de hora.
-        //
-        // Entra TODO lo que deja hueco dentro de esa ventana: llegar tarde, irse
-        // temprano y los baches del medio. Moncayo el 11/09 apreto Fin de Jornada 13:28
-        // y no registro nada mas: sus 3:32 hasta las 17:00 caen aca.
-        //
-        // Como Mov es el resto del total, la fila cierra sola:
-        //   Pick + Arm + Mov + S/Reg. = jornadaHs = 9:00, siempre.
-        // Con un rango son 9 hs por cada dia en que la persona registro algo. Los dias
-        // que no aparecio no se le cuentan: esto mide el hueco de los dias que trabajo,
-        // no las ausencias.
-        dias: p.dias || 1,
-        sinReg: Math.max(0, CONFIG.jornadaHs * (p.dias || 1) - p.totHs),
-      }))
-      // Mayor carga de trabajo arriba; entre los que no hicieron picking ni armado, por Mov
-      .sort((a: Fila, b: Fila) => (b.hsPick + b.hsArm) - (a.hsPick + a.hsArm) || b.mov - a.mov);
+    // Una fila del PDF a partir de un resumen de calculo.js. Sirve igual para un dia
+    // suelto (r.reportes, una fila por fecha+legajo) y para el acumulado del periodo
+    // (r.porPersona, que ademas deduplica las tandas que cruzan dia).
+    const aFila = (p: any, dias: number): Fila => ({
+      nombre: empMap.get(String(p.legajo).trim()) || `Legajo ${p.legajo}`,
+      m3Pick: p.pickHs > 0 ? p.pickMt3 / p.pickHs : 0,
+      m3Arm: p.armHs > 0 ? p.armMt3 / p.armHs : 0,
+      hsPick: p.pickHs,
+      hsArm: p.armHs,
+      // Mov = todo lo que no es picking ni armado: carga de camion, control de remitos,
+      // recepciones, gondola, conteo, timbre y los tiempos muertos.
+      //
+      // Se saca restando del TOTAL. calculo.js reparte el dia con LIFO, o sea que cada
+      // instante se le imputa a UNA sola tarea (la ultima abierta), asi que la suma de
+      // todos los netos es igual al TOTAL y esta resta da exactamente el resto.
+      // Verificado el 11/09 rubro por rubro: Moncayo 2,58 Control Remitos + 1,37 Recep.
+      // Mercaderia + 0,47 Almuerzo + 0,15 Carga Camion = 4,57 = totHs - pick - arm.
+      //
+      // NO usar (opHs - pick - arm) + muertoHs: opHs es una UNION de intervalos y
+      // muertoHs son netos LIFO, asi que mezclarlos cuenta dos veces lo que se solapa.
+      mov: Math.max(0, p.totHs - p.pickHs - p.armHs),
+      // S/Reg. = las horas de la jornada que NO quedaron registradas, contadas hasta las
+      // 17:00. calculo.js ya recorta los segmentos a la ventana 08:00-17:00, asi que
+      // totHs nunca pasa de 9 y la resta no da negativo aunque alguien siga despues de
+      // hora. Entra todo lo que deja hueco: llegar tarde, irse temprano y los baches del
+      // medio. Con varios dias son 9 hs por cada dia que la persona registro algo; los
+      // dias que no aparecio no se le cuentan (mide huecos, no ausencias).
+      sinReg: Math.max(0, CONFIG.jornadaHs * dias - p.totHs),
+      dias,
+    });
+    // Mayor carga de trabajo arriba; entre los que no hicieron picking ni armado, por Mov
+    const ordenar = (f: Fila[]) =>
+      f.sort((a, b) => (b.hsPick + b.hsArm) - (a.hsPick + a.hsArm) || b.mov - a.mov);
+
+    const filas: Fila[] = ordenar((r.porPersona || []).map((p: any) => aFila(p, p.dias || 1)));
+
+    // Un bloque por dia dentro del MISMO PDF (no una hoja por dia), y al final el
+    // acumulado del periodo. Con un solo dia queda un unico bloque sin subtitulo, que es
+    // exactamente el PDF que manda el cron.
+    const bloques: Bloque[] = [];
+    if (variosDias) {
+      const porDia = new Map<string, any[]>();
+      (r.reportes || []).forEach((rep: any) => {
+        const dia = porDia.get(rep.fecha) || [];
+        dia.push(rep);
+        porDia.set(rep.fecha, dia);
+      });
+      // r.reportes ordena por fecha con localeCompare sobre DD/MM/YYYY, que se desordena
+      // apenas el rango cruza de mes. Aca se ordena por la fecha de verdad.
+      const aIso = (f: string) => f.slice(6, 10) + f.slice(3, 5) + f.slice(0, 2);
+      [...porDia.keys()].sort((a, b) => aIso(a).localeCompare(aIso(b))).forEach((fechaDia) => {
+        bloques.push({
+          subtitulo: fechaDia,
+          filas: ordenar((porDia.get(fechaDia) || []).map((rep: any) => aFila(rep, 1))),
+          conDias: false,
+        });
+      });
+      bloques.push({ subtitulo: "Total del periodo", filas, conDias: true });
+    } else {
+      bloques.push({ subtitulo: "", filas, conDias: false });
+    }
 
     const corto = (iso: string) => iso.slice(8, 10) + "/" + iso.slice(5, 7);
     const fechaLinda = hasta.split("-").reverse().join("/");
     const titulo = variosDias
       ? `Logistica Virgilio - ${corto(desde)} al ${corto(hasta)}/${hasta.slice(0, 4)}`
       : `Logistica Virgilio - ${fechaLinda}`;
-    const doc = construirPdf(titulo, filas, variosDias);
+    const doc = construirPdf(titulo, bloques);
 
     const archivo = `virgilio_${variosDias ? desde + "_a_" + hasta : fecha}_${Date.now()}.pdf`;
     const bytes = new Uint8Array(doc.output("arraybuffer"));
@@ -503,11 +568,14 @@ Deno.serve(async (req: Request) => {
         solo_pdf: true, fecha, desde, hasta, operarios: filas.length, pdfUrl,
         pdf_bytes: bytes.length, pdf_base64: btoa(bin),
         legajosExcluidos: CONFIG.legajosTest,
-        filas: filas.map((f) => ({
-          nombre: f.nombre, dias: f.dias,
-          m3Pick: celda(f.m3Pick), m3Arm: celda(f.m3Arm),
-          hsPick: celdaHs(f.hsPick), hsArm: celdaHs(f.hsArm), mov: celdaHs(f.mov),
-          sinReg: celdaHs(f.sinReg),
+        bloques: bloques.map((b) => ({
+          subtitulo: b.subtitulo || "(unico)",
+          filas: b.filas.map((f) => ({
+            nombre: f.nombre, dias: f.dias,
+            m3Pick: celda(f.m3Pick), m3Arm: celda(f.m3Arm),
+            hsPick: celdaHs(f.hsPick), hsArm: celdaHs(f.hsArm), mov: celdaHs(f.mov),
+            sinReg: celdaHs(f.sinReg),
+          })),
         })),
       });
     }
