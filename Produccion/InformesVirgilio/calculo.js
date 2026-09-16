@@ -37,7 +37,7 @@ const CONFIG = {
   // Únicos códigos que PUEDEN cruzar día (los que la app NO auto-cierra). Todo lo
   // demás → olvido si cruza. pick=EP/TP, arm=AP/TAP no se auto-cierran; CR y RR son
   // los SURVIVING_TOGGLES de la app (sobreviven al cambio de día). Cuando cruzan,
-  // splitParPorJornada cuenta solo el día de inicio (no imputa el día 2).
+  // splitParPorJornada los cuenta en el día del CIERRE (donde se terminó el trabajo).
   // MG (Góndola) y CP (Completar Pedido) NO cruzan: hoy son módulos que emiten
   // ts_inicio y miden un lapso corto; un par que cruce día es basura → olvido.
   // PASO 1 los toma igual mismo-día por ts_inicio.
@@ -177,41 +177,37 @@ function unionHs(intervals) {
 /**
  * Devuelve segmentos por jornada (8-17h).
  * - Mismo día → 1 segmento, recortado a la ventana [08:00, 17:00].
- * - Cruza el día (cualquier salto) → SOLO el día de inicio: [start recortado a 08:00] → 17:00.
- *   El día siguiente NO se imputa.
+ * - Cruza el día → 1 segmento en el DÍA DEL CIERRE: [08:00 → cierre], recortado a 17:00.
  *
- * Por qué no se cuenta el día 2 (decisión de Elías, 2026-09-16, confirmada contra
- * el código de produccion-virgilio):
- *   - La app NO auto-cierra picking (EP/TP) ni armado (AP/TAP): sobreviven al cambio
- *     de día y recién cierran cuando el operario retoma al otro día (el cierre lleva
- *     ts_inicio = apertura de ayer), así que el par cruza día.
- *   - Los toggles que sí sobreviven (SURVIVING_TOGGLES = CR, RR) tampoco se auto-cierran.
- *   - Un par que cruza día casi siempre es un OLVIDO de cierre. Imputar el día 2 desde
- *     las 08:00 inventa horas que nadie trabajó e infla la cobertura (achica S/Reg).
- *   - El propio monitor de la app: "las tandas que cruzan el borde no se miden".
- * El día 1 sí se cuenta (hasta 17:00) porque ese trabajo ocurrió. El par queda
- * igualmente registrado en `cruces` (cruzaDia=true), o sea que Logística lo ve aparte.
+ * Regla "lo que se terminó se cuenta el día que se terminó" (Elías, 2026-09-16,
+ * verificada con eventos reales: D67F, E09A, E23A). Un par que cruza día se abrió un día
+ * y se continuó/terminó otro; el trabajo real está en el día del CIERRE (el detalle TAL
+ * del armado y el PKC del picking viajan pegados al cierre). Contarlo en el día de
+ * apertura le da tiempo fantasma al día que solo se abrió (donde el operario suele seguir
+ * con otras tareas o quedar bloqueado por un faltante). El día de apertura y los días
+ * intermedios no laborables (finde) no reciben nada de este par; el LIFO se encarga de
+ * que, si esa mañana además hizo otras tareas, este par se quede solo con lo que sobra.
  */
 function splitParPorJornada(start, end) {
   if (!start || !end || end <= start) return [];
   const JF = CONFIG.jornadaFinHora;
   const JI = CONFIG.jornadaInicioHora;
+  const cruzaDia = start.toDateString() !== end.toDateString();
 
-  const finJornadaHoy = new Date(start.getFullYear(), start.getMonth(), start.getDate(), JF, 0, 0);
-  const inicioJornadaHoy = new Date(start.getFullYear(), start.getMonth(), start.getDate(), JI, 0, 0);
+  if (!cruzaDia) {
+    // Mismo día: recortar a la ventana [08:00, 17:00].
+    const ini = new Date(start.getFullYear(), start.getMonth(), start.getDate(), JI, 0, 0);
+    const fin = new Date(start.getFullYear(), start.getMonth(), start.getDate(), JF, 0, 0);
+    const dtIni = start < ini ? ini : start;
+    const dtFin = end > fin ? fin : end;
+    return [{ fecha: fechaArg(start), dtIni, dtFin, hs: dtIni < dtFin ? (dtFin - dtIni) / 36e5 : 0 }].filter(s => s.hs > 0);
+  }
 
-  // Recortar el inicio a las 08:00: lo trabajado antes de la jornada no cuenta
-  // (si no, totHs pasa de 9 y S/Reg = jornadaHs - totHs da negativo).
-  const dtIni = start < inicioJornadaHoy ? inicioJornadaHoy : start;
-
-  // Fin efectivo: mismo día → end real; cruza el día → 17:00 del día de inicio.
-  const dtFin = end <= finJornadaHoy ? end : finJornadaHoy;
-
-  return [{
-    fecha: fechaArg(start),
-    dtIni, dtFin,
-    hs: dtIni < dtFin ? (dtFin - dtIni) / 36e5 : 0
-  }].filter(s => s.hs > 0);
+  // Cruza el día: se cuenta SOLO en el día del CIERRE, de las 08:00 al cierre (recortado a 17:00).
+  const iniEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), JI, 0, 0);
+  const finEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), JF, 0, 0);
+  const dtFin = end > finEnd ? finEnd : end;
+  return [{ fecha: fechaArg(end), dtIni: iniEnd, dtFin, hs: iniEnd < dtFin ? (dtFin - iniEnd) / 36e5 : 0 }].filter(s => s.hs > 0);
 }
 
 function procesar(dataCruda, fechaDesde, fechaHasta) {
