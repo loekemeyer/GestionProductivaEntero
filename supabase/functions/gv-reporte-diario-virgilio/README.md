@@ -32,6 +32,14 @@ y S/Reg. no da negativo aunque alguien siga trabajando despues de hora. Y como M
 resto del total, **cada fila cierra en 9:00**: `Pick + Arm + Mov + S/Reg. = 9:00`. Eso hace
 de control: si una fila no da 9:00, hay un bug.
 
+**Pares que cruzan de dia (picking/armado y los toggles CR/RR):** desde 2026-09-16 se cuenta
+**solo el dia de inicio** (hasta las 17:00), el dia siguiente NO se imputa. La app no
+auto-cierra esos codigos, asi que un par que cruza casi siempre es un olvido de cierre;
+imputar el dia 2 desde las 08:00 inventaba horas que nadie trabajo y achicaba el S/Reg. El
+par igual queda en `crossDia` para verlo aparte. Ademas RR (Recep. Remitos) y CP (Completar
+Pedido) ahora cuentan como tarea (caen en **Mov**); antes no estaban en `CONFIG` y su tiempo
+caia en S/Reg.
+
 Un cero siempre se muestra como `-`.
 
 ## De donde salen los numeros

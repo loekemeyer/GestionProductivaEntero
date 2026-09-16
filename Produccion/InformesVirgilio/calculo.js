@@ -31,12 +31,17 @@ const CONFIG = {
   ],
   feriadosAPI: [],     // se llena dinámicamente desde api.argentinadatos.com (formato YYYY-MM-DD)
   operativoPares: ['EP','TP','AP','TAP'],
-  operativoTog:   ['CC','RT','RI','EI','MG','CR','CT','AT'],
+  operativoTog:   ['CC','RT','RI','EI','MG','CR','CT','AT','RR','CP'],
   muertoTog:      ['PB','PC','Limp','Perm'],
   muertoNombres: { PB:'Baño', PC:'Almuerzo', Limp:'Limpieza', Perm:'Permiso' },
-  // Únicos códigos que PUEDEN cruzar día. Todo lo demás → olvido si cruza.
-  // pick=EP/TP, arm=AP/TAP, CR=Control Remitos, MG=Góndola
-  puedeCruzaDia: ['pick', 'arm', 'CR', 'MG'],
+  // Únicos códigos que PUEDEN cruzar día (los que la app NO auto-cierra). Todo lo
+  // demás → olvido si cruza. pick=EP/TP, arm=AP/TAP no se auto-cierran; CR y RR son
+  // los SURVIVING_TOGGLES de la app (sobreviven al cambio de día). Cuando cruzan,
+  // splitParPorJornada cuenta solo el día de inicio (no imputa el día 2).
+  // MG (Góndola) y CP (Completar Pedido) NO cruzan: hoy son módulos que emiten
+  // ts_inicio y miden un lapso corto; un par que cruce día es basura → olvido.
+  // PASO 1 los toma igual mismo-día por ts_inicio.
+  puedeCruzaDia: ['pick', 'arm', 'CR', 'RR'],
   // Filas del pivot del Reporte Diario, en orden
   filasPivot: [
     { key:'pick',  label:'Picking',         tipo:'op',   rendType:'mt3xh' },
@@ -49,6 +54,8 @@ const CONFIG = {
     { key:'MG',    label:'Góndola',         tipo:'op',   rendType:'none' },
     { key:'CT',    label:'Conteo',          tipo:'op',   rendType:'none' },
     { key:'AT',    label:'Atendí Timbre',   tipo:'op',   rendType:'none' },
+    { key:'RR',    label:'Recep. Remitos',  tipo:'op',   rendType:'none' },
+    { key:'CP',    label:'Completar Pedido', tipo:'op',  rendType:'none' },
     { key:'sep1',  label:'',                tipo:'sep' },
     { key:'PB',    label:'Baño',            tipo:'mu',   rendType:'none' },
     { key:'PC',    label:'Almuerzo',        tipo:'mu',   rendType:'none' },
@@ -169,10 +176,21 @@ function unionHs(intervals) {
 
 /**
  * Devuelve segmentos por jornada (8-17h).
- * - Mismo día → 1 segmento.
- * - Cruza al siguiente día LABORABLE → 2 segmentos: uno por día (start→17:00 + 08:00→end).
- *   Cada día recibe SOLO su parte trabajada en jornada.
- * - Cruza 2+ días laborables → OLVIDO. Devuelve [].
+ * - Mismo día → 1 segmento, recortado a la ventana [08:00, 17:00].
+ * - Cruza el día (cualquier salto) → SOLO el día de inicio: [start recortado a 08:00] → 17:00.
+ *   El día siguiente NO se imputa.
+ *
+ * Por qué no se cuenta el día 2 (decisión de Elías, 2026-09-16, confirmada contra
+ * el código de produccion-virgilio):
+ *   - La app NO auto-cierra picking (EP/TP) ni armado (AP/TAP): sobreviven al cambio
+ *     de día y recién cierran cuando el operario retoma al otro día (el cierre lleva
+ *     ts_inicio = apertura de ayer), así que el par cruza día.
+ *   - Los toggles que sí sobreviven (SURVIVING_TOGGLES = CR, RR) tampoco se auto-cierran.
+ *   - Un par que cruza día casi siempre es un OLVIDO de cierre. Imputar el día 2 desde
+ *     las 08:00 inventa horas que nadie trabajó e infla la cobertura (achica S/Reg).
+ *   - El propio monitor de la app: "las tandas que cruzan el borde no se miden".
+ * El día 1 sí se cuenta (hasta 17:00) porque ese trabajo ocurrió. El par queda
+ * igualmente registrado en `cruces` (cruzaDia=true), o sea que Logística lo ve aparte.
  */
 function splitParPorJornada(start, end) {
   if (!start || !end || end <= start) return [];
@@ -180,49 +198,20 @@ function splitParPorJornada(start, end) {
   const JI = CONFIG.jornadaInicioHora;
 
   const finJornadaHoy = new Date(start.getFullYear(), start.getMonth(), start.getDate(), JF, 0, 0);
+  const inicioJornadaHoy = new Date(start.getFullYear(), start.getMonth(), start.getDate(), JI, 0, 0);
 
-  // Caso 1: mismo día
-  if (end <= finJornadaHoy) {
-    return [{
-      fecha: fechaArg(start),
-      dtIni: start, dtFin: end,
-      hs: (end - start) / 36e5
-    }].filter(s => s.hs > 0);
-  }
+  // Recortar el inicio a las 08:00: lo trabajado antes de la jornada no cuenta
+  // (si no, totHs pasa de 9 y S/Reg = jornadaHs - totHs da negativo).
+  const dtIni = start < inicioJornadaHoy ? inicioJornadaHoy : start;
 
-  const tmp = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
-  const proxLab = siguienteDiaLaborable(tmp);
-  const inicioProxLab = new Date(proxLab.getFullYear(), proxLab.getMonth(), proxLab.getDate(), JI, 0, 0);
-  const finProxLab    = new Date(proxLab.getFullYear(), proxLab.getMonth(), proxLab.getDate(), JF, 0, 0);
+  // Fin efectivo: mismo día → end real; cruza el día → 17:00 del día de inicio.
+  const dtFin = end <= finJornadaHoy ? end : finJornadaHoy;
 
-  // Caso 2: cruza al siguiente día laborable
-  if (end <= finProxLab) {
-    const labIntermedios = diasLaborablesIntermedios(start, proxLab);
-    if (labIntermedios > 0) return [];   // olvido (días laborables sin actividad)
-
-    const segs = [];
-    // Día de inicio: start → 17:00 (si start está antes del fin de jornada)
-    if (start < finJornadaHoy) {
-      segs.push({
-        fecha: fechaArg(start),
-        dtIni: start, dtFin: finJornadaHoy,
-        hs: (finJornadaHoy - start) / 36e5
-      });
-    }
-    // Día de fin: 08:00 → end
-    const dtIniFin = end > inicioProxLab ? inicioProxLab : end;
-    if (dtIniFin < end) {
-      segs.push({
-        fecha: fechaArg(proxLab),
-        dtIni: dtIniFin, dtFin: end,
-        hs: (end - dtIniFin) / 36e5
-      });
-    }
-    return segs.filter(s => s.hs > 0);
-  }
-
-  // Caso 3: cruza 2+ días laborables → OLVIDO
-  return [];
+  return [{
+    fecha: fechaArg(start),
+    dtIni, dtFin,
+    hs: dtIni < dtFin ? (dtFin - dtIni) / 36e5 : 0
+  }].filter(s => s.hs > 0);
 }
 
 function procesar(dataCruda, fechaDesde, fechaHasta) {
@@ -305,7 +294,7 @@ function procesar(dataCruda, fechaDesde, fechaHasta) {
   function pushSegmentos(tipo, legajo, dtStart, dtEnd, extra) {
     const cruzaDia = dtStart.toDateString() !== dtEnd.toDateString();
     const codigoCheck = extra?.code || tipo;
-    // Solo pick/arm/CR/MG pueden cruzar día. Resto → olvido si cruza.
+    // Cruzan día solo los de CONFIG.puedeCruzaDia (pick/arm/CR/RR). Resto → olvido si cruza.
     const noCruza = !CONFIG.puedeCruzaDia.includes(codigoCheck);
     const splits = (cruzaDia && noCruza) ? [] : splitParPorJornada(dtStart, dtEnd);
     const hsImputada = splits.reduce((s,x) => s + x.hs, 0);
@@ -456,7 +445,7 @@ function procesar(dataCruda, fechaDesde, fechaHasta) {
         pushSegmentos('cc', legajo, a.dt, b.dt, { tanda });
       }
     );
-    ['RT','RI','EI','MG','CR','CT','AT'].forEach(code => {
+    ['RT','RI','EI','MG','CR','CT','AT','RR','CP'].forEach(code => {
       emparejarToggles(
         evsLegacy.filter(e => e.opcion === code && !e.dtInicio),
         (a, b) => pushSegmentos('opTog', legajo, a.dt, b.dt, { code })
@@ -600,7 +589,7 @@ function procesar(dataCruda, fechaDesde, fechaHasta) {
     const ccPairs   = segs.filter(s => s.tipo === 'cc').map(s => ({ tanda: s.tanda, hs: s.hs }));
 
     const opTogPorCode = {};
-    ['RT','RI','EI','MG','CR','CT','AT'].forEach(c => opTogPorCode[c] = 0);
+    ['RT','RI','EI','MG','CR','CT','AT','RR','CP'].forEach(c => opTogPorCode[c] = 0);
     let opTogHs = 0;
     segs.filter(s => s.tipo === 'opTog').forEach(s => {
       opTogPorCode[s.code] = (opTogPorCode[s.code] || 0) + s.hs;
@@ -892,6 +881,7 @@ function agruparParaPivot(reportes, getMt3Fn, paresOriginales, fjEventos) {
         RI:   { hs: 0, olv: ol.RI || 0 }, EI: { hs: 0, olv: ol.EI || 0 },
         MG:   { hs: 0, olv: ol.MG || 0 }, CT: { hs: 0, olv: ol.CT || 0 },
         AT:   { hs: 0, olv: ol.AT || 0 },
+        RR:   { hs: 0, olv: ol.RR || 0 }, CP: { hs: 0, olv: ol.CP || 0 },
         PB:   { hs: 0, olv: ol.PB || 0 }, PC: { hs: 0, olv: ol.PC || 0 },
         Limp: { hs: 0, olv: ol.Limp || 0 }, Perm: { hs: 0, olv: ol.Perm || 0 },
         opHs: 0, muHs: 0, totHs: 0,
@@ -914,6 +904,8 @@ function agruparParaPivot(reportes, getMt3Fn, paresOriginales, fjEventos) {
     g.MG.hs   += (r.opTogPorCode?.MG || 0);
     g.CT.hs   += (r.opTogPorCode?.CT || 0);
     g.AT.hs   += (r.opTogPorCode?.AT || 0);
+    g.RR.hs   += (r.opTogPorCode?.RR || 0);
+    g.CP.hs   += (r.opTogPorCode?.CP || 0);
     g.PB.hs   += (r.muertoPorTipo?.PB?.hs || 0);
     g.PC.hs   += (r.muertoPorTipo?.PC?.hs || 0);
     g.Limp.hs += (r.muertoPorTipo?.Limp?.hs || 0);
@@ -951,6 +943,7 @@ function agruparParaPivot(reportes, getMt3Fn, paresOriginales, fjEventos) {
         cc:   { hs:0, mt3:0, est:false, tandas:new Set(), olv:0 },
         cr:{hs:0,olv:0}, RT:{hs:0,olv:0}, RI:{hs:0,olv:0}, EI:{hs:0,olv:0},
         MG:{hs:0,olv:0}, CT:{hs:0,olv:0}, AT:{hs:0,olv:0},
+        RR:{hs:0,olv:0}, CP:{hs:0,olv:0},
         PB:{hs:0,olv:0}, PC:{hs:0,olv:0}, Limp:{hs:0,olv:0}, Perm:{hs:0,olv:0},
         opHs:0, muHs:0, totHs:0,
         tarde:{hs:0}, temprano:{hs:0}, gap:{hs:0}, faltante:{hs:0},
