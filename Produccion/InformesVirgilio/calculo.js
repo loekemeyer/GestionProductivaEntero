@@ -662,9 +662,18 @@ function procesar(dataCruda, fechaDesde, fechaHasta) {
         salidaTemprana = (finJor - ultimoTrunc) / 36e5;
       }
     }
-    // Gap dentro del día = presencia (primer → último) - tiempo trabajado (unión)
+    // Gap dentro del día = presencia (primer → último) - tiempo trabajado (unión).
+    // La presencia se RECORTA a la ventana [08:00, 17:00]: trabajar antes de las 08 o
+    // seguir después de las 17 no debe inflar el bache, porque el tiempo trabajado ya
+    // está recortado a esa ventana (splitParPorJornada). Sin este recorte, un inicio
+    // 07:01 o un cierre 17:40 metían tiempo de fuera de jornada en gapHs y el
+    // "Tiempo Faltante" de Informes daba de más (no afecta al PDF, que usa 9 - totHs).
     if (segs.length > 0 && primero && ultimo) {
-      const presencia = (ultimo - primero) / 36e5;
+      const iniJor = new Date(primero.getFullYear(), primero.getMonth(), primero.getDate(), JI, 0, 0);
+      const finJor = new Date(ultimo.getFullYear(),  ultimo.getMonth(),  ultimo.getDate(),  JF, 0, 0);
+      const p0 = Math.max(+primero, +iniJor);
+      const p1 = Math.min(+ultimo,  +finJor);
+      const presencia = Math.max(0, p1 - p0) / 36e5;
       const intervalos = segs.map(s => ({ start: s.dtIni, end: s.dtFin }));
       const trabajado = unionHs(intervalos);
       gapHs = Math.max(0, presencia - trabajado);
