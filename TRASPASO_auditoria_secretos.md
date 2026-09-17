@@ -244,3 +244,61 @@ abierto en internet.
 Y en `LecturaCVs/lib/auth.ts` hay dos **fallas abiertas**: `authRequired()` devuelve `false` si
 faltan las credenciales de mail, y `verifySessionToken()` devuelve `true` si no hay secreto de
 firma. Además `AUTH_SECRET` cae por defecto a `GMAIL_APP_PASSWORD`.
+
+## 8. Barrido final — lo que estaba SOLO en el chat
+
+Antes de cerrar se revisó qué existía únicamente dicho en la conversación. Estos cinco pasaron
+a la auditoría (todos **abiertos**, ninguno arreglado):
+
+| problema | por qué importa |
+|---|---|
+| `admin-gate.js` recibe `ADMIN_PANEL_PASSWORD` en el cliente y compara la contraseña ahí | quien tiene el `.exe` tiene la contraseña del panel |
+| El login de LecturaCVs falla **ABIERTO** por dos caminos, y firma con la clave del mail | una variable mal cargada deja Reclutamiento sin candado |
+| Un archivo `recruiting.env` al lado del `.exe` pisa **TODOS** los secretos de Supabase | quien escriba un archivo ahí redirige las credenciales |
+| `planify_recruiting_config` usa **lista negra**: cada secreto nuevo queda expuesto por defecto | el default es exponer; debería ser lista blanca |
+| `OPENAI_API_KEY` quedó con el texto `PEGAR_ACA_LA_NUEVA` en vez de una clave | la transcripción de notas de voz no puede funcionar |
+
+### El de OPENAI es el que más urge
+
+`lecturacvs.app_secrets.OPENAI_API_KEY` vale literalmente `PEGAR_ACA_LA_NUEVA`, 18 caracteres.
+Salió de un SQL con placeholder que se corrió sin reemplazar, en una sesión anterior — el UPDATE
+no tenía guarda. **De ahí viene la costumbre de usar siempre `returning` y una guarda tipo
+`and length(t) > 150`.** La `ANTHROPIC_API_KEY` de al lado sí es real.
+
+### Cosas menores, no registradas como problema
+
+- **`Gestopclientes-Bot`**: tercer system user de Meta que no corresponde a ningún token nuestro.
+  O lo usa algo fuera de estos repos, o quedó huérfano. Un clic en "Activos asignados" lo aclara.
+- **`n8n-system` tiene acceso a la cuenta de WhatsApp "Loekemeyer Selección"** y no lo necesita
+  (n8n no se usa, confirmado por Elías). Es permiso de más; se saca con el tachito.
+- **El número `+54 9 11 6864-8618` tiene `name_status: DECLINED`** — Meta rechazó el nombre para
+  mostrar "N8N Loekemeyer". Los mensajes salen igual, calidad **GREEN**. No afecta nada hoy.
+- **Existe `__bootstrap_token_next__`** en `app_secrets` (arranca `rec_2e`), creado en una sesión
+  anterior para rotar el bootstrap token. La RPC acepta los dos. El `.exe` sigue usando el viejo
+  (`rec_49`). Decidir: usarlo en el próximo release o borrarlo, pero no dejar dos vivos.
+
+### Estado de la sesión al cerrar
+
+- **Nada sin commitear ni sin pushear** en los tres repos.
+- **Ningún recordatorio ni cron de Claude armado** — no queda nada esperando en una sesión muerta.
+- **Los tres repos se clonaron y se leyeron, nada más.** Cero escrituras en Planify y LecturaCVs.
+  Lo único que se escribió en la base de Planify fueron filas de `planify.tasks`.
+
+### Cómo repetir este barrido
+
+```bash
+git -C <repo> status --porcelain           # nada sin commitear
+git -C <repo> rev-list --count origin/main..HEAD   # nada sin pushear
+```
+
+```sql
+-- problemas abiertos, por gravedad
+select id, severidad, titulo from github_repo_problemas.v_problemas
+ where estado in ('abierto','en_curso')
+ order by array_position(array['critico','alto','medio','bajo']::text[], severidad), id;
+
+-- tareas abiertas de Elias
+select id, name, date from planify.tasks where employee_id = 1 and not done order by id desc;
+```
+
+Y en el chat: `list_triggers` para confirmar que no quedó ningún recordatorio armado.
