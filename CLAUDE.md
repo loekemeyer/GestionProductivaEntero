@@ -549,14 +549,43 @@ componentes/CE/asignacion (ver AUDITORIA_RUTAS_2026-04-18.md punto 7).
 - La tabla `Empleados` tiene campo `Activo` (valor "SI" para activos)
 - La tabla `Matrices` tiene `N_Matriz`, `Matriz` (nombre), `Tiempo_Historico`
 
-## ⚠ REGLA: por qué Claude pide permiso para TODO — y cómo se apaga
+## ⚠ REGLA: por qué Claude pide permiso para TODO — y dónde se apaga de verdad
 
-**Vale para TODOS los repos** (copiar este bloque y el archivo `scripts/claude-permisos.sh` al
-repo nuevo, igual que el bloque de Planify). Thomas, 2026-09-18: *"otras sesiones están pidiendo
-muchísimos permisos para editar todo y antes no pasaba"*. Son **dos** cosas distintas, y hacen
-falta las dos: arreglar una sola no cambia nada.
+**Vale para TODOS los repos** (copiar este bloque al `CLAUDE.md` del repo nuevo, junto con el
+bloque `permissions` de `.claude/settings.json`). Thomas, 2026-09-18: *"otras sesiones están
+pidiendo muchísimos permisos para editar todo y antes no pasaba"*. Son tres cosas, en este orden.
 
-### 1. Un `hooks` mal formado tira el `.claude/settings.json` ENTERO, sin avisar
+### 1. Lo que MÁS pesa es el MODO de la sesión, y no se configura por archivo
+
+En **Manual** (config value `default`) **sólo las lecturas corren solas**: todo lo demás pregunta,
+haya o no regla de `allow`. En **Auto** corre todo con chequeo en segundo plano. El modo se elige
+en el **selector de la sesión** (en la web, arriba del cuadro de mensaje) y se puede cambiar con
+la sesión andando.
+
+⚠ `permissions.defaultMode` con `"auto"` o `"bypassPermissions"` **se ignora** desde el
+`.claude/settings.json` de un repo; sólo vale desde el settings de **usuario**, que en cloud no se
+lee (punto 2). O sea: **en cloud, el modo se elige a mano y punto.** Una sesión en Manual va a
+pedir permiso para todo por más lista que haya.
+
+Cómo se reconoce: si te pide autorización hasta para un `select`, mirá el modo antes que el JSON.
+
+### 2. La lista de permisos sale del `.claude/settings.json` DEL REPO — el único que llega
+
+La doc de Claude Code lo dice sin vueltas:
+
+> *"**User and project local settings** (`~/.claude/settings.json` and `.claude/settings.local.json`):
+> **not read**. Both stay on your machine, and the local file isn't in the clone."*
+
+Escribirlo desde el setup script del entorno **no sirve** para una sesión cloud. El 18/09 se perdió
+medio día por creer lo contrario.
+
+⚠ **Y hay una condición que tumba hasta eso:** el repo manda **sólo si la sesión tiene UN
+repositorio**. Con varios adjuntos la sesión arranca **arriba** de los clones y de cada
+`.claude/settings.json` toma únicamente los plugins y marketplaces — **ni permisos, ni hooks, ni
+`env`**. Una sesión con 3 repos adjuntos pide permiso para todo y no hay archivo que lo arregle:
+ahí el modo es lo único que queda.
+
+### 3. Un `hooks` mal formado tira el archivo ENTERO, sin avisar
 
 El formato viejo —`{"matcher":"", "command":"..."}`— ya no vale. Hoy va con el array `hooks`
 adentro:
@@ -566,53 +595,32 @@ adentro:
   "hooks": [ { "type": "command", "command": "echo hola" } ] } ] }
 ```
 
-Con el formato viejo Claude Code **descarta el archivo completo**, así que la `permissions.allow`
-(Read, Edit, Write, git…) deja de existir y **todo vuelve a preguntar**. No tira ningún error:
-simplemente no pasa nada. Así estuvo este repo desde el commit `542ab7e` (16/09), y de yapa el
-hook de caveman nunca corrió ni una vez.
+Con el formato viejo Claude Code **descarta el `.claude/settings.json` completo**, así que la
+`permissions.allow` deja de existir. No tira ningún error: simplemente no pasa nada. Así estuvo
+este repo desde el commit `542ab7e` (16/09), y de yapa el hook de caveman nunca corrió ni una vez.
 
-**Cómo se ve la diferencia** (es el chequeo, no hay otro):
+### ⚠ Cómo NO probarlo: `claude --print` adentro del contenedor
 
-```bash
-echo 'deci solo ok' | claude --print 2>&1 | grep -i ignoring
-# aparece "Ignoring N permissions.allow entries…"  → el archivo SE LEE (bien)
-# no aparece NADA                                  → el archivo se descartó (mal)
-```
+Ese `claude` es un CLI local: **sí** lee `~/.claude/settings.json` y **sí** exige el trust del
+workspace (`~/.claude.json` → `hasTrustDialogAccepted`). La sesión cloud no hace ninguna de las
+dos cosas. El 18/09 esa prueba dio verde tres veces seguidas mientras el usuario seguía
+autorizando de a uno. **Se prueba en una sesión nueva de verdad**; el cartel dice el nombre de la
+herramienta, y ése es el string que se agrega a `allow`.
 
-### 2. Y aunque se lea, un workspace **sin trust** ignora esa allow list igual
+### Lo que hay hoy en `.claude/settings.json`
 
-El mensaje lo dice con todas las letras: *"Ignoring 36 permissions.allow entries from
-.claude/settings.json: this workspace has not been trusted"*. El trust vive **fuera del repo**, en
-`~/.claude.json` → `projects["<dir>"].hasTrustDialogAccepted`. En los contenedores remotos de
-Claude Code web ese archivo **nace vacío en cada sesión**, así que ningún repo está confiado nunca.
+`allow`: lectura/edición, subagentes, `WebFetch`/`WebSearch`, **`Bash` entero** y el SQL de
+Supabase (`execute_sql`) más las herramientas de lectura de Supabase y GitHub.
+`ask`: `git push`, `curl`, `wget`, `apply_migration`, `deploy_edge_function`.
+`deny`: `rm -rf`, `sudo rm`, force-push, `git reset --hard`, `psql`, `supabase db`, leer `.env`.
 
-**Lo que SÍ funciona sin trust: los permisos a nivel USUARIO** (`~/.claude/settings.json`).
-Medido el 18/09: en un workspace no confiado, con la allow list del repo ignorada, la del usuario
-se aplica igual. **Por eso ése es el lugar que arregla todos los repos de una.**
+⚠ Un `ask` matchea por **prefijo del comando**: `Bash(git push:*)` **no** agarra
+`git -C /ruta push …`, que empieza con `git -C`. Medido el 18/09: por eso un push con `-C` salió
+sin preguntar. Si un comando tiene que frenar sí o sí, va en `deny`, no en `ask`.
 
-### Lo que hace `scripts/claude-permisos.sh`
+⚠ Que `execute_sql` no pregunte **no cambia la regla del 26/08**: los datos no se tocan sin
+permiso explícito. Eso lo sostiene este archivo, no el diálogo de permisos.
 
-Las dos cosas, y es idempotente: **mergea** (nunca pisa) una allow list de lectura/edición en
-`~/.claude/settings.json` y marca el workspace como confiado en `~/.claude.json`. `git push`,
-`curl`, `rm` y el SQL de Supabase **quedan afuera a propósito**: ésos tienen que seguir preguntando.
-
-⚠ **Hay que correrlo ANTES de que arranque Claude.** Los permisos se leen al arrancar la sesión:
-el hook `SessionStart` que lo llama recién hace efecto en la sesión **siguiente** (medido — la
-sesión que lo dispara sigue pidiendo permiso). O sea:
-
-| Dónde | Qué hacer | Cuándo aplica |
-|---|---|---|
-| **Claude Code web** (lo que usamos) | pegar `bash scripts/claude-permisos.sh` en el **setup script del entorno** (lo hace el dueño, en la web) | desde la sesión siguiente, en **todos** los repos |
-| **Local** | correrlo una vez a mano, o aceptar el diálogo de trust | queda para siempre en esa máquina |
-| Hook `SessionStart` (ya está en `.claude/settings.json`) | nada | de la 2ª sesión del contenedor en adelante |
-
-⚠ **De las dos cosas que hace el script, la que aguanta es la de los permisos de usuario.** El
-trust lo escribe en `~/.claude.json`, que es **el archivo que Claude Code se guarda para sí** y
-reescribe al cerrar la sesión desde lo que tenía en memoria al arrancar: o sea que la sesión que
-disparó el hook puede pisarlo al salir (medido el 18/09 — en un repo quedó, en otro se borró).
-`~/.claude/settings.json` no lo toca nadie, así que **ése es el que saca los permisos de encima**,
-y no necesita trust. Por eso el lugar donde el script tiene que correr es el setup del entorno.
-
-**Chequeo de que quedó bien**, en el repo: la 1ª corrida de arriba muestra el `Ignoring`, la 2ª
-ya no lo muestra (si el trust aguantó) y, con o sin trust, lee y edita **sin preguntar**.
+`scripts/claude-permisos.sh` y `scripts/setup-entorno-claude.sh` quedan para las sesiones
+**locales**, donde sí manda el settings de usuario y hace falta el trust. En cloud no hacen nada.
 
